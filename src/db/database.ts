@@ -1,0 +1,353 @@
+import SQLite, {SQLiteDatabase, ResultSet} from 'react-native-sqlite-storage';
+import RNFS from 'react-native-fs';
+import {AppSettings, Essay, PipelineStep, StepId, StepStatus} from '../types';
+
+SQLite.enablePromise(true);
+
+const DEFAULT_SETTINGS: AppSettings = {
+  modelName: 'gpt-5.5',
+  visionModelName: 'gpt-4.1-mini',
+  reasoningEffort: 'medium',
+  contextWindow: 128000,
+  compactionThreshold: 0.8,
+  maxOutputTokens: 5000,
+  retryCount: 1,
+  apiBaseUrl: 'https://api.openai.com/v1',
+  apiKey: '',
+};
+
+let dbPromise: Promise<SQLiteDatabase> | undefined;
+
+async function db() {
+  if (!dbPromise) {
+    dbPromise = SQLite.openDatabase({
+      name: 'essay_lens.db',
+      location: 'default',
+    });
+    const database = await dbPromise;
+    await database.executeSql(`
+      CREATE TABLE IF NOT EXISTS essays (
+        id TEXT PRIMARY KEY NOT NULL,
+        title TEXT NOT NULL DEFAULT '',
+        image_uri TEXT NOT NULL,
+        local_ocr TEXT NOT NULL DEFAULT '',
+        vision_ocr TEXT NOT NULL DEFAULT '',
+        canonical_text TEXT NOT NULL DEFAULT '',
+        corrections TEXT NOT NULL DEFAULT '',
+        score_json TEXT NOT NULL DEFAULT '',
+        status TEXT NOT NULL,
+        error TEXT NOT NULL DEFAULT '',
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL
+      )`);
+    await database.executeSql(`
+      CREATE TABLE IF NOT EXISTS pipeline_steps (
+        essay_id TEXT NOT NULL,
+        step TEXT NOT NULL,
+        status TEXT NOT NULL,
+        detail TEXT NOT NULL DEFAULT '',
+        retry_count INTEGER NOT NULL DEFAULT 0,
+        updated_at TEXT NOT NULL,
+        PRIMARY KEY (essay_id, step)
+      )`);
+    await database.executeSql(`
+      CREATE TABLE IF NOT EXISTS settings (
+        key TEXT PRIMARY KEY NOT NULL,
+        value TEXT NOT NULL
+      )`);
+    await database.executeSql(`
+      CREATE TABLE IF NOT EXISTS app_logs (
+        id INTEGER PRIMARY KEY AUTOINCREMENT,
+        essay_id TEXT,
+        level TEXT NOT NULL,
+        message TEXT NOT NULL,
+        created_at TEXT NOT NULL
+      )`);
+    for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+      await database.executeSql(
+        'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
+        [key, String(value)],
+      );
+    }
+  }
+  return dbPromise;
+}
+
+function row<T>(result: ResultSet, index = 0): T | undefined {
+  return result.rows.length > index
+    ? (result.rows.item(index) as T)
+    : undefined;
+}
+
+export async function createEssay(imageUri: string): Promise<Essay> {
+  const database = await db();
+  const now = new Date().toISOString();
+  const id = `essay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
+  await database.executeSql(
+    'INSERT INTO essays (id, image_uri, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
+    [id, imageUri, 'queued', now, now],
+  );
+  for (const step of [
+    'local_ocr',
+    'vision_ocr',
+    'reconcile',
+    'scoring',
+  ] as StepId[]) {
+    await database.executeSql(
+      'INSERT INTO pipeline_steps (essay_id, step, status, updated_at) VALUES (?, ?, ?, ?)',
+      [id, step, 'pending', now],
+    );
+  }
+  return (await getEssay(id))!;
+}
+
+export async function getEssay(id: string): Promise<Essay | undefined> {
+  const database = await db();
+  const [result] = await database.executeSql(
+    'SELECT * FROM essays WHERE id = ?',
+    [id],
+  );
+  const value = row<any>(result);
+  if (!value) {return undefined;}
+  return {
+    id: value.id,
+    title: value.title,
+    imageUri: value.image_uri,
+    localOcr: value.local_ocr,
+    visionOcr: value.vision_ocr,
+    canonicalText: value.canonical_text,
+    corrections: value.corrections,
+    scoreJson: value.score_json,
+    status: value.status,
+    error: value.error,
+    createdAt: value.created_at,
+    updatedAt: value.updated_at,
+  };
+}
+
+export async function listEssays(): Promise<Essay[]> {
+  const database = await db();
+  const [result] = await database.executeSql(
+    'SELECT * FROM essays ORDER BY created_at DESC',
+  );
+  const values: Essay[] = [];
+  for (let i = 0; i < result.rows.length; i += 1) {
+    const value = result.rows.item(i);
+    values.push({
+      id: value.id,
+      title: value.title,
+      imageUri: value.image_uri,
+      localOcr: value.local_ocr,
+      visionOcr: value.vision_ocr,
+      canonicalText: value.canonical_text,
+      corrections: value.corrections,
+      scoreJson: value.score_json,
+      status: value.status,
+      error: value.error,
+      createdAt: value.created_at,
+      updatedAt: value.updated_at,
+    });
+  }
+  return values;
+}
+
+export async function updateEssay(
+  id: string,
+  patch: Partial<Record<string, string>>,
+) {
+  const database = await db();
+  const columns: Record<string, string> = {
+    title: 'title',
+    imageUri: 'image_uri',
+    localOcr: 'local_ocr',
+    visionOcr: 'vision_ocr',
+    canonicalText: 'canonical_text',
+    corrections: 'corrections',
+    scoreJson: 'score_json',
+    status: 'status',
+    error: 'error',
+    updatedAt: 'updated_at',
+  };
+  const entries = Object.entries(patch).filter(([key]) => columns[key]);
+  if (!entries.length) {return;}
+  const sql = `UPDATE essays SET ${entries
+    .map(([key]) => `${columns[key]} = ?`)
+    .join(', ')} WHERE id = ?`;
+  await database.executeSql(sql, [
+    ...entries.map(([, value]) => value ?? ''),
+    id,
+  ]);
+}
+
+export async function getSteps(essayId: string): Promise<PipelineStep[]> {
+  const database = await db();
+  const [result] = await database.executeSql(
+    'SELECT * FROM pipeline_steps WHERE essay_id = ? ORDER BY rowid',
+    [essayId],
+  );
+  const values: PipelineStep[] = [];
+  for (let i = 0; i < result.rows.length; i += 1) {
+    const value = result.rows.item(i);
+    values.push({
+      essayId,
+      step: value.step,
+      status: value.status,
+      detail: value.detail,
+      retryCount: value.retry_count,
+      updatedAt: value.updated_at,
+    });
+  }
+  return values;
+}
+
+export async function updateStep(
+  essayId: string,
+  step: StepId,
+  status: StepStatus,
+  detail: string,
+  retryCount?: number,
+) {
+  const database = await db();
+  const now = new Date().toISOString();
+  if (retryCount === undefined) {
+    await database.executeSql(
+      'UPDATE pipeline_steps SET status = ?, detail = ?, updated_at = ? WHERE essay_id = ? AND step = ?',
+      [status, detail, now, essayId, step],
+    );
+  } else {
+    await database.executeSql(
+      'UPDATE pipeline_steps SET status = ?, detail = ?, retry_count = ?, updated_at = ? WHERE essay_id = ? AND step = ?',
+      [status, detail, retryCount, now, essayId, step],
+    );
+  }
+  await database.executeSql(
+    'INSERT INTO app_logs (essay_id, level, message, created_at) VALUES (?, ?, ?, ?)',
+    [
+      essayId,
+      status === 'failed' ? 'error' : 'info',
+      `${step}: ${detail}`,
+      now,
+    ],
+  );
+}
+
+async function removeEssayImages(rows: ResultSet) {
+  for (let i = 0; i < rows.rows.length; i += 1) {
+    const raw = String(rows.rows.item(i).image_uri || '');
+    if (
+      !raw ||
+      raw.startsWith('data:') ||
+      raw.startsWith('content://') ||
+      raw.startsWith('http://') ||
+      raw.startsWith('https://')
+    )
+      {continue;}
+    const uri = raw.startsWith('file://') ? raw.slice(7) : raw;
+    try {
+      if (await RNFS.exists(uri)) {await RNFS.unlink(uri);}
+    } catch (_) {
+      // Picker provider files may already have expired; database cleanup continues.
+    }
+  }
+}
+
+export async function deleteEssay(essayId: string) {
+  const database = await db();
+  const [images] = await database.executeSql(
+    'SELECT image_uri FROM essays WHERE id = ?',
+    [essayId],
+  );
+  await removeEssayImages(images);
+  await database.executeSql('DELETE FROM pipeline_steps WHERE essay_id = ?', [
+    essayId,
+  ]);
+  await database.executeSql('DELETE FROM app_logs WHERE essay_id = ?', [
+    essayId,
+  ]);
+  await database.executeSql('DELETE FROM essays WHERE id = ?', [essayId]);
+}
+
+export async function clearEssaysBefore(before: Date) {
+  const database = await db();
+  const cutoff = before.toISOString();
+  const [images] = await database.executeSql(
+    'SELECT image_uri FROM essays WHERE created_at < ?',
+    [cutoff],
+  );
+  await removeEssayImages(images);
+  await database.executeSql(
+    'DELETE FROM pipeline_steps WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
+    [cutoff],
+  );
+  await database.executeSql('DELETE FROM app_logs WHERE created_at < ?', [
+    cutoff,
+  ]);
+  await database.executeSql('DELETE FROM essays WHERE created_at < ?', [
+    cutoff,
+  ]);
+}
+
+/** Remove application logs and temporary cache files. Essay records and images
+ * are managed from the separate essay-management screen. */
+export async function clearLogsAndCache() {
+  const database = await db();
+  await database.executeSql('DELETE FROM app_logs');
+  // Remove files created by the app in the cache directory while leaving the
+  // directory itself available to native modules.
+  for (const directory of [
+    RNFS.CachesDirectoryPath,
+    RNFS.TemporaryDirectoryPath,
+  ]) {
+    if (!directory) {continue;}
+    try {
+      const children = await RNFS.readDir(directory);
+      for (const child of children) {
+        if (child.isFile())
+          {await RNFS.unlink(child.path).catch(() => undefined);}
+      }
+    } catch (_) {
+      // Cache cleanup is best effort and must not prevent database cleanup.
+    }
+  }
+}
+
+export async function getSettings(): Promise<AppSettings> {
+  const database = await db();
+  const [result] = await database.executeSql('SELECT key, value FROM settings');
+  const values: Record<string, string> = {};
+  for (let i = 0; i < result.rows.length; i += 1)
+    {values[result.rows.item(i).key] = result.rows.item(i).value;}
+  return {
+    modelName: values.modelName || DEFAULT_SETTINGS.modelName,
+    visionModelName: values.visionModelName || DEFAULT_SETTINGS.visionModelName,
+    reasoningEffort:
+      (values.reasoningEffort as AppSettings['reasoningEffort']) ||
+      DEFAULT_SETTINGS.reasoningEffort,
+    contextWindow:
+      Number(values.contextWindow) || DEFAULT_SETTINGS.contextWindow,
+    compactionThreshold:
+      Number(values.compactionThreshold) ||
+      DEFAULT_SETTINGS.compactionThreshold,
+    maxOutputTokens:
+      Number(values.maxOutputTokens) || DEFAULT_SETTINGS.maxOutputTokens,
+    retryCount: Number.isFinite(Number(values.retryCount))
+      ? Math.max(0, Number(values.retryCount))
+      : DEFAULT_SETTINGS.retryCount,
+    apiBaseUrl: values.apiBaseUrl || DEFAULT_SETTINGS.apiBaseUrl,
+    apiKey: values.apiKey || '',
+  };
+}
+
+export async function saveSettings(settings: AppSettings) {
+  const database = await db();
+  for (const [key, value] of Object.entries(settings)) {
+    await database.executeSql(
+      'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
+      [key, String(value)],
+    );
+  }
+}
+
+export async function initDatabase() {
+  await db();
+}

@@ -1,0 +1,20 @@
+{
+  name: "example-name",
+  description: "example description",
+  version: "1.0.0",
+  modelVersion: "5.0.0",
+  license: "ISC",
+  repository: {},
+  dependencies: {
+    "@rnoh/react-native-openharmony": "file:../node_modules/@react-native-oh/react-native-harmony/react_native_openharmony.har",
+    "@react-native-ohos/react-native-image-picker": "file:../node_modules/@react-native-ohos/react-native-image-picker/harmony/image_picker.har",
+    "@react-native-ohos/react-native-sqlite-storage": "file:../node_modules/@react-native-ohos/react-native-sqlite-storage/harmony/sqlite_storage.har",
+    "@react-native-ohos/react-native-fs": "file:../node_modules/@react-native-ohos/react-native-fs/harmony/fs.har",
+  },
+  devDependencies: {
+    "@ohos/hypium": "1.0.6",
+  },
+  overrides: {
+    "@rnoh/react-native-openharmony": "file:../node_modules/@react-native-oh/react-native-harmony/react_native_openharmony.har",
+  },
+}

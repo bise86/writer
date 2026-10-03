@@ -1,0 +1,41 @@
+{
+  "id": "essay-lens-enhanced-100-v1",
+  "version": 1,
+  "total": 100,
+  "passingScore": 60,
+  "dimensions": [
+    {"id": "thesis", "name": "审题与立意", "max": 25},
+    {"id": "content", "name": "内容与选材", "max": 25},
+    {"id": "structure", "name": "结构与技法", "max": 20},
+    {"id": "language", "name": "语言与表达", "max": 20},
+    {"id": "format", "name": "书写与规范", "max": 10}
+  ],
+  "bands": [
+    {"id": "pass", "name": "强化及格", "min": 60, "max": 69, "floor": {"thesis": 15, "content": 14, "structure": 11, "language": 14, "format": 6}},
+    {"id": "good", "name": "强化良好", "min": 70, "max": 79, "floor": {"thesis": 17, "content": 17, "structure": 14, "language": 15, "format": 7}},
+    {"id": "high", "name": "高位基准", "min": 80, "max": 89, "floor": {"thesis": 20, "content": 20, "structure": 16, "language": 17, "format": 7}},
+    {"id": "excellent", "name": "深化卓越", "min": 90, "max": 96, "floor": {"thesis": 22, "content": 22, "structure": 18, "language": 19, "format": 9}},
+    {"id": "model", "name": "示范满分", "min": 97, "max": 100, "floor": {"thesis": 24, "content": 24, "structure": 19, "language": 20, "format": 10}}
+  ],
+  "rules": {
+    "themeDeepening": "从认识或期待、触发材料、具体变化到回看后的个人认识形成证据链；口号不能替代深化。",
+    "techniquePolicy": "技法按功能评分，不按数量评分；必须服务题意、材料、人物变化、情感推进或观点表达。",
+    "ceiling": [
+      {"max": 59, "when": "严重偏题、价值判断错误、文体完全不符、无法辨读或篇幅大幅不足"},
+      {"max": 69, "when": "中心靠口号、材料空泛无证据、流水账无推进、语言多处不通、结尾缺失或硬拔高"},
+      {"max": 79, "when": "语言只有通顺没有表现力、主题没有自然深化、结构靠模板拼接、细节不能支撑人物或观点"},
+      {"max": 89, "when": "明显炫技、关键逻辑断点、语言与内容不匹配，或缺少独立视角和主动组织"}
+    ]
+  },
+  "outputSchema": {
+    "score": "number 0..100",
+    "bandId": "pass|good|high|excellent|model|unqualified",
+    "dimensionScores": "object keyed by thesis/content/structure/language/format",
+    "summary": "string",
+    "strengths": "string[]",
+    "weaknesses": "string[]",
+    "improvements": "string[]",
+    "suggestions": "string[]",
+    "annotations": "array of {quote,start,end,type,comment,suggestion}"
+  }
+}
