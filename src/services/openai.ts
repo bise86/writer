@@ -1,6 +1,7 @@
 import OpenAI from 'openai';
 import RNFS from 'react-native-fs';
 import {AppSettings} from '../types';
+import {normalizeReasoningEffort} from '../settings';
 
 export interface ResponseUsage {
   inputTokens: number;
@@ -9,7 +10,9 @@ export interface ResponseUsage {
 }
 
 function clientFor(settings: AppSettings) {
-  if (!settings.apiKey.trim()) {throw new Error('请先在设置中填写 API Key');}
+  if (!settings.apiKey.trim()) {
+    throw new Error('请先在设置中填写 API Key');
+  }
   return new OpenAI({
     apiKey: settings.apiKey.trim(),
     baseURL: settings.apiBaseUrl.trim() || undefined,
@@ -24,7 +27,9 @@ function cleanUri(uri: string) {
 }
 
 export async function imageAsDataUri(uri: string) {
-  if (uri.startsWith('data:')) {return uri;}
+  if (uri.startsWith('data:')) {
+    return uri;
+  }
   const file = cleanUri(uri);
   const base64 = await RNFS.readFile(file, 'base64');
   const type = /\.png$/i.test(file)
@@ -46,7 +51,9 @@ export async function compactIfNeeded(
 ) {
   const estimated = estimateTokens(input);
   const limit = settings.contextWindow * settings.compactionThreshold;
-  if (estimated <= limit) {return input;}
+  if (estimated <= limit) {
+    return input;
+  }
   const client = clientFor(settings);
   const compacted = await (client as any).beta.responses.compact({
     model: settings.modelName,
@@ -69,11 +76,8 @@ export async function runResponse(
     instructions,
     input: compactedInput as any,
     max_output_tokens: settings.maxOutputTokens,
+    reasoning: {effort: normalizeReasoningEffort(settings.reasoningEffort)},
   };
-  // Reasoning controls are accepted by reasoning-capable models. Vision OCR
-  // defaults to a compact multimodal model, so leave the field out there.
-  if (/^(gpt-5|o[1-9])/i.test(model))
-    {request.reasoning = {effort: settings.reasoningEffort};}
   const response = await client.responses.create(request as any);
   return {
     text: response.output_text || '',

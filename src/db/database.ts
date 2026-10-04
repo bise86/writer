@@ -1,31 +1,32 @@
 import SQLite, {SQLiteDatabase, ResultSet} from 'react-native-sqlite-storage';
 import RNFS from 'react-native-fs';
 import {AppSettings, Essay, PipelineStep, StepId, StepStatus} from '../types';
+import {
+  DEFAULT_SETTINGS,
+  legacyDefaultChanges,
+  normalizeReasoningEffort,
+} from '../settings';
 
 SQLite.enablePromise(true);
-
-const DEFAULT_SETTINGS: AppSettings = {
-  modelName: 'gpt-5.5',
-  visionModelName: 'gpt-4.1-mini',
-  reasoningEffort: 'medium',
-  contextWindow: 128000,
-  compactionThreshold: 0.8,
-  maxOutputTokens: 5000,
-  retryCount: 1,
-  apiBaseUrl: 'https://api.openai.com/v1',
-  apiKey: '',
-};
 
 let dbPromise: Promise<SQLiteDatabase> | undefined;
 
 async function db() {
   if (!dbPromise) {
-    dbPromise = SQLite.openDatabase({
-      name: 'essay_lens.db',
-      location: 'default',
+    dbPromise = initializeDatabase().catch(error => {
+      dbPromise = undefined;
+      throw error;
     });
-    const database = await dbPromise;
-    await database.executeSql(`
+  }
+  return dbPromise;
+}
+
+async function initializeDatabase() {
+  const database = await SQLite.openDatabase({
+    name: 'essay_lens.db',
+    location: 'default',
+  });
+  await database.executeSql(`
       CREATE TABLE IF NOT EXISTS essays (
         id TEXT PRIMARY KEY NOT NULL,
         title TEXT NOT NULL DEFAULT '',
@@ -40,7 +41,7 @@ async function db() {
         created_at TEXT NOT NULL,
         updated_at TEXT NOT NULL
       )`);
-    await database.executeSql(`
+  await database.executeSql(`
       CREATE TABLE IF NOT EXISTS pipeline_steps (
         essay_id TEXT NOT NULL,
         step TEXT NOT NULL,
@@ -50,12 +51,12 @@ async function db() {
         updated_at TEXT NOT NULL,
         PRIMARY KEY (essay_id, step)
       )`);
-    await database.executeSql(`
+  await database.executeSql(`
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY NOT NULL,
         value TEXT NOT NULL
       )`);
-    await database.executeSql(`
+  await database.executeSql(`
       CREATE TABLE IF NOT EXISTS app_logs (
         id INTEGER PRIMARY KEY AUTOINCREMENT,
         essay_id TEXT,
@@ -63,14 +64,31 @@ async function db() {
         message TEXT NOT NULL,
         created_at TEXT NOT NULL
       )`);
-    for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
-      await database.executeSql(
-        'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
-        [key, String(value)],
-      );
+  const [version] = await database.executeSql('PRAGMA user_version');
+  if (version.rows.item(0).user_version < 1) {
+    const [result] = await database.executeSql(
+      'SELECT key, value FROM settings',
+    );
+    const stored: Record<string, string> = {};
+    for (let i = 0; i < result.rows.length; i += 1) {
+      const item = result.rows.item(i);
+      stored[item.key] = item.value;
     }
+    for (const [key, value] of Object.entries(legacyDefaultChanges(stored))) {
+      await database.executeSql('UPDATE settings SET value = ? WHERE key = ?', [
+        value,
+        key,
+      ]);
+    }
+    await database.executeSql('PRAGMA user_version = 1');
   }
-  return dbPromise;
+  for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
+    await database.executeSql(
+      'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
+      [key, String(value)],
+    );
+  }
+  return database;
 }
 
 function row<T>(result: ResultSet, index = 0): T | undefined {
@@ -108,7 +126,9 @@ export async function getEssay(id: string): Promise<Essay | undefined> {
     [id],
   );
   const value = row<any>(result);
-  if (!value) {return undefined;}
+  if (!value) {
+    return undefined;
+  }
   return {
     id: value.id,
     title: value.title,
@@ -169,7 +189,9 @@ export async function updateEssay(
     updatedAt: 'updated_at',
   };
   const entries = Object.entries(patch).filter(([key]) => columns[key]);
-  if (!entries.length) {return;}
+  if (!entries.length) {
+    return;
+  }
   const sql = `UPDATE essays SET ${entries
     .map(([key]) => `${columns[key]} = ?`)
     .join(', ')} WHERE id = ?`;
@@ -240,11 +262,14 @@ async function removeEssayImages(rows: ResultSet) {
       raw.startsWith('content://') ||
       raw.startsWith('http://') ||
       raw.startsWith('https://')
-    )
-      {continue;}
+    ) {
+      continue;
+    }
     const uri = raw.startsWith('file://') ? raw.slice(7) : raw;
     try {
-      if (await RNFS.exists(uri)) {await RNFS.unlink(uri);}
+      if (await RNFS.exists(uri)) {
+        await RNFS.unlink(uri);
+      }
     } catch (_) {
       // Picker provider files may already have expired; database cleanup continues.
     }
@@ -298,12 +323,15 @@ export async function clearLogsAndCache() {
     RNFS.CachesDirectoryPath,
     RNFS.TemporaryDirectoryPath,
   ]) {
-    if (!directory) {continue;}
+    if (!directory) {
+      continue;
+    }
     try {
       const children = await RNFS.readDir(directory);
       for (const child of children) {
-        if (child.isFile())
-          {await RNFS.unlink(child.path).catch(() => undefined);}
+        if (child.isFile()) {
+          await RNFS.unlink(child.path).catch(() => undefined);
+        }
       }
     } catch (_) {
       // Cache cleanup is best effort and must not prevent database cleanup.
@@ -315,14 +343,13 @@ export async function getSettings(): Promise<AppSettings> {
   const database = await db();
   const [result] = await database.executeSql('SELECT key, value FROM settings');
   const values: Record<string, string> = {};
-  for (let i = 0; i < result.rows.length; i += 1)
-    {values[result.rows.item(i).key] = result.rows.item(i).value;}
+  for (let i = 0; i < result.rows.length; i += 1) {
+    values[result.rows.item(i).key] = result.rows.item(i).value;
+  }
   return {
     modelName: values.modelName || DEFAULT_SETTINGS.modelName,
     visionModelName: values.visionModelName || DEFAULT_SETTINGS.visionModelName,
-    reasoningEffort:
-      (values.reasoningEffort as AppSettings['reasoningEffort']) ||
-      DEFAULT_SETTINGS.reasoningEffort,
+    reasoningEffort: normalizeReasoningEffort(values.reasoningEffort),
     contextWindow:
       Number(values.contextWindow) || DEFAULT_SETTINGS.contextWindow,
     compactionThreshold:
@@ -343,7 +370,12 @@ export async function saveSettings(settings: AppSettings) {
   for (const [key, value] of Object.entries(settings)) {
     await database.executeSql(
       'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-      [key, String(value)],
+      [
+        key,
+        String(
+          key === 'reasoningEffort' ? normalizeReasoningEffort(value) : value,
+        ),
+      ],
     );
   }
 }

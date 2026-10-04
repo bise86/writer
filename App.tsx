@@ -7,7 +7,6 @@ import {
   SafeAreaView,
   ScrollView,
   StyleSheet,
-  Switch,
   Text,
   TextInput,
   View,
@@ -37,6 +36,7 @@ import {
   StepId,
 } from './src/types';
 import {retryEssay, runEssayPipeline} from './src/services/pipeline';
+import {REASONING_LEVELS} from './src/settings';
 
 const STEP_LABELS: Record<StepId, string> = {
   local_ocr: '本地模型识别',
@@ -580,18 +580,21 @@ function Settings({
         {field('apiKey', 'API Key')}
         {field('modelName', '评分模型')}
         {field('visionModelName', '视觉/OCR 模型')}
-        {field('contextWindow', '上下文大小（token）', 'number')}
-        {field('maxOutputTokens', '输出长度（token）', 'number')}
-        {field('retryCount', '失败重试次数（0 表示不重试）', 'number')}
+        {field('contextWindow', '上下文大小（token，1M = 1,000,000）', 'numeric')}
+        {field('maxOutputTokens', '输出长度（token）', 'numeric')}
+        {field('retryCount', '失败重试次数（0 表示不重试）', 'numeric')}
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>
-            思考级别：{settings.reasoningEffort}
+            思考级别：
+            {settings.reasoningEffort === 'none'
+              ? '关闭'
+              : settings.reasoningEffort}
           </Text>
           <View style={styles.actionRow}>
-            {(['low', 'medium', 'high'] as const).map(item => (
+            {REASONING_LEVELS.map(item => (
               <Button
                 key={item}
-                title={item}
+                title={item === 'none' ? '关闭' : item}
                 secondary={settings.reasoningEffort !== item}
                 onPress={() =>
                   setSettings({...settings, reasoningEffort: item})
@@ -618,9 +621,8 @@ function Settings({
           </View>
         </View>
         <View style={styles.privacy}>
-          <Switch value={true} disabled />
           <Text style={styles.muted}>
-            数据默认保存在本机 SQLite；API Key 仅用于本机请求。
+            作文数据保存在本机；识别和评分时会将作文内容发送至你配置的 API。
           </Text>
         </View>
         <Button
@@ -669,6 +671,7 @@ export default function App() {
   const [ready, setReady] = useState(false);
   const [essays, setEssays] = useState<Essay[]>([]);
   const [selected, setSelected] = useState<Essay>();
+  const selectedId = selected?.id;
   const [settings, setSettings] = useState<AppSettings>();
   const [screen, setScreen] = useState<
     'home' | 'detail' | 'settings' | 'manage'
@@ -684,12 +687,14 @@ export default function App() {
     })();
   }, []);
   useEffect(() => {
-    if (screen !== 'detail' || !selected) return;
+    if (screen !== 'detail' || !selectedId) {
+      return;
+    }
     const timer = setInterval(() => {
-      getEssay(selected.id).then(value => value && setSelected(value));
+      getEssay(selectedId).then(value => value && setSelected(value));
     }, 1200);
     return () => clearInterval(timer);
-  }, [screen, selected?.id]);
+  }, [screen, selectedId]);
   const capture = async (camera: boolean) => {
     const result = camera
       ? await launchCamera({

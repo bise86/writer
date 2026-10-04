@@ -10,6 +10,7 @@ EssayLens 是一个 React Native + TypeScript 应用，同一套业务代码面�
 - 加载 `src/assets/scoring-rules.json` 作为评分资源，输出 100 分总评、分项分数、五档结果、优缺点、建议和可定位批注。
 - 使用 OpenAI SDK Responses API；输入估算超过设置阈值时调用 Responses compact，再执行评分或 OCR 请求。
 - API 地址、API Key、模型名称、思考级别、上下文大小、压缩阈值、输出长度、重试次数均可在系统设置中修改。重试次数为 0 时不重试，默认 1 次。
+- 默认 API 地址为 `https://api.deepseek.com`，评分与视觉/OCR 模型为 `deepseek-flash`，上下文为 1M（1,000,000 token）。思考默认 `high`，可选 `none`（关闭）、`low`、`high`、`max`。升级时迁移旧默认值和 `medium`，保留自定义配置。
 - 每个流程步骤都持久化状态，失败后可以从详情页重试。
 - “作文管理”支持逐条选择删除、批量删除，以及按 7/30/90 天清理旧作文；删除会同步处理识别结果、评分批注、流程步骤、日志和图片。
 - 系统设置只清理应用日志与临时缓存，不会删除作文、图片、API/模型配置或评分 JSON。
