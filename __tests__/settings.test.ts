@@ -15,7 +15,7 @@ const createResponse = jest.fn();
 
 beforeEach(() => {
   jest.clearAllMocks();
-  createResponse.mockResolvedValue({output_text: 'ok'});
+  createResponse.mockResolvedValue({status: 'completed', output_text: 'ok'});
   (OpenAI as unknown as jest.Mock).mockImplementation(() => ({
     responses: {create: createResponse},
   }));
@@ -25,7 +25,6 @@ test('旧安装迁移默认配置，API Key 和其他设置保留', () => {
   const stored = {
     apiBaseUrl: 'https://api.openai.com/v1',
     modelName: 'gpt-5.5',
-    visionModelName: 'gpt-4.1-mini',
     contextWindow: '128000',
     reasoningEffort: 'medium',
     apiKey: 'user-key',
@@ -35,7 +34,6 @@ test('旧安装迁移默认配置，API Key 和其他设置保留', () => {
   expect({...stored, ...legacyDefaultChanges(stored)}).toEqual({
     apiBaseUrl: 'https://api.deepseek.com',
     modelName: 'deepseek-flash',
-    visionModelName: 'deepseek-flash',
     contextWindow: '1000000',
     reasoningEffort: 'high',
     apiKey: 'user-key',
@@ -49,7 +47,6 @@ test('迁移保留自定义配置，包括关闭思考', () => {
     legacyDefaultChanges({
       apiBaseUrl: 'https://example.test/v1',
       modelName: 'custom-text',
-      visionModelName: 'custom-vision',
       contextWindow: '262144',
       reasoningEffort: 'none',
     }),

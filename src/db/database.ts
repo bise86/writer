@@ -5,6 +5,7 @@ import {
   DEFAULT_SETTINGS,
   legacyDefaultChanges,
   normalizeReasoningEffort,
+  validateSettings,
 } from '../settings';
 
 SQLite.enablePromise(true);
@@ -81,6 +82,12 @@ async function initializeDatabase() {
       ]);
     }
     await database.executeSql('PRAGMA user_version = 1');
+  }
+  if (version.rows.item(0).user_version < 2) {
+    await database.executeSql('DELETE FROM settings WHERE key = ?', [
+      'visionModelName',
+    ]);
+    await database.executeSql('PRAGMA user_version = 2');
   }
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await database.executeSql(
@@ -348,7 +355,6 @@ export async function getSettings(): Promise<AppSettings> {
   }
   return {
     modelName: values.modelName || DEFAULT_SETTINGS.modelName,
-    visionModelName: values.visionModelName || DEFAULT_SETTINGS.visionModelName,
     reasoningEffort: normalizeReasoningEffort(values.reasoningEffort),
     contextWindow:
       Number(values.contextWindow) || DEFAULT_SETTINGS.contextWindow,
@@ -366,8 +372,9 @@ export async function getSettings(): Promise<AppSettings> {
 }
 
 export async function saveSettings(settings: AppSettings) {
+  const validated = validateSettings(settings);
   const database = await db();
-  for (const [key, value] of Object.entries(settings)) {
+  for (const [key, value] of Object.entries(validated)) {
     await database.executeSql(
       'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
       [

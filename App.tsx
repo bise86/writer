@@ -36,11 +36,11 @@ import {
   StepId,
 } from './src/types';
 import {retryEssay, runEssayPipeline} from './src/services/pipeline';
-import {REASONING_LEVELS} from './src/settings';
+import {REASONING_LEVELS, validateSettings} from './src/settings';
 
 const STEP_LABELS: Record<StepId, string> = {
-  local_ocr: '本地模型识别',
-  vision_ocr: '视觉模型复核',
+  local_ocr: '本地 OCR 识别',
+  vision_ocr: '云端图片识别',
   reconcile: '双路文字对照',
   scoring: '评分与批注',
 };
@@ -544,12 +544,16 @@ function Settings({
   onClear,
 }: {
   value: AppSettings;
-  onSave: (value: AppSettings) => void;
+  onSave: (value: AppSettings) => Promise<void>;
   onBack: () => void;
   onClear: () => Promise<void>;
 }) {
   const [settings, setSettings] = useState(value);
   const [clearing, setClearing] = useState(false);
+  const [saving, setSaving] = useState(false);
+  const [thresholdPercent, setThresholdPercent] = useState(
+    String(value.compactionThreshold * 100),
+  );
   const field = (
     key: keyof AppSettings,
     label: string,
@@ -578,8 +582,10 @@ function Settings({
         </View>
         {field('apiBaseUrl', 'API 地址')}
         {field('apiKey', 'API Key')}
-        {field('modelName', '评分模型')}
-        {field('visionModelName', '视觉/OCR 模型')}
+        {field('modelName', '模型名称')}
+        <Text style={styles.muted}>
+          图片识别、文字校对和评分共用此云端模型，请选择支持图片输入的模型。本地 OCR 无需配置。
+        </Text>
         {field('contextWindow', '上下文大小（token，1M = 1,000,000）', 'numeric')}
         {field('maxOutputTokens', '输出长度（token）', 'numeric')}
         {field('retryCount', '失败重试次数（0 表示不重试）', 'numeric')}
@@ -605,17 +611,21 @@ function Settings({
         </View>
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>
-            上下文达到 {Math.round(settings.compactionThreshold * 100)}% 时压缩
+            上下文压缩阈值（%，只压缩历史参考内容，保留作文原文）
           </Text>
+          <TextInput
+            value={thresholdPercent}
+            onChangeText={setThresholdPercent}
+            keyboardType="decimal-pad"
+            style={styles.input}
+          />
           <View style={styles.actionRow}>
             {[0.7, 0.8, 0.9].map(item => (
               <Button
                 key={item}
                 title={`${item * 100}%`}
-                secondary={settings.compactionThreshold !== item}
-                onPress={() =>
-                  setSettings({...settings, compactionThreshold: item})
-                }
+                secondary={Number(thresholdPercent) !== item * 100}
+                onPress={() => setThresholdPercent(String(item * 100))}
               />
             ))}
           </View>
@@ -626,10 +636,25 @@ function Settings({
           </Text>
         </View>
         <Button
-          title="保存设置"
-          onPress={() => {
-            onSave(settings);
-            onBack();
+          title={saving ? '保存中…' : '保存设置'}
+          disabled={saving}
+          onPress={async () => {
+            setSaving(true);
+            try {
+              const validated = validateSettings({
+                ...settings,
+                compactionThreshold: Number(thresholdPercent) / 100,
+              });
+              await onSave(validated);
+              onBack();
+            } catch (error) {
+              Alert.alert(
+                '无法保存设置',
+                error instanceof Error ? error.message : String(error),
+              );
+            } finally {
+              setSaving(false);
+            }
           }}
         />
         <Card style={styles.dangerCard}>

@@ -1,67 +1,44 @@
 import rules from '../assets/scoring-rules.json';
-import {getEssay, getSettings, updateEssay, updateStep} from '../db/database';
+import {
+  getEssay,
+  getSettings,
+  getSteps,
+  updateEssay,
+  updateStep,
+} from '../db/database';
 import {AppSettings, Essay, ScoreResult, StepId} from '../types';
 import {localOcr, cloudOcr, reconcileOcr} from './ocr';
 import {parseJson, runResponse} from './openai';
+import {RequestOptions, RequestProgress} from './context';
+import {validateScore} from './score-validation';
 
 export type ProgressCallback = (step: StepId, detail: string) => void;
 
-const sleep = (ms: number) => new Promise(resolve => setTimeout(resolve, ms));
-
-async function retry<T>(label: string, retries: number, fn: () => Promise<T>) {
-  let attempt = 0;
-  while (true) {
-    try {
-      return await fn();
-    } catch (error) {
-      if (attempt >= retries) {throw error;}
-      attempt += 1;
-      await sleep(Math.min(1500 * 2 ** (attempt - 1), 8000));
-    }
-  }
-}
+const STEPS: StepId[] = ['local_ocr', 'vision_ocr', 'reconcile', 'scoring'];
+const inFlight = new Set<string>();
 
 async function step<T>(
   essayId: string,
   id: StepId,
-  retries: number,
   onProgress: ProgressCallback | undefined,
-  fn: () => Promise<T>,
+  fn: (report: RequestProgress) => Promise<T>,
 ) {
-  await updateStep(essayId, id, 'running', '处理中');
+  await updateStep(essayId, id, 'running', '处理中', 0);
   onProgress?.(id, '处理中');
   try {
-    const result = await retry(id, retries, fn);
+    const result = await fn(async (detail, retries) => {
+      await updateStep(essayId, id, 'running', detail, retries);
+      onProgress?.(id, detail);
+    });
     await updateStep(essayId, id, 'success', '完成');
     onProgress?.(id, '完成');
     return result;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);
-    await updateStep(essayId, id, 'failed', message, retries);
+    await updateStep(essayId, id, 'failed', message);
+    onProgress?.(id, message);
     throw new Error(`${id}: ${message}`);
   }
-}
-
-function scoreFallback(text: string): ScoreResult {
-  const length = text.trim().length;
-  const score = length > 600 ? 60 : length > 300 ? 50 : 35;
-  return {
-    score,
-    bandId: score >= 60 ? 'pass' : 'unqualified',
-    dimensionScores: {
-      thesis: Math.round(score * 0.25),
-      content: Math.round(score * 0.25),
-      structure: Math.round(score * 0.2),
-      language: Math.round(score * 0.2),
-      format: Math.round(score * 0.1),
-    },
-    summary: '模型返回格式无法解析，已保存基础评分结果，请重试评分。',
-    strengths: length ? ['已识别到作文正文。'] : [],
-    weaknesses: ['尚未获得结构化评分。'],
-    improvements: ['重新执行评分步骤。'],
-    suggestions: ['检查模型设置和输出格式。'],
-    annotations: [],
-  };
 }
 
 function scoreInstructions() {
@@ -73,55 +50,87 @@ function scoreInstructions() {
 export async function scoreEssay(
   text: string,
   settings?: AppSettings,
+  options: RequestOptions = {},
 ): Promise<ScoreResult> {
+  if (!text.trim()) {
+    throw new Error('未识别到作文正文，不能评分');
+  }
   const actualSettings = settings || (await getSettings());
-  const response = await runResponse(text, scoreInstructions(), actualSettings);
-  return parseJson(response.text, scoreFallback(text));
+  const response = await runResponse(
+    text,
+    scoreInstructions(),
+    actualSettings,
+    actualSettings.modelName,
+    options,
+  );
+  return validateScore(parseJson<ScoreResult>(response.text), text);
 }
 
 export async function runEssayPipeline(
   essay: Essay,
   onProgress?: ProgressCallback,
+  startFrom: StepId = 'local_ocr',
 ) {
-  const settings = await getSettings();
-  const retries = settings.retryCount;
+  if (inFlight.has(essay.id)) {
+    throw new Error('这篇作文正在处理中，请等待当前流程结束');
+  }
+  inFlight.add(essay.id);
   try {
+    const settings = await getSettings();
+    let start = STEPS.indexOf(startFrom);
+    if (start > 1 && !essay.visionOcr.trim()) {
+      start = 1;
+    }
+    if (start > 2 && !essay.canonicalText.trim()) {
+      start = 2;
+    }
     await updateEssay(essay.id, {
-      status: 'local_ocr',
+      status: STEPS[start],
       error: '',
       updatedAt: new Date().toISOString(),
     });
-    const local = await step(essay.id, 'local_ocr', retries, onProgress, () =>
-      localOcr(essay.imageUri),
-    );
-    await updateEssay(essay.id, {
-      localOcr: local.text,
-      updatedAt: new Date().toISOString(),
-    });
+    let localText = essay.localOcr;
+    if (start <= 0) {
+      const local = await step(essay.id, 'local_ocr', onProgress, () =>
+        localOcr(essay.imageUri),
+      );
+      localText = local.text;
+      await updateEssay(essay.id, {
+        localOcr: localText,
+        updatedAt: new Date().toISOString(),
+      });
+    }
 
-    const vision = await step(essay.id, 'vision_ocr', retries, onProgress, () =>
-      cloudOcr(essay.imageUri, settings),
-    );
-    await updateEssay(essay.id, {
-      visionOcr: vision.text,
-      updatedAt: new Date().toISOString(),
-    });
+    let visionText = essay.visionOcr;
+    if (start <= 1) {
+      await updateEssay(essay.id, {status: 'vision_ocr'});
+      const vision = await step(essay.id, 'vision_ocr', onProgress, report =>
+        cloudOcr(essay.imageUri, settings, {onProgress: report}),
+      );
+      visionText = vision.text;
+      await updateEssay(essay.id, {
+        visionOcr: visionText,
+        updatedAt: new Date().toISOString(),
+      });
+    }
 
-    const reconciled = await step(
-      essay.id,
-      'reconcile',
-      retries,
-      onProgress,
-      () => reconcileOcr(local.text, vision.text, settings),
-    );
-    await updateEssay(essay.id, {
-      canonicalText: reconciled.text,
-      corrections: reconciled.corrections,
-      updatedAt: new Date().toISOString(),
-    });
+    let canonicalText = essay.canonicalText;
+    if (start <= 2) {
+      await updateEssay(essay.id, {status: 'reconcile'});
+      const reconciled = await step(essay.id, 'reconcile', onProgress, report =>
+        reconcileOcr(localText, visionText, settings, {onProgress: report}),
+      );
+      canonicalText = reconciled.text;
+      await updateEssay(essay.id, {
+        canonicalText,
+        corrections: reconciled.corrections,
+        updatedAt: new Date().toISOString(),
+      });
+    }
 
-    const score = await step(essay.id, 'scoring', retries, onProgress, () =>
-      scoreEssay(reconciled.text, settings),
+    await updateEssay(essay.id, {status: 'scoring'});
+    const score = await step(essay.id, 'scoring', onProgress, report =>
+      scoreEssay(canonicalText, settings, {onProgress: report}),
     );
     await updateEssay(essay.id, {
       scoreJson: JSON.stringify(score),
@@ -137,6 +146,8 @@ export async function runEssayPipeline(
       updatedAt: new Date().toISOString(),
     });
     throw error;
+  } finally {
+    inFlight.delete(essay.id);
   }
 }
 
@@ -145,6 +156,12 @@ export async function retryEssay(
   onProgress?: ProgressCallback,
 ) {
   const essay = await getEssay(essayId);
-  if (!essay) {throw new Error('作文不存在');}
-  return runEssayPipeline(essay, onProgress);
+  if (!essay) {
+    throw new Error('作文不存在');
+  }
+  const steps = await getSteps(essayId);
+  const resume = STEPS.find(
+    id => steps.find(item => item.step === id)?.status !== 'success',
+  );
+  return runEssayPipeline(essay, onProgress, resume || 'scoring');
 }

@@ -12,7 +12,6 @@ export type StepStatus = 'pending' | 'running' | 'success' | 'failed';
 
 export interface AppSettings {
   modelName: string;
-  visionModelName: string;
   reasoningEffort: 'none' | 'low' | 'high' | 'max';
   contextWindow: number;
   compactionThreshold: number;
