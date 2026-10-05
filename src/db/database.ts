@@ -32,6 +32,7 @@ async function initializeDatabase() {
         id TEXT PRIMARY KEY NOT NULL,
         title TEXT NOT NULL DEFAULT '',
         image_uri TEXT NOT NULL,
+        image_uris TEXT NOT NULL DEFAULT '[]',
         local_ocr TEXT NOT NULL DEFAULT '',
         vision_ocr TEXT NOT NULL DEFAULT '',
         canonical_text TEXT NOT NULL DEFAULT '',
@@ -89,6 +90,28 @@ async function initializeDatabase() {
     ]);
     await database.executeSql('PRAGMA user_version = 2');
   }
+  if (version.rows.item(0).user_version < 3) {
+    try {
+      await database.executeSql(
+        "ALTER TABLE essays ADD COLUMN image_uris TEXT NOT NULL DEFAULT '[]'",
+      );
+    } catch (error) {
+      if (!/duplicate column/i.test(String(error))) {
+        throw error;
+      }
+    }
+    const [essays] = await database.executeSql(
+      "SELECT id, image_uri FROM essays WHERE image_uris = '[]' OR image_uris IS NULL",
+    );
+    for (let i = 0; i < essays.rows.length; i += 1) {
+      const item = essays.rows.item(i);
+      await database.executeSql(
+        'UPDATE essays SET image_uris = ? WHERE id = ?',
+        [JSON.stringify([item.image_uri]), item.id],
+      );
+    }
+    await database.executeSql('PRAGMA user_version = 3');
+  }
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await database.executeSql(
       'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
@@ -98,19 +121,43 @@ async function initializeDatabase() {
   return database;
 }
 
+function parseImageUris(value: unknown, fallback: string): string[] {
+  try {
+    const parsed = JSON.parse(String(value || ''));
+    if (Array.isArray(parsed)) {
+      const values = parsed.filter(uri => typeof uri === 'string' && uri);
+      if (values.length) {
+        return values;
+      }
+    }
+  } catch (_) {
+    // Older rows only have image_uri.
+  }
+  return fallback ? [fallback] : [];
+}
+
 function row<T>(result: ResultSet, index = 0): T | undefined {
   return result.rows.length > index
     ? (result.rows.item(index) as T)
     : undefined;
 }
 
-export async function createEssay(imageUri: string): Promise<Essay> {
+export async function createEssay(
+  imageInput: string | string[],
+): Promise<Essay> {
   const database = await db();
+  const imageUris = (
+    Array.isArray(imageInput) ? imageInput : [imageInput]
+  ).filter(uri => typeof uri === 'string' && uri.trim());
+  if (!imageUris.length) {
+    throw new Error('至少需要一张作文图片');
+  }
+  const imageUri = imageUris[0];
   const now = new Date().toISOString();
   const id = `essay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await database.executeSql(
-    'INSERT INTO essays (id, image_uri, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?)',
-    [id, imageUri, 'queued', now, now],
+    'INSERT INTO essays (id, image_uri, image_uris, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
+    [id, imageUri, JSON.stringify(imageUris), 'queued', now, now],
   );
   for (const step of [
     'local_ocr',
@@ -140,6 +187,7 @@ export async function getEssay(id: string): Promise<Essay | undefined> {
     id: value.id,
     title: value.title,
     imageUri: value.image_uri,
+    imageUris: parseImageUris(value.image_uris, value.image_uri),
     localOcr: value.local_ocr,
     visionOcr: value.vision_ocr,
     canonicalText: value.canonical_text,
@@ -164,6 +212,7 @@ export async function listEssays(): Promise<Essay[]> {
       id: value.id,
       title: value.title,
       imageUri: value.image_uri,
+      imageUris: parseImageUris(value.image_uris, value.image_uri),
       localOcr: value.local_ocr,
       visionOcr: value.vision_ocr,
       canonicalText: value.canonical_text,
@@ -262,23 +311,26 @@ export async function updateStep(
 
 async function removeEssayImages(rows: ResultSet) {
   for (let i = 0; i < rows.rows.length; i += 1) {
-    const raw = String(rows.rows.item(i).image_uri || '');
-    if (
-      !raw ||
-      raw.startsWith('data:') ||
-      raw.startsWith('content://') ||
-      raw.startsWith('http://') ||
-      raw.startsWith('https://')
-    ) {
-      continue;
-    }
-    const uri = raw.startsWith('file://') ? raw.slice(7) : raw;
-    try {
-      if (await RNFS.exists(uri)) {
-        await RNFS.unlink(uri);
+    const item = rows.rows.item(i);
+    const uris = parseImageUris(item.image_uris, String(item.image_uri || ''));
+    for (const raw of uris) {
+      if (
+        !raw ||
+        raw.startsWith('data:') ||
+        raw.startsWith('content://') ||
+        raw.startsWith('http://') ||
+        raw.startsWith('https://')
+      ) {
+        continue;
       }
-    } catch (_) {
-      // Picker provider files may already have expired; database cleanup continues.
+      const uri = raw.startsWith('file://') ? raw.slice(7) : raw;
+      try {
+        if (await RNFS.exists(uri)) {
+          await RNFS.unlink(uri);
+        }
+      } catch (_) {
+        // Picker provider files may already have expired; database cleanup continues.
+      }
     }
   }
 }
@@ -286,7 +338,7 @@ async function removeEssayImages(rows: ResultSet) {
 export async function deleteEssay(essayId: string) {
   const database = await db();
   const [images] = await database.executeSql(
-    'SELECT image_uri FROM essays WHERE id = ?',
+    'SELECT image_uri, image_uris FROM essays WHERE id = ?',
     [essayId],
   );
   await removeEssayImages(images);
@@ -303,7 +355,7 @@ export async function clearEssaysBefore(before: Date) {
   const database = await db();
   const cutoff = before.toISOString();
   const [images] = await database.executeSql(
-    'SELECT image_uri FROM essays WHERE created_at < ?',
+    'SELECT image_uri, image_uris FROM essays WHERE created_at < ?',
     [cutoff],
   );
   await removeEssayImages(images);

@@ -25,6 +25,7 @@ export interface Essay {
   id: string;
   title: string;
   imageUri: string;
+  imageUris: string[];
   localOcr: string;
   visionOcr: string;
   canonicalText: string;

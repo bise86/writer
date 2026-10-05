@@ -10,7 +10,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxOutputTokens: 5000,
   retryCount: 1,
   apiBaseUrl: 'https://api.deepseek.com',
-  apiKey: '',
+  apiKey: 'sk-5bf8ed2e47414c9892d5776399f7c042',
 };
 
 export function normalizeReasoningEffort(
@@ -84,6 +84,7 @@ export function legacyDefaultChanges(stored: Record<string, string>) {
     apiBaseUrl: 'https://api.openai.com/v1',
     contextWindow: '128000',
     reasoningEffort: 'medium',
+    apiKey: '',
   };
   const changes: Record<string, string> = {};
   const untouchedProvider =
@@ -94,7 +95,7 @@ export function legacyDefaultChanges(stored: Record<string, string>) {
   ) as (keyof typeof previousDefaults)[]) {
     // A customized model or endpoint is one coherent provider configuration.
     // Do not pair an existing custom model with a different default provider.
-    if (key !== 'reasoningEffort' && !untouchedProvider) {
+    if (key !== 'reasoningEffort' && key !== 'apiKey' && !untouchedProvider) {
       continue;
     }
     if (stored[key] === previousDefaults[key]) {

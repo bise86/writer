@@ -7,7 +7,7 @@ import {
   updateStep,
 } from '../db/database';
 import {AppSettings, Essay, ScoreResult, StepId} from '../types';
-import {localOcr, cloudOcr, reconcileOcr} from './ocr';
+import {localOcrPages, cloudOcr, reconcileOcr} from './ocr';
 import {parseJson, runResponse} from './openai';
 import {RequestOptions, RequestProgress} from './context';
 import {validateScore} from './score-validation';
@@ -90,9 +90,12 @@ export async function runEssayPipeline(
       updatedAt: new Date().toISOString(),
     });
     let localText = essay.localOcr;
+    const imageUris = essay.imageUris?.length
+      ? essay.imageUris
+      : [essay.imageUri];
     if (start <= 0) {
       const local = await step(essay.id, 'local_ocr', onProgress, () =>
-        localOcr(essay.imageUri),
+        localOcrPages(imageUris),
       );
       localText = local.text;
       await updateEssay(essay.id, {
@@ -105,7 +108,7 @@ export async function runEssayPipeline(
     if (start <= 1) {
       await updateEssay(essay.id, {status: 'vision_ocr'});
       const vision = await step(essay.id, 'vision_ocr', onProgress, report =>
-        cloudOcr(essay.imageUri, settings, {onProgress: report}),
+        cloudOcr(imageUris, settings, {onProgress: report}),
       );
       visionText = vision.text;
       await updateEssay(essay.id, {

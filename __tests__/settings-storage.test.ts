@@ -54,7 +54,7 @@ beforeEach(() => {
 test('新安装只有一个模型配置', async () => {
   expect(await database.getSettings()).toEqual(DEFAULT_SETTINGS);
   expect(stored).not.toHaveProperty('visionModelName');
-  expect(version).toBe(2);
+  expect(version).toBe(3);
 });
 
 test('已有安装删除独立 OCR 设置，保留用户自定义主模型和密钥', async () => {
@@ -71,7 +71,7 @@ test('已有安装删除独立 OCR 设置，保留用户自定义主模型和密
   expect(settings.reasoningEffort).toBe('none');
   expect(settings).not.toHaveProperty('visionModelName');
   expect(stored).not.toHaveProperty('visionModelName');
-  expect(version).toBe(2);
+  expect(version).toBe(3);
 });
 
 test('最早的安装先迁移默认值，再删除旧 OCR 设置', async () => {

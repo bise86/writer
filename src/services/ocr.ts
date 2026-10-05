@@ -53,8 +53,30 @@ export async function localOcr(uri: string): Promise<OcrResult> {
   };
 }
 
+export async function localOcrPages(uris: string[]): Promise<OcrResult> {
+  const pages: OcrResult[] = [];
+  for (const [index, uri] of uris.entries()) {
+    const result = await localOcr(uri);
+    pages.push({
+      ...result,
+      text: result.text ? `【第 ${index + 1} 页】\n${result.text}` : '',
+    });
+  }
+  return {
+    text: pages
+      .map(page => page.text)
+      .filter(Boolean)
+      .join('\n\n'),
+    confidence: pages.length
+      ? pages.reduce((sum, page) => sum + page.confidence, 0) / pages.length
+      : 0,
+    engine:
+      pages.map(page => page.engine).join(',') || 'local-model-unavailable',
+  };
+}
+
 export async function cloudOcr(
-  uri: string,
+  uri: string | string[],
   settings: AppSettings,
   options: RequestOptions = {},
 ): Promise<OcrResult> {

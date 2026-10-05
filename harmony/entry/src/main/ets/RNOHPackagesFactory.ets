@@ -6,11 +6,13 @@ import type { RNPackageContext, RNOHPackage } from '@rnoh/react-native-openharmo
 import RNImagePickerPackage from '@react-native-ohos/react-native-image-picker';
 import SQLitePluginPackage from '@react-native-ohos/react-native-sqlite-storage';
 import { FsPackage } from '@react-native-ohos/react-native-fs';
+import { ImageEditorPackage } from 'rnoh-image-editor';
 
 export function createRNOHPackages(ctx: RNPackageContext): RNOHPackage[] {
   return [
     new RNImagePickerPackage(ctx),
     new SQLitePluginPackage(ctx),
     new FsPackage(ctx),
+    new ImageEditorPackage(ctx),
   ];
 }

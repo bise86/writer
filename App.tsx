@@ -3,6 +3,8 @@ import {
   ActivityIndicator,
   Alert,
   Image,
+  PermissionsAndroid,
+  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -37,6 +39,7 @@ import {
 } from './src/types';
 import {retryEssay, runEssayPipeline} from './src/services/pipeline';
 import {REASONING_LEVELS, validateSettings} from './src/settings';
+import {cropImage, CropPreset, persistImage} from './src/services/images';
 
 const STEP_LABELS: Record<StepId, string> = {
   local_ocr: '本地 OCR 识别',
@@ -163,12 +166,12 @@ function Home({
         <Card style={styles.captureCard}>
           <Text style={styles.captureTitle}>开始一次批改</Text>
           <Text style={styles.muted}>
-            图片会先经过本地识别，再由视觉模型复核。
+            可连续拍摄或多选作文页；每页可保留原图或裁剪后再识别。
           </Text>
           <View style={styles.actionRow}>
             <Button title="拍照" onPress={() => onCapture(true)} />
             <Button
-              title="选择图片"
+              title="选择图片（可多选）"
               secondary
               onPress={() => onCapture(false)}
             />
@@ -399,7 +402,17 @@ function Detail({
           <Text style={styles.headerStatus}>{statusText}</Text>
         </View>
         <Card>
-          <Image source={{uri: essay.imageUri}} style={styles.preview} />
+          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+            {(essay.imageUris?.length ? essay.imageUris : [essay.imageUri]).map(
+              (uri, index) => (
+                <Image
+                  key={`${uri}-${index}`}
+                  source={{uri}}
+                  style={styles.preview}
+                />
+              ),
+            )}
+          </ScrollView>
           <TextInput
             style={styles.titleInput}
             defaultValue={essay.title || '未命名作文'}
@@ -562,7 +575,8 @@ function Settings({
     <View style={styles.field}>
       <Text style={styles.fieldLabel}>{label}</Text>
       <TextInput
-        secureTextEntry={key === 'apiKey'}
+        autoCapitalize="none"
+        autoCorrect={false}
         keyboardType={keyboardType}
         value={String(settings[key])}
         onChangeText={text => setSettings({...settings, [key]: text})}
@@ -581,12 +595,17 @@ function Settings({
           <Text style={styles.headerTitle}>系统设置</Text>
         </View>
         {field('apiBaseUrl', 'API 地址')}
-        {field('apiKey', 'API Key')}
+        {field('apiKey', 'Token（API Key）')}
         {field('modelName', '模型名称')}
         <Text style={styles.muted}>
-          图片识别、文字校对和评分共用此云端模型，请选择支持图片输入的模型。本地 OCR 无需配置。
+          图片识别、文字校对和评分共用此云端模型，请选择支持图片输入的模型。本地
+          OCR 无需配置。
         </Text>
-        {field('contextWindow', '上下文大小（token，1M = 1,000,000）', 'numeric')}
+        {field(
+          'contextWindow',
+          '上下文大小（token，1M = 1,000,000）',
+          'numeric',
+        )}
         {field('maxOutputTokens', '输出长度（token）', 'numeric')}
         {field('retryCount', '失败重试次数（0 表示不重试）', 'numeric')}
         <View style={styles.field}>
@@ -720,29 +739,128 @@ export default function App() {
     }, 1200);
     return () => clearInterval(timer);
   }, [screen, selectedId]);
-  const capture = async (camera: boolean) => {
-    const result = camera
-      ? await launchCamera({
-          mediaType: 'photo',
-          cameraType: 'back',
-          includeBase64: false,
-          quality: 0.9,
-          saveToPhotos: true,
-        })
-      : await launchImageLibrary({
-          mediaType: 'photo',
-          includeBase64: false,
-          quality: 0.9,
-        });
-    const asset: Asset | undefined = result.assets?.[0];
+  const chooseCrop = (): Promise<CropPreset | undefined> =>
+    new Promise(resolve => {
+      Alert.alert('处理图片', '可以保留原图，也可以进行居中裁剪。', [
+        {text: '保留原图', onPress: () => resolve(undefined)},
+        {text: '裁剪为方形', onPress: () => resolve('square')},
+        {text: '裁剪为 4:3', onPress: () => resolve('landscape')},
+      ]);
+    });
+  const prepareAsset = async (asset: Asset | undefined) => {
     if (!asset?.uri) {
-      return;
+      return undefined;
     }
-    const essay = await createEssay(asset.uri);
-    setSelected(essay);
-    setScreen('detail');
-    await refresh();
-    runEssayPipeline(essay).then(refresh).catch(refresh);
+    const uri = asset.uri;
+    const preset = await chooseCrop();
+    try {
+      return preset
+        ? await cropImage(uri, asset, preset)
+        : await persistImage(uri, asset);
+    } catch (error) {
+      Alert.alert(
+        '裁剪失败',
+        `${
+          error instanceof Error ? error.message : String(error)
+        }\n将使用原图继续。`,
+      );
+      return persistImage(uri, asset);
+    }
+  };
+  const askContinueCamera = () =>
+    new Promise<boolean>(resolve => {
+      Alert.alert('照片已加入', '还要继续拍摄下一页吗？', [
+        {text: '完成', onPress: () => resolve(false)},
+        {text: '继续拍摄', onPress: () => resolve(true)},
+      ]);
+    });
+  const cameraPermission = async () => {
+    if (Platform.OS !== 'android') {
+      return true;
+    }
+    const result = await PermissionsAndroid.request(
+      PermissionsAndroid.PERMISSIONS.CAMERA,
+      {
+        title: '相机权限',
+        message: '需要使用相机拍摄作文图片。',
+        buttonPositive: '允许',
+        buttonNegative: '拒绝',
+      },
+    );
+    return result === PermissionsAndroid.RESULTS.GRANTED;
+  };
+  const capture = async (camera: boolean) => {
+    try {
+      if (camera && !(await cameraPermission())) {
+        Alert.alert(
+          '无法打开相机',
+          '相机权限未授权，请在系统设置中允许相机权限。',
+        );
+        return;
+      }
+      const imageUris: string[] = [];
+      if (camera) {
+        let continueCapturing = true;
+        while (continueCapturing) {
+          const result = await launchCamera({
+            mediaType: 'photo',
+            cameraType: 'back',
+            includeBase64: false,
+            maxWidth: 2200,
+            maxHeight: 2200,
+            quality: 0.9,
+            saveToPhotos: false,
+          });
+          if (result.errorCode) {
+            throw new Error(
+              result.errorMessage || `相机错误：${result.errorCode}`,
+            );
+          }
+          const uri = await prepareAsset(result.assets?.[0]);
+          if (uri) {
+            imageUris.push(uri);
+          }
+          if (!uri || result.didCancel) {
+            break;
+          }
+          continueCapturing = await askContinueCamera();
+        }
+      } else {
+        const result = await launchImageLibrary({
+          mediaType: 'photo',
+          includeBase64: false,
+          maxWidth: 2200,
+          maxHeight: 2200,
+          quality: 0.9,
+          selectionLimit: 0,
+          assetRepresentationMode: 'compatible',
+        });
+        if (result.errorCode) {
+          throw new Error(
+            result.errorMessage || `图片选择错误：${result.errorCode}`,
+          );
+        }
+        for (const asset of result.assets || []) {
+          const uri = await prepareAsset(asset);
+          if (uri) {
+            imageUris.push(uri);
+          }
+        }
+      }
+      if (!imageUris.length) {
+        return;
+      }
+      const essay = await createEssay(imageUris);
+      setSelected(essay);
+      setScreen('detail');
+      await refresh();
+      runEssayPipeline(essay).then(refresh).catch(refresh);
+    } catch (error) {
+      Alert.alert(
+        '无法获取图片',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
   };
   if (!ready || !settings) {
     return (

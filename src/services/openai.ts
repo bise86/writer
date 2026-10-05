@@ -352,19 +352,27 @@ export async function runResponse(
 }
 
 export async function visionResponse(
-  imageUri: string,
+  imageUris: string | string[],
   instructions: string,
   settings: AppSettings,
   options: RequestOptions = {},
 ) {
-  const imageUrl = await imageAsDataUri(imageUri);
+  const uris = Array.isArray(imageUris) ? imageUris : [imageUris];
+  if (!uris.length) {
+    throw new Error('没有可用于云端识别的图片');
+  }
+  const images = await Promise.all(uris.map(imageAsDataUri));
   return runResponse(
     [
       {
         role: 'user',
         content: [
           {type: 'input_text', text: '请识别这张作文图片。'},
-          {type: 'input_image', image_url: imageUrl, detail: 'high'},
+          ...images.map(imageUrl => ({
+            type: 'input_image' as const,
+            image_url: imageUrl,
+            detail: 'high' as const,
+          })),
         ],
       },
     ],

@@ -6,7 +6,7 @@ import {
   updateEssay,
   updateStep,
 } from '../src/db/database';
-import {cloudOcr, localOcr, reconcileOcr} from '../src/services/ocr';
+import {cloudOcr, localOcrPages, reconcileOcr} from '../src/services/ocr';
 import {
   retryEssay,
   runEssayPipeline,
@@ -25,7 +25,7 @@ jest.mock('../src/db/database', () => ({
   updateStep: jest.fn(),
 }));
 jest.mock('../src/services/ocr', () => ({
-  localOcr: jest.fn(),
+  localOcrPages: jest.fn(),
   cloudOcr: jest.fn(),
   reconcileOcr: jest.fn(),
 }));
@@ -67,6 +67,7 @@ beforeEach(() => {
     id: 'essay-1',
     title: '',
     imageUri: 'file:///essay.jpg',
+    imageUris: ['file:///essay.jpg'],
     status: 'queued',
     localOcr: '',
     visionOcr: '',
@@ -107,7 +108,7 @@ beforeEach(() => {
       );
     },
   );
-  (localOcr as jest.Mock).mockResolvedValue({text});
+  (localOcrPages as jest.Mock).mockResolvedValue({text});
   (cloudOcr as jest.Mock).mockResolvedValue({text});
   (reconcileOcr as jest.Mock).mockResolvedValue({text, corrections: '一致'});
   create.mockResolvedValue({
@@ -145,7 +146,7 @@ test('评分失败时保留识别结果，不生成基础分数，重试从评�
   await retryEssay(essay.id);
   expect(essay.status).toBe('completed');
   expect(create).toHaveBeenCalledTimes(2);
-  expect(localOcr).toHaveBeenCalledTimes(1);
+  expect(localOcrPages).toHaveBeenCalledTimes(1);
   expect(cloudOcr).toHaveBeenCalledTimes(1);
   expect(reconcileOcr).toHaveBeenCalledTimes(1);
 });
@@ -206,7 +207,7 @@ test('同一作文不能并发提交，当前处理不受第二次点击影响',
   const pendingOcr = new Promise<{text: string}>(resolve => {
     release = resolve;
   });
-  (localOcr as jest.Mock).mockReturnValueOnce(pendingOcr);
+  (localOcrPages as jest.Mock).mockReturnValueOnce(pendingOcr);
   const first = runEssayPipeline({...essay});
   await expect(runEssayPipeline({...essay})).rejects.toThrow('正在处理中');
   release({text});
@@ -219,7 +220,7 @@ test('校对失败后仅重新校对和评分', async () => {
   (reconcileOcr as jest.Mock).mockRejectedValueOnce(new Error('校对失败'));
   await expect(runEssayPipeline({...essay})).rejects.toThrow('校对失败');
   await retryEssay(essay.id);
-  expect(localOcr).toHaveBeenCalledTimes(1);
+  expect(localOcrPages).toHaveBeenCalledTimes(1);
   expect(cloudOcr).toHaveBeenCalledTimes(1);
   expect(reconcileOcr).toHaveBeenCalledTimes(2);
   expect(essay.status).toBe('completed');
