@@ -1,13 +1,14 @@
 import {AppSettings} from './types';
 
 export const REASONING_LEVELS = ['none', 'low', 'high', 'max'] as const;
+export const OUTPUT_TOKEN_OPTIONS = [4000, 8000, 16000, 32000, 64000] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   modelName: 'deepseek-flash',
   reasoningEffort: 'high',
   contextWindow: 1_000_000,
   compactionThreshold: 0.8,
-  maxOutputTokens: 5000,
+  maxOutputTokens: 32000,
   retryCount: 1,
   apiBaseUrl: 'https://api.deepseek.com',
   apiKey: 'sk-5bf8ed2e47414c9892d5776399f7c042',

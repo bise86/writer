@@ -116,6 +116,15 @@ async function initializeDatabase() {
     }
     await database.executeSql('PRAGMA user_version = 3');
   }
+  if (version.rows.item(0).user_version < 4) {
+    // 5K was the previous application default. Move only that untouched value
+    // to the new 32K default; user-selected output budgets remain unchanged.
+    await database.executeSql(
+      'UPDATE settings SET value = ? WHERE key = ? AND value = ?',
+      [String(DEFAULT_SETTINGS.maxOutputTokens), 'maxOutputTokens', '5000'],
+    );
+    await database.executeSql('PRAGMA user_version = 4');
+  }
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await database.executeSql(
       'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',

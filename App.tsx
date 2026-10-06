@@ -36,7 +36,11 @@ import {
   StepId,
 } from './src/types';
 import {retryEssay, runEssayPipeline} from './src/services/pipeline';
-import {REASONING_LEVELS, validateSettings} from './src/settings';
+import {
+  OUTPUT_TOKEN_OPTIONS,
+  REASONING_LEVELS,
+  validateSettings,
+} from './src/settings';
 import {cropImage, CropPreset, persistImage} from './src/services/images';
 import Startup, {StartupData} from './src/components/Startup';
 
@@ -605,7 +609,24 @@ function Settings({
           '上下文大小（token，1M = 1,000,000）',
           'numeric',
         )}
-        {field('maxOutputTokens', '输出长度（token）', 'numeric')}
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>输出长度（token）</Text>
+          <Text style={styles.muted}>
+            包含模型思考和最终结果；当前默认 32K。
+          </Text>
+          <View style={styles.actionRow}>
+            {OUTPUT_TOKEN_OPTIONS.map(item => (
+              <Button
+                key={item}
+                title={`${item / 1000}K`}
+                secondary={Number(settings.maxOutputTokens) !== item}
+                onPress={() =>
+                  setSettings({...settings, maxOutputTokens: item})
+                }
+              />
+            ))}
+          </View>
+        </View>
         {field('retryCount', '失败重试次数（0 表示不重试）', 'numeric')}
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>

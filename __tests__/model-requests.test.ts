@@ -67,7 +67,7 @@ test('GPT 将上下文和比例转换成受支持的阈值，并关闭隐式截�
   expect(create).toHaveBeenCalledWith(
     expect.objectContaining({
       context_management: [{type: 'compaction', compact_threshold: 800000}],
-      max_output_tokens: 5000,
+      max_output_tokens: 32000,
       reasoning: {effort: 'high'},
       truncation: 'disabled',
     }),

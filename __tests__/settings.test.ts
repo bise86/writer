@@ -3,6 +3,7 @@ import {
   DEFAULT_SETTINGS,
   legacyDefaultChanges,
   normalizeReasoningEffort,
+  OUTPUT_TOKEN_OPTIONS,
 } from '../src/settings';
 import {runResponse, visionResponse} from '../src/services/openai';
 
@@ -71,6 +72,8 @@ test('新默认设置用于实际 SDK 请求', async () => {
     }),
   );
   expect(DEFAULT_SETTINGS.contextWindow).toBe(1_000_000);
+  expect(DEFAULT_SETTINGS.maxOutputTokens).toBe(32_000);
+  expect(OUTPUT_TOKEN_OPTIONS).toEqual([4000, 8000, 16000, 32000, 64000]);
 });
 
 test.each(['none', 'low', 'high', 'max'] as const)(
