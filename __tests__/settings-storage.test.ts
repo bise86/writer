@@ -10,6 +10,8 @@ jest.mock('react-native-fs', () => ({}));
 
 let stored: Record<string, string>;
 let version: number;
+let essayColumns: string[];
+let essayRows: {id: string; image_uri: string; image_uris?: string}[];
 let database: typeof import('../src/db/database');
 
 function result(items: object[]) {
@@ -23,8 +25,35 @@ beforeEach(() => {
   jest.clearAllMocks();
   stored = {};
   version = 0;
+  essayColumns = [];
+  essayRows = [];
   mockExecute.mockImplementation(
     async (sql: string, parameters: string[] = []) => {
+      if (sql.includes('CREATE TABLE IF NOT EXISTS essays')) {
+        if (!essayColumns.length) {
+          essayColumns = ['id', 'image_uri', 'image_uris'];
+        }
+      } else if (sql === 'PRAGMA table_info(essays)') {
+        return result(essayColumns.map(name => ({name})));
+      } else if (sql.startsWith('ALTER TABLE essays ADD COLUMN image_uris')) {
+        if (essayColumns.includes('image_uris')) {
+          // Android's native SQLite bridge rejects with an object, not Error.
+          throw {message: 'duplicate column name: image_uris', code: 1};
+        }
+        essayColumns.push('image_uris');
+        essayRows.forEach(item => (item.image_uris = '[]'));
+      } else if (sql.startsWith('SELECT id, image_uri FROM essays')) {
+        return result(
+          essayRows.filter(
+            item => !item.image_uris || item.image_uris === '[]',
+          ),
+        );
+      } else if (sql.startsWith('UPDATE essays SET image_uris')) {
+        const item = essayRows.find(value => value.id === parameters[1]);
+        if (item) {
+          item.image_uris = parameters[0];
+        }
+      }
       if (sql === 'PRAGMA user_version') {
         return result([{user_version: version}]);
       }
@@ -123,4 +152,36 @@ test('升级不会把自定义 GPT 模型配到新的默认服务商', async () 
   expect(loaded.modelName).toBe('gpt-4.1');
   expect(loaded.apiBaseUrl).toBe('https://api.openai.com/v1');
   expect(loaded.contextWindow).toBe(128000);
+});
+
+test('旧版单页作文升级后保留原图，不重复添加已经存在的列', async () => {
+  version = 2;
+  essayColumns = ['id', 'image_uri'];
+  essayRows = [{id: 'old-essay', image_uri: 'file:///旧作文.jpg'}];
+  await database.initDatabase();
+  expect(version).toBe(3);
+  expect(JSON.parse(essayRows[0].image_uris!)).toEqual(['file:///旧作文.jpg']);
+  expect(essayColumns.filter(name => name === 'image_uris')).toHaveLength(1);
+});
+
+test('中断过的迁移按实际表结构继续，保留已经保存的多页图片', async () => {
+  version = 2;
+  essayColumns = ['id', 'image_uri', 'image_uris'];
+  const images = JSON.stringify(['file:///1.jpg', 'file:///2.jpg']);
+  essayRows = [
+    {id: 'new-essay', image_uri: 'file:///1.jpg', image_uris: images},
+    {id: 'old-essay', image_uri: 'file:///3.jpg', image_uris: '[]'},
+  ];
+  await database.initDatabase();
+  expect(version).toBe(3);
+  expect(essayRows[0].image_uris).toBe(images);
+  expect(JSON.parse(essayRows[1].image_uris!)).toEqual(['file:///3.jpg']);
+});
+
+test('数据库操作失败后允许重新初始化，不永久缓存失败状态', async () => {
+  const error = {message: 'database is locked', code: 5};
+  mockExecute.mockRejectedValueOnce(error);
+  await expect(database.initDatabase()).rejects.toEqual(error);
+  await expect(database.initDatabase()).resolves.toBeUndefined();
+  expect(version).toBe(3);
 });

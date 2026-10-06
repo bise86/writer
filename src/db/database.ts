@@ -91,14 +91,18 @@ async function initializeDatabase() {
     await database.executeSql('PRAGMA user_version = 2');
   }
   if (version.rows.item(0).user_version < 3) {
-    try {
+    const [columns] = await database.executeSql('PRAGMA table_info(essays)');
+    let hasImageUris = false;
+    for (let i = 0; i < columns.rows.length; i += 1) {
+      hasImageUris ||= columns.rows.item(i).name === 'image_uris';
+    }
+    // Fresh installs already have this column. An interrupted upgrade may also
+    // have added it before user_version was written. Inspect instead of raising
+    // and attempting to recognize a platform-dependent native error object.
+    if (!hasImageUris) {
       await database.executeSql(
         "ALTER TABLE essays ADD COLUMN image_uris TEXT NOT NULL DEFAULT '[]'",
       );
-    } catch (error) {
-      if (!/duplicate column/i.test(String(error))) {
-        throw error;
-      }
     }
     const [essays] = await database.executeSql(
       "SELECT id, image_uri FROM essays WHERE image_uris = '[]' OR image_uris IS NULL",

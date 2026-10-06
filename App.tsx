@@ -24,9 +24,7 @@ import {
   clearEssaysBefore,
   deleteEssay,
   getEssay,
-  getSettings,
   getSteps,
-  initDatabase,
   listEssays,
   saveSettings,
 } from './src/db/database';
@@ -40,6 +38,7 @@ import {
 import {retryEssay, runEssayPipeline} from './src/services/pipeline';
 import {REASONING_LEVELS, validateSettings} from './src/settings';
 import {cropImage, CropPreset, persistImage} from './src/services/images';
+import Startup, {StartupData} from './src/components/Startup';
 
 const STEP_LABELS: Record<StepId, string> = {
   local_ocr: '本地 OCR 识别',
@@ -712,24 +711,19 @@ function Settings({
 }
 
 export default function App() {
-  const [ready, setReady] = useState(false);
-  const [essays, setEssays] = useState<Essay[]>([]);
+  return <Startup>{data => <ReadyApp initialData={data} />}</Startup>;
+}
+
+function ReadyApp({initialData}: {initialData: StartupData}) {
+  const [essays, setEssays] = useState(initialData.essays);
   const [selected, setSelected] = useState<Essay>();
   const selectedId = selected?.id;
-  const [settings, setSettings] = useState<AppSettings>();
+  const [settings, setSettings] = useState(initialData.settings);
   const [screen, setScreen] = useState<
     'home' | 'detail' | 'settings' | 'manage'
   >('home');
 
   const refresh = async () => setEssays(await listEssays());
-  useEffect(() => {
-    (async () => {
-      await initDatabase();
-      await refresh();
-      setSettings(await getSettings());
-      setReady(true);
-    })();
-  }, []);
   useEffect(() => {
     if (screen !== 'detail' || !selectedId) {
       return;
@@ -862,13 +856,6 @@ export default function App() {
       );
     }
   };
-  if (!ready || !settings) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <ActivityIndicator style={styles.loader} color="#2563eb" />
-      </SafeAreaView>
-    );
-  }
   if (screen === 'settings') {
     return (
       <Settings
@@ -929,7 +916,6 @@ export default function App() {
 const styles = StyleSheet.create({
   safe: {flex: 1, backgroundColor: '#f7f8fc'},
   container: {padding: 20, paddingBottom: 48},
-  loader: {flex: 1},
   header: {
     flexDirection: 'row',
     alignItems: 'center',
