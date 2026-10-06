@@ -85,7 +85,7 @@ beforeEach(() => {
 test('新安装只有一个模型配置', async () => {
   expect(await database.getSettings()).toEqual(DEFAULT_SETTINGS);
   expect(stored).not.toHaveProperty('visionModelName');
-  expect(version).toBe(4);
+  expect(version).toBe(5);
 });
 
 test('已有安装删除独立 OCR 设置，保留用户自定义主模型和密钥', async () => {
@@ -102,7 +102,7 @@ test('已有安装删除独立 OCR 设置，保留用户自定义主模型和密
   expect(settings.reasoningEffort).toBe('none');
   expect(settings).not.toHaveProperty('visionModelName');
   expect(stored).not.toHaveProperty('visionModelName');
-  expect(version).toBe(4);
+  expect(version).toBe(5);
 });
 
 test('最早的安装先迁移默认值，再删除旧 OCR 设置', async () => {
@@ -161,7 +161,7 @@ test('旧版单页作文升级后保留原图，不重复添加已经存在的�
   essayColumns = ['id', 'image_uri'];
   essayRows = [{id: 'old-essay', image_uri: 'file:///旧作文.jpg'}];
   await database.initDatabase();
-  expect(version).toBe(4);
+  expect(version).toBe(5);
   expect(JSON.parse(essayRows[0].image_uris!)).toEqual(['file:///旧作文.jpg']);
   expect(essayColumns.filter(name => name === 'image_uris')).toHaveLength(1);
 });
@@ -175,7 +175,7 @@ test('中断过的迁移按实际表结构继续，保留已经保存的多页�
     {id: 'old-essay', image_uri: 'file:///3.jpg', image_uris: '[]'},
   ];
   await database.initDatabase();
-  expect(version).toBe(4);
+  expect(version).toBe(5);
   expect(essayRows[0].image_uris).toBe(images);
   expect(JSON.parse(essayRows[1].image_uris!)).toEqual(['file:///3.jpg']);
 });
@@ -184,7 +184,7 @@ test('升级时把未修改的旧默认 5K 改为 32K，保留用户自定义输
   version = 3;
   stored = {maxOutputTokens: '5000'};
   await database.initDatabase();
-  expect(version).toBe(4);
+  expect(version).toBe(5);
   expect(stored.maxOutputTokens).toBe('32000');
 
   jest.resetModules();
@@ -192,7 +192,7 @@ test('升级时把未修改的旧默认 5K 改为 32K，保留用户自定义输
   stored = {maxOutputTokens: '8192'};
   database = require('../src/db/database');
   await database.initDatabase();
-  expect(version).toBe(4);
+  expect(version).toBe(5);
   expect(stored.maxOutputTokens).toBe('8192');
 });
 
@@ -201,5 +201,5 @@ test('数据库操作失败后允许重新初始化，不永久缓存失败状�
   mockExecute.mockRejectedValueOnce(error);
   await expect(database.initDatabase()).rejects.toEqual(error);
   await expect(database.initDatabase()).resolves.toBeUndefined();
-  expect(version).toBe(4);
+  expect(version).toBe(5);
 });

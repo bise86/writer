@@ -1,6 +1,14 @@
 import SQLite, {SQLiteDatabase, ResultSet} from 'react-native-sqlite-storage';
 import RNFS from 'react-native-fs';
-import {AppSettings, Essay, PipelineStep, StepId, StepStatus} from '../types';
+import {
+  AppSettings,
+  Essay,
+  PipelineStep,
+  ScoreAttempt,
+  StepId,
+  StepStatus,
+} from '../types';
+import {recognizedTitle} from '../services/essay-text';
 import {
   DEFAULT_SETTINGS,
   legacyDefaultChanges,
@@ -125,6 +133,23 @@ async function initializeDatabase() {
     );
     await database.executeSql('PRAGMA user_version = 4');
   }
+  await database.executeSql(`CREATE TABLE IF NOT EXISTS score_attempts (
+    id INTEGER PRIMARY KEY AUTOINCREMENT,
+    essay_id TEXT NOT NULL,
+    source_text TEXT NOT NULL,
+    output TEXT NOT NULL,
+    feedback TEXT NOT NULL,
+    created_at TEXT NOT NULL
+  )`);
+  if (version.rows.item(0).user_version < 5) {
+    // Migrate the previous application default. Any user-selected budget remains
+    // intact; missing values are seeded from DEFAULT_SETTINGS below.
+    await database.executeSql(
+      'UPDATE settings SET value = ? WHERE key = ? AND value = ?',
+      [String(DEFAULT_SETTINGS.maxOutputTokens), 'maxOutputTokens', '5000'],
+    );
+    await database.executeSql('PRAGMA user_version = 5');
+  }
   for (const [key, value] of Object.entries(DEFAULT_SETTINGS)) {
     await database.executeSql(
       'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
@@ -198,7 +223,11 @@ export async function getEssay(id: string): Promise<Essay | undefined> {
   }
   return {
     id: value.id,
-    title: value.title,
+    title:
+      value.title ||
+      recognizedTitle(
+        value.canonical_text || value.vision_ocr || value.local_ocr || '',
+      ),
     imageUri: value.image_uri,
     imageUris: parseImageUris(value.image_uris, value.image_uri),
     localOcr: value.local_ocr,
@@ -223,7 +252,11 @@ export async function listEssays(): Promise<Essay[]> {
     const value = result.rows.item(i);
     values.push({
       id: value.id,
-      title: value.title,
+      title:
+        value.title ||
+        recognizedTitle(
+          value.canonical_text || value.vision_ocr || value.local_ocr || '',
+        ),
       imageUri: value.image_uri,
       imageUris: parseImageUris(value.image_uris, value.image_uri),
       localOcr: value.local_ocr,
@@ -355,6 +388,9 @@ export async function deleteEssay(essayId: string) {
     [essayId],
   );
   await removeEssayImages(images);
+  await database.executeSql('DELETE FROM score_attempts WHERE essay_id = ?', [
+    essayId,
+  ]);
   await database.executeSql('DELETE FROM pipeline_steps WHERE essay_id = ?', [
     essayId,
   ]);
@@ -372,6 +408,10 @@ export async function clearEssaysBefore(before: Date) {
     [cutoff],
   );
   await removeEssayImages(images);
+  await database.executeSql(
+    'DELETE FROM score_attempts WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
+    [cutoff],
+  );
   await database.executeSql(
     'DELETE FROM pipeline_steps WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
     [cutoff],
@@ -454,4 +494,40 @@ export async function saveSettings(settings: AppSettings) {
 
 export async function initDatabase() {
   await db();
+}
+
+export async function getScoreAttempts(
+  essayId: string,
+): Promise<ScoreAttempt[]> {
+  const database = await db();
+  const [result] = await database.executeSql(
+    'SELECT * FROM score_attempts WHERE essay_id = ? ORDER BY id',
+    [essayId],
+  );
+  const attempts: ScoreAttempt[] = [];
+  for (let i = 0; i < result.rows.length; i += 1) {
+    const item = result.rows.item(i);
+    attempts.push({
+      id: item.id,
+      essayId,
+      sourceText: item.source_text,
+      output: item.output,
+      feedback: item.feedback,
+      createdAt: item.created_at,
+    });
+  }
+  return attempts;
+}
+
+export async function saveScoreAttempt(
+  essayId: string,
+  sourceText: string,
+  output: string,
+  feedback: string,
+) {
+  const database = await db();
+  await database.executeSql(
+    'INSERT INTO score_attempts (essay_id, source_text, output, feedback, created_at) VALUES (?, ?, ?, ?, ?)',
+    [essayId, sourceText, output, feedback, new Date().toISOString()],
+  );
 }

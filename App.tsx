@@ -365,6 +365,15 @@ function ManageEssays({
   );
 }
 
+function StageOutput({title, value}: {title: string; value: string}) {
+  return (
+    <View style={styles.stageOutput}>
+      <Text style={styles.stageOutputTitle}>{title}</Text>
+      <Text style={styles.stageOutputText}>{value || '等待该阶段输出'}</Text>
+    </View>
+  );
+}
+
 function Detail({
   essay,
   onBack,
@@ -375,11 +384,23 @@ function Detail({
   onRetry: () => void;
 }) {
   const [steps, setSteps] = useState<PipelineStep[]>([]);
+  const [title, setTitle] = useState(essay.title || '');
+  const [activeTab, setActiveTab] = useState<'stage' | 'result'>(
+    essay.status === 'completed' ? 'result' : 'stage',
+  );
   useEffect(() => {
     getSteps(essay.id).then(setSteps);
     const timer = setInterval(() => getSteps(essay.id).then(setSteps), 1200);
     return () => clearInterval(timer);
   }, [essay.id, essay.status]);
+  useEffect(() => {
+    if (essay.title) {
+      setTitle(essay.title);
+    }
+  }, [essay.title]);
+  useEffect(() => {
+    setActiveTab(essay.status === 'completed' ? 'result' : 'stage');
+  }, [essay.status]);
   const score = useMemo(() => {
     try {
       return essay.scoreJson
@@ -418,31 +439,73 @@ function Detail({
           </ScrollView>
           <TextInput
             style={styles.titleInput}
-            defaultValue={essay.title || '未命名作文'}
-            placeholder="作文标题"
+            value={
+              title ||
+              (essay.status === 'completed' ? '未命名作文' : '正在识别标题…')
+            }
+            editable={false}
+            accessibilityLabel="作文标题（由 OCR 识别）"
           />
         </Card>
-        <Progress steps={steps} />
-        {essay.status === 'failed' && (
-          <Card style={styles.errorCard}>
-            <Text style={styles.errorText}>{essay.error || '处理失败'}</Text>
-            <Button title="重试全部流程" onPress={onRetry} />
-          </Card>
-        )}
-        {!!essay.corrections && (
-          <Card>
-            <Text style={styles.cardTitle}>OCR 对照说明</Text>
-            <Text style={styles.body}>{essay.corrections}</Text>
-          </Card>
-        )}
-        {!!essay.canonicalText && (
-          <Card>
-            <Text style={styles.cardTitle}>识别正文</Text>
-            <Text style={styles.essayText}>{essay.canonicalText}</Text>
-          </Card>
-        )}
-        {essay.status === 'completed' && (
+        <View style={styles.tabBar}>
+          <Pressable
+            onPress={() => setActiveTab('stage')}
+            style={[styles.tab, activeTab === 'stage' && styles.activeTab]}>
+            <Text
+              style={[
+                styles.tabText,
+                activeTab === 'stage' && styles.activeTabText,
+              ]}>
+              阶段输出
+            </Text>
+          </Pressable>
+          {essay.status === 'completed' && (
+            <Pressable
+              onPress={() => setActiveTab('result')}
+              style={[styles.tab, activeTab === 'result' && styles.activeTab]}>
+              <Text
+                style={[
+                  styles.tabText,
+                  activeTab === 'result' && styles.activeTabText,
+                ]}>
+                最终结果
+              </Text>
+            </Pressable>
+          )}
+        </View>
+        {activeTab === 'stage' && (
           <>
+            <Progress steps={steps} />
+            {essay.status === 'failed' && (
+              <Card style={styles.errorCard}>
+                <Text style={styles.errorText}>
+                  {essay.error || '处理失败'}
+                </Text>
+                <Button title="重试全部流程" onPress={onRetry} />
+              </Card>
+            )}
+            <Card>
+              <Text style={styles.sectionHeading}>阶段输出</Text>
+              <StageOutput title="本地 OCR 结果" value={essay.localOcr} />
+              <StageOutput title="云端图片识别结果" value={essay.visionOcr} />
+              <StageOutput
+                title="双路对照后的正文"
+                value={essay.canonicalText}
+              />
+              <StageOutput title="对照说明" value={essay.corrections} />
+              <StageOutput
+                title="评分阶段状态"
+                value={
+                  steps.find(item => item.step === 'scoring')?.detail ||
+                  '等待处理'
+                }
+              />
+            </Card>
+          </>
+        )}
+        {activeTab === 'result' && essay.status === 'completed' && (
+          <>
+            <Text style={styles.sectionHeading}>最终结果</Text>
             <Card style={styles.scoreCard}>
               <Text style={styles.scoreLabel}>总评</Text>
               <Text style={styles.score}>
@@ -452,6 +515,57 @@ function Detail({
               <Text style={styles.band}>{score.bandName || score.bandId}</Text>
               <Text style={styles.body}>{score.summary}</Text>
             </Card>
+            {score.dimensionFeedback && (
+              <Card>
+                <Text style={styles.cardTitle}>各部分优缺点与改进</Text>
+                {[
+                  ['thesis', '审题与立意'],
+                  ['content', '内容与选材'],
+                  ['structure', '结构与技法'],
+                  ['language', '语言与表达'],
+                  ['format', '书写与规范'],
+                ].map(([key, label]) => {
+                  const feedback = score.dimensionFeedback?.[key];
+                  return feedback ? (
+                    <View key={key} style={styles.feedbackBlock}>
+                      <Text style={styles.feedbackTitle}>{label}</Text>
+                      <Text style={styles.feedbackLine}>
+                        优点：{feedback.strengths.join('；') || '暂无'}
+                      </Text>
+                      <Text style={styles.feedbackLine}>
+                        问题：{feedback.weaknesses.join('；') || '暂无'}
+                      </Text>
+                      <Text style={styles.feedbackImprove}>
+                        改进：{feedback.improvements.join('；')}
+                      </Text>
+                    </View>
+                  ) : null;
+                })}
+              </Card>
+            )}
+            {!!score.paragraphReviews?.length && (
+              <Card>
+                <Text style={styles.cardTitle}>分段批注</Text>
+                {score.paragraphReviews.map(review => (
+                  <View
+                    key={review.paragraphIndex}
+                    style={styles.feedbackBlock}>
+                    <Text style={styles.feedbackTitle}>
+                      第 {review.paragraphIndex} 段
+                    </Text>
+                    <Text style={styles.feedbackLine}>
+                      优点：{review.strengths.join('；') || '暂无'}
+                    </Text>
+                    <Text style={styles.feedbackLine}>
+                      问题：{review.weaknesses.join('；') || '暂无'}
+                    </Text>
+                    <Text style={styles.feedbackImprove}>
+                      改进：{review.improvements.join('；')}
+                    </Text>
+                  </View>
+                ))}
+              </Card>
+            )}
             <Card>
               <Text style={styles.cardTitle}>分项评分</Text>
               {[
@@ -1060,8 +1174,8 @@ const styles = StyleSheet.create({
     backgroundColor: '#fff7f7',
   },
   preview: {
-    width: '100%',
-    height: 260,
+    width: 280,
+    height: 320,
     borderRadius: 12,
     backgroundColor: '#e2e8f0',
     resizeMode: 'contain',
@@ -1074,6 +1188,60 @@ const styles = StyleSheet.create({
     borderBottomColor: '#e2e8f0',
     paddingVertical: 10,
     marginTop: 8,
+  },
+  tabBar: {
+    flexDirection: 'row',
+    backgroundColor: '#e2e8f0',
+    borderRadius: 12,
+    padding: 4,
+    marginBottom: 14,
+  },
+  tab: {
+    flex: 1,
+    alignItems: 'center',
+    paddingVertical: 11,
+    borderRadius: 9,
+  },
+  activeTab: {backgroundColor: '#fff', elevation: 1},
+  tabText: {fontSize: 14, color: '#64748b', fontWeight: '700'},
+  activeTabText: {color: '#1d4ed8'},
+  sectionHeading: {
+    fontSize: 19,
+    fontWeight: '800',
+    color: '#0f172a',
+    marginBottom: 10,
+  },
+  stageOutput: {
+    borderTopWidth: 1,
+    borderTopColor: '#e2e8f0',
+    paddingTop: 10,
+    marginTop: 10,
+  },
+  stageOutputTitle: {fontSize: 14, fontWeight: '800', color: '#334155'},
+  stageOutputText: {
+    fontSize: 14,
+    lineHeight: 22,
+    color: '#475569',
+    marginTop: 5,
+  },
+  feedbackBlock: {
+    borderLeftWidth: 3,
+    borderLeftColor: '#93c5fd',
+    paddingLeft: 12,
+    marginBottom: 15,
+  },
+  feedbackTitle: {
+    fontSize: 15,
+    fontWeight: '800',
+    color: '#1e3a8a',
+    marginBottom: 5,
+  },
+  feedbackLine: {fontSize: 13, lineHeight: 20, color: '#475569'},
+  feedbackImprove: {
+    fontSize: 13,
+    lineHeight: 20,
+    color: '#b45309',
+    marginTop: 3,
   },
   body: {fontSize: 14, lineHeight: 22, color: '#334155'},
   essayText: {fontSize: 15, lineHeight: 26, color: '#1e293b'},

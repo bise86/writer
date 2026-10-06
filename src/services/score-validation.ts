@@ -1,92 +1,208 @@
 import rules from '../assets/scoring-rules.json';
 import {ScoreResult} from '../types';
+import {essayParagraphs} from './essay-text';
 
-function stringArray(value: unknown): value is string[] {
-  return Array.isArray(value) && value.every(item => typeof item === 'string');
+function isObject(value: unknown): value is Record<string, any> {
+  return !!value && typeof value === 'object' && !Array.isArray(value);
 }
 
-/** Reject incomplete/invalid model results; never manufacture a fallback grade. */
+function stringArray(value: unknown): value is string[] {
+  return (
+    Array.isArray(value) &&
+    value.every(item => typeof item === 'string' && item.trim())
+  );
+}
+
+export class ScoreValidationError extends Error {
+  constructor(public issues: string[]) {
+    super(`评分校验未通过：\n${issues.join('\n')}`);
+  }
+}
+
+function validateFeedback(field: string, value: unknown, issues: string[]) {
+  if (!isObject(value)) {
+    issues.push(
+      `${field} 缺失，必须包含 strengths、weaknesses、improvements 三个字符串数组`,
+    );
+    return;
+  }
+  for (const key of ['strengths', 'weaknesses', 'improvements']) {
+    if (!stringArray(value[key])) {
+      issues.push(`${field}.${key} 必须是字符串数组`);
+    }
+  }
+  if (!Array.isArray(value.improvements) || !value.improvements.length) {
+    issues.push(`${field}.improvements 至少提供一条可执行建议`);
+  }
+}
+
+/** Reject incomplete results and return precise issues for the next model turn. */
 export function validateScore(
-  result: ScoreResult,
+  value: unknown,
   originalText: string,
 ): ScoreResult {
-  const invalid = () =>
-    new Error('模型评分结构或分数不符合评分细则，结果未保存，请重试');
-  if (
-    !result ||
-    typeof result !== 'object' ||
-    !Number.isFinite(result.score) ||
-    !result.dimensionScores ||
-    typeof result.dimensionScores !== 'object' ||
-    typeof result.summary !== 'string' ||
-    !result.summary.trim() ||
-    ![
-      result.strengths,
-      result.weaknesses,
-      result.improvements,
-      result.suggestions,
-    ].every(stringArray) ||
-    !Array.isArray(result.annotations)
-  ) {
-    throw invalid();
+  const issues: string[] = [];
+  if (!isObject(value)) {
+    throw new ScoreValidationError(['根节点必须是 JSON 对象']);
   }
+  for (const key of ['summary']) {
+    if (typeof value[key] !== 'string' || !value[key].trim()) {
+      issues.push(`${key} 必须是非空字符串`);
+    }
+  }
+  for (const key of [
+    'strengths',
+    'weaknesses',
+    'improvements',
+    'suggestions',
+  ]) {
+    if (!stringArray(value[key])) {
+      issues.push(`${key} 必须是字符串数组`);
+    }
+  }
+  for (const key of ['improvements', 'suggestions']) {
+    if (!Array.isArray(value[key]) || !value[key].length) {
+      issues.push(`${key} 至少包含一条可执行建议`);
+    }
+  }
+
   let total = 0;
   for (const dimension of rules.dimensions) {
-    const score = result.dimensionScores[dimension.id];
-    if (!Number.isFinite(score) || score < 0 || score > dimension.max) {
-      throw invalid();
+    const score = value.dimensionScores?.[dimension.id];
+    if (!Number.isInteger(score) || score < 0 || score > dimension.max) {
+      issues.push(
+        `dimensionScores.${dimension.id} 必须是 0..${
+          dimension.max
+        } 的整数，收到 ${JSON.stringify(score)}`,
+      );
+    } else {
+      total += score;
     }
-    total += score;
+    validateFeedback(
+      `dimensionFeedback.${dimension.id}`,
+      value.dimensionFeedback?.[dimension.id],
+      issues,
+    );
   }
-  if (
-    Math.abs(total - result.score) > 0.001 ||
-    total < 0 ||
-    total > rules.total
-  ) {
-    throw invalid();
+  if (!Number.isInteger(value.score) || value.score !== total || total > 100) {
+    issues.push(
+      `score 必须等于五项分数之和 ${total}，收到 ${JSON.stringify(
+        value.score,
+      )}`,
+    );
   }
-  const band = rules.bands.find(item => item.id === result.bandId);
-  if (result.bandId === 'unqualified') {
+  const band = rules.bands.find(item => item.id === value.bandId);
+  if (value.bandId === 'unqualified') {
     if (total >= rules.passingScore) {
-      throw invalid();
+      issues.push('unqualified 只适用于总分低于 60');
     }
-  } else if (
-    !band ||
-    total < band.min ||
-    total > band.max ||
-    Object.entries(band.floor).some(
-      ([key, minimum]) => result.dimensionScores[key] < minimum,
-    )
-  ) {
-    throw invalid();
+  } else if (!band) {
+    issues.push(
+      'bandId 只能为 pass、good、high、excellent、model 或 unqualified',
+    );
+  } else {
+    if (total < band.min || total > band.max) {
+      issues.push(
+        `bandId=${band.id} 要求总分 ${band.min}..${band.max}，当前 ${total}`,
+      );
+    }
+    for (const [key, minimum] of Object.entries(band.floor)) {
+      if (value.dimensionScores?.[key] < minimum) {
+        issues.push(
+          `${band.id} 档要求 dimensionScores.${key} 至少 ${minimum}，请按实际表现重新定档`,
+        );
+      }
+    }
   }
-  const annotations = result.annotations.map(annotation => {
+
+  const paragraphs = essayParagraphs(originalText);
+  if (!Array.isArray(value.paragraphReviews)) {
+    issues.push(
+      'paragraphReviews 必须逐段输出 paragraphIndex、strengths、weaknesses、improvements',
+    );
+  } else {
+    for (const paragraph of paragraphs) {
+      const matches = value.paragraphReviews.filter(
+        (item: any) => item?.paragraphIndex === paragraph.index,
+      );
+      if (matches.length !== 1) {
+        issues.push(
+          `paragraphReviews 必须恰好包含第 ${paragraph.index} 段的一份评价`,
+        );
+      } else {
+        validateFeedback(
+          `paragraphReviews[第${paragraph.index}段]`,
+          matches[0],
+          issues,
+        );
+      }
+    }
     if (
-      !annotation ||
-      typeof annotation.quote !== 'string' ||
-      !annotation.quote.trim() ||
-      typeof annotation.comment !== 'string' ||
-      typeof annotation.suggestion !== 'string' ||
-      !['strength', 'improvement', 'grammar', 'structure', 'style'].includes(
-        annotation.type,
+      value.paragraphReviews.some(
+        (item: any) =>
+          !Number.isInteger(item?.paragraphIndex) ||
+          item.paragraphIndex < 1 ||
+          item.paragraphIndex > paragraphs.length,
       )
     ) {
-      throw invalid();
+      issues.push(`paragraphIndex 必须在 1..${paragraphs.length} 范围内`);
     }
-    const index = originalText.indexOf(annotation.quote);
-    if (index < 0) {
-      throw new Error('模型批注引用了原文不存在的句子，结果未保存，请重试');
-    }
-    const supplied = annotation.start;
-    const start =
-      typeof supplied === 'number' &&
-      Number.isInteger(supplied) &&
-      supplied >= 0 &&
-      originalText.slice(supplied, supplied + annotation.quote.length) ===
-        annotation.quote
-        ? supplied
-        : index;
-    return {...annotation, start, end: start + annotation.quote.length};
-  });
-  return {...result, annotations};
+  }
+
+  const annotations: ScoreResult['annotations'] = [];
+  if (!Array.isArray(value.annotations) || !value.annotations.length) {
+    issues.push('annotations 至少包含一条引用原文的具体批注');
+  } else {
+    value.annotations.forEach((annotation: any, index: number) => {
+      const path = `annotations[${index}]`;
+      if (!isObject(annotation)) {
+        issues.push(`${path} 必须是对象`);
+        return;
+      }
+      for (const key of ['quote', 'comment', 'suggestion']) {
+        if (typeof annotation[key] !== 'string' || !annotation[key].trim()) {
+          issues.push(`${path}.${key} 必须是非空字符串`);
+        }
+      }
+      if (
+        !['strength', 'improvement', 'grammar', 'structure', 'style'].includes(
+          annotation.type,
+        )
+      ) {
+        issues.push(
+          `${path}.type 必须为 strength|improvement|grammar|structure|style`,
+        );
+      }
+      const quoteIndex =
+        typeof annotation.quote === 'string'
+          ? originalText.indexOf(annotation.quote)
+          : -1;
+      if (quoteIndex < 0) {
+        issues.push(`${path}.quote 必须逐字引用原文中的连续文字`);
+        return;
+      }
+      const start =
+        Number.isInteger(annotation.start) &&
+        annotation.start >= 0 &&
+        originalText.slice(
+          annotation.start,
+          annotation.start + annotation.quote.length,
+        ) === annotation.quote
+          ? annotation.start
+          : quoteIndex;
+      annotations.push({
+        ...annotation,
+        start,
+        end: start + annotation.quote.length,
+      } as ScoreResult['annotations'][number]);
+    });
+  }
+  if (issues.length) {
+    throw new ScoreValidationError(issues);
+  }
+  return {
+    ...value,
+    bandName: band?.name || '未达强化及格',
+    annotations,
+  } as ScoreResult;
 }

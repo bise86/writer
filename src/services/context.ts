@@ -13,6 +13,7 @@ export type RequestProgress = (
 ) => void | Promise<void>;
 
 export interface RequestOptions {
+  signal?: AbortSignal;
   // Only explicitly supplied historical text is eligible for summarization.
   // The current input and instructions (including the rubric) are immutable.
   history?: HistoryMessage[];

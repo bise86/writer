@@ -20,7 +20,12 @@ import {
   usesOpenAIContext,
   validateHistory,
 } from './context';
-import {completedText, requestWithRetry, statusOf} from './request';
+import {
+  checkCancelled,
+  completedText,
+  requestWithRetry,
+  statusOf,
+} from './request';
 
 export interface ResponseUsage {
   inputTokens: number;
@@ -107,25 +112,46 @@ async function summarizeHistory(
       );
       const response = await requestWithRetry(
         () =>
-          client.responses.create({
-            model,
-            instructions: `${SUMMARY_INSTRUCTIONS}\n请尽量控制在 ${Math.max(
-              32,
-              Math.floor(summaryBudget / 4),
-            )} 字以内。`,
-            input: chunks[i],
-            max_output_tokens: Math.min(
-              settings.maxOutputTokens,
-              summaryBudget,
-            ),
-            reasoning: {
-              effort: normalizeReasoningEffort(settings.reasoningEffort),
-            },
-            store: false,
-          }),
+          options.signal
+            ? client.responses.create(
+                {
+                  model,
+                  instructions: `${SUMMARY_INSTRUCTIONS}\n请尽量控制在 ${Math.max(
+                    32,
+                    Math.floor(summaryBudget / 4),
+                  )} 字以内。`,
+                  input: chunks[i],
+                  max_output_tokens: Math.min(
+                    settings.maxOutputTokens,
+                    summaryBudget,
+                  ),
+                  reasoning: {
+                    effort: normalizeReasoningEffort(settings.reasoningEffort),
+                  },
+                  store: false,
+                },
+                {signal: options.signal},
+              )
+            : client.responses.create({
+                model,
+                instructions: `${SUMMARY_INSTRUCTIONS}\n请尽量控制在 ${Math.max(
+                  32,
+                  Math.floor(summaryBudget / 4),
+                )} 字以内。`,
+                input: chunks[i],
+                max_output_tokens: Math.min(
+                  settings.maxOutputTokens,
+                  summaryBudget,
+                ),
+                reasoning: {
+                  effort: normalizeReasoningEffort(settings.reasoningEffort),
+                },
+                store: false,
+              }),
         settings.retryCount,
         '历史摘要',
         options.onProgress,
+        options.signal,
       );
       summaries.push(completedText(response));
     }
@@ -163,17 +189,32 @@ async function prepareInput(
       try {
         const result = await requestWithRetry(
           () =>
-            client.responses.inputTokens.count({
-              model,
-              input: current,
-              instructions,
-              reasoning: {
-                effort: normalizeReasoningEffort(settings.reasoningEffort),
-              },
-            }),
+            options.signal
+              ? client.responses.inputTokens.count(
+                  {
+                    model,
+                    input: current,
+                    instructions,
+                    reasoning: {
+                      effort: normalizeReasoningEffort(
+                        settings.reasoningEffort,
+                      ),
+                    },
+                  },
+                  {signal: options.signal},
+                )
+              : client.responses.inputTokens.count({
+                  model,
+                  input: current,
+                  instructions,
+                  reasoning: {
+                    effort: normalizeReasoningEffort(settings.reasoningEffort),
+                  },
+                }),
           settings.retryCount,
           '上下文计数',
           options.onProgress,
+          options.signal,
         );
         if (
           !Number.isSafeInteger(result.input_tokens) ||
@@ -217,14 +258,24 @@ async function prepareInput(
       await options.onProgress?.('正在压缩历史内容，保留当前作文及评分细则');
       const compacted = await requestWithRetry(
         () =>
-          client.responses.compact({
-            model,
-            input: history,
-            instructions: SUMMARY_INSTRUCTIONS,
-          }),
+          options.signal
+            ? client.responses.compact(
+                {
+                  model,
+                  input: history,
+                  instructions: SUMMARY_INSTRUCTIONS,
+                },
+                {signal: options.signal},
+              )
+            : client.responses.compact({
+                model,
+                input: history,
+                instructions: SUMMARY_INSTRUCTIONS,
+              }),
         settings.retryCount,
         '历史压缩',
         options.onProgress,
+        options.signal,
       );
       if (
         !Array.isArray(compacted.output) ||
@@ -280,6 +331,7 @@ export async function runResponse(
   model = settings.modelName,
   options: RequestOptions = {},
 ) {
+  checkCancelled(options.signal);
   const actual = validateSettings(settings);
   const client = clientFor(actual);
   const activeModel = model.trim();
@@ -314,10 +366,14 @@ export async function runResponse(
     }
     await options.onProgress?.('正在请求模型');
     const response = await requestWithRetry(
-      () => client.responses.create(request),
+      () =>
+        options.signal
+          ? client.responses.create(request, {signal: options.signal})
+          : client.responses.create(request),
       actual.retryCount,
       '模型请求',
       options.onProgress,
+      options.signal,
     );
     return {
       text: completedText(response),
@@ -328,6 +384,7 @@ export async function runResponse(
       } as ResponseUsage,
     };
   } catch (error) {
+    checkCancelled(options.signal);
     const status = statusOf(error);
     if (status === 401 || status === 403) {
       throw new Error(

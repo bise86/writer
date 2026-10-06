@@ -66,4 +66,21 @@ export interface ScoreResult {
   improvements: string[];
   suggestions: string[];
   annotations: Annotation[];
+  dimensionFeedback?: Record<string, WritingFeedback>;
+  paragraphReviews?: (WritingFeedback & {paragraphIndex: number})[];
+}
+
+export interface WritingFeedback {
+  strengths: string[];
+  weaknesses: string[];
+  improvements: string[];
+}
+
+export interface ScoreAttempt {
+  id: number;
+  essayId: string;
+  sourceText: string;
+  output: string;
+  feedback: string;
+  createdAt: string;
 }

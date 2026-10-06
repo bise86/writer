@@ -1,4 +1,3 @@
-import rules from '../assets/scoring-rules.json';
 import {
   getEssay,
   getSettings,
@@ -6,11 +5,13 @@ import {
   updateEssay,
   updateStep,
 } from '../db/database';
-import {AppSettings, Essay, ScoreResult, StepId} from '../types';
+import {Essay, StepId} from '../types';
 import {localOcrPages, cloudOcr, reconcileOcr} from './ocr';
-import {parseJson, runResponse} from './openai';
-import {RequestOptions, RequestProgress} from './context';
-import {validateScore} from './score-validation';
+import {RequestProgress} from './context';
+import {scoreEssay} from './scoring';
+import {recognizedTitle} from './essay-text';
+
+export {scoreEssay} from './scoring';
 
 export type ProgressCallback = (step: StepId, detail: string) => void;
 
@@ -41,31 +42,6 @@ async function step<T>(
   }
 }
 
-function scoreInstructions() {
-  return `你是严格、具体、克制的初中作文老师。按照以下 JSON 评分规则评分：\n${JSON.stringify(
-    rules,
-  )}\n\n要求：\n1. 独立给五个分项打分，分数不得超过分项上限；总分为分项之和。\n2. 先检查分项底线和封顶规则，再确定 bandId。\n3. 语言不生动、主题没有自然深化、材料空泛或结构流水账时，不得进入第三档。\n4. 不要因为有一个金句或某个修辞就加高分。\n5. annotations 必须引用原文短句，给出 start/end（无法定位时填 -1），说明哪里写得好或需要怎样改。\n6. 只输出 JSON，不要 Markdown。`;
-}
-
-export async function scoreEssay(
-  text: string,
-  settings?: AppSettings,
-  options: RequestOptions = {},
-): Promise<ScoreResult> {
-  if (!text.trim()) {
-    throw new Error('未识别到作文正文，不能评分');
-  }
-  const actualSettings = settings || (await getSettings());
-  const response = await runResponse(
-    text,
-    scoreInstructions(),
-    actualSettings,
-    actualSettings.modelName,
-    options,
-  );
-  return validateScore(parseJson<ScoreResult>(response.text), text);
-}
-
 export async function runEssayPipeline(
   essay: Essay,
   onProgress?: ProgressCallback,
@@ -90,6 +66,7 @@ export async function runEssayPipeline(
       updatedAt: new Date().toISOString(),
     });
     let localText = essay.localOcr;
+    let title = essay.title;
     const imageUris = essay.imageUris?.length
       ? essay.imageUris
       : [essay.imageUri];
@@ -98,8 +75,10 @@ export async function runEssayPipeline(
         localOcrPages(imageUris),
       );
       localText = local.text;
+      title = title || recognizedTitle(localText);
       await updateEssay(essay.id, {
         localOcr: localText,
+        title,
         updatedAt: new Date().toISOString(),
       });
     }
@@ -111,8 +90,10 @@ export async function runEssayPipeline(
         cloudOcr(imageUris, settings, {onProgress: report}),
       );
       visionText = vision.text;
+      title = title || recognizedTitle(visionText);
       await updateEssay(essay.id, {
         visionOcr: visionText,
+        title,
         updatedAt: new Date().toISOString(),
       });
     }
@@ -124,8 +105,10 @@ export async function runEssayPipeline(
         reconcileOcr(localText, visionText, settings, {onProgress: report}),
       );
       canonicalText = reconciled.text;
+      title = title || recognizedTitle(canonicalText);
       await updateEssay(essay.id, {
         canonicalText,
+        title,
         corrections: reconciled.corrections,
         updatedAt: new Date().toISOString(),
       });
@@ -133,7 +116,10 @@ export async function runEssayPipeline(
 
     await updateEssay(essay.id, {status: 'scoring'});
     const score = await step(essay.id, 'scoring', onProgress, report =>
-      scoreEssay(canonicalText, settings, {onProgress: report}),
+      scoreEssay(canonicalText, settings, {
+        onProgress: report,
+        essayId: essay.id,
+      }),
     );
     await updateEssay(essay.id, {
       scoreJson: JSON.stringify(score),

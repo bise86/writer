@@ -1,6 +1,12 @@
 import type {Response} from 'openai/resources/responses/responses';
 import {RequestProgress} from './context';
 
+export function checkCancelled(signal?: AbortSignal) {
+  if (signal?.aborted) {
+    throw new Error('已停止本次处理，识别结果和评分对话已保留，可继续重试');
+  }
+}
+
 export function statusOf(error: unknown): number | undefined {
   return typeof error === 'object' && error !== null && 'status' in error
     ? Number(error.status) || undefined
@@ -27,11 +33,14 @@ export async function requestWithRetry<T>(
   retries: number,
   label: string,
   onProgress?: RequestProgress,
+  signal?: AbortSignal,
 ): Promise<T> {
   for (let attempt = 0; ; attempt += 1) {
+    checkCancelled(signal);
     try {
       return await call();
     } catch (error) {
+      checkCancelled(signal);
       if (attempt >= retries || !retryable(error)) {
         throw error;
       }

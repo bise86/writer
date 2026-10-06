@@ -21,6 +21,8 @@ jest.mock('../src/db/database', () => ({
   getEssay: jest.fn(),
   getSettings: jest.fn(),
   getSteps: jest.fn(),
+  getScoreAttempts: jest.fn(),
+  saveScoreAttempt: jest.fn(),
   updateEssay: jest.fn(),
   updateStep: jest.fn(),
 }));
@@ -47,6 +49,41 @@ const validScore: ScoreResult = {
   weaknesses: ['描写不足'],
   improvements: ['补充细节'],
   suggestions: ['练习动作描写'],
+  dimensionFeedback: {
+    thesis: {
+      strengths: ['中心明确'],
+      weaknesses: ['深化不足'],
+      improvements: ['补充认识变化'],
+    },
+    content: {
+      strengths: ['有具体场景'],
+      weaknesses: ['材料偏少'],
+      improvements: ['增加细节证据'],
+    },
+    structure: {
+      strengths: ['顺序清楚'],
+      weaknesses: ['转折单一'],
+      improvements: ['加入照应'],
+    },
+    language: {
+      strengths: ['表达通顺'],
+      weaknesses: ['句式变化少'],
+      improvements: ['练习长短句'],
+    },
+    format: {
+      strengths: ['段落清楚'],
+      weaknesses: ['标点可更规范'],
+      improvements: ['逐句检查标点'],
+    },
+  },
+  paragraphReviews: [
+    {
+      paragraphIndex: 1,
+      strengths: ['点明经历'],
+      weaknesses: ['细节不足'],
+      improvements: ['补充动作和感受'],
+    },
+  ],
   annotations: [
     {
       quote: '雨中',
@@ -96,6 +133,9 @@ beforeEach(() => {
   (getSteps as jest.Mock).mockImplementation(async () =>
     steps.map(item => ({...item})),
   );
+  const database = require('../src/db/database');
+  database.getScoreAttempts.mockResolvedValue([]);
+  database.saveScoreAttempt.mockResolvedValue(undefined);
   (updateEssay as jest.Mock).mockImplementation(async (_id, patch) =>
     Object.assign(essay, patch),
   );
@@ -134,21 +174,40 @@ test('有效评分按原文定位批注并持久化', async () => {
 });
 
 test('评分失败时保留识别结果，不生成基础分数，重试从评分继续', async () => {
-  create.mockResolvedValueOnce({
+  create.mockResolvedValue({
     status: 'completed',
     output_text: '不是评分 JSON',
   });
-  await expect(runEssayPipeline({...essay})).rejects.toThrow('有效 JSON');
+  await expect(runEssayPipeline({...essay})).rejects.toThrow('连续校验未通过');
   expect(essay.scoreJson).toBe('');
   expect(essay.canonicalText).toBe(text);
   expect(essay.status).toBe('failed');
   expect(steps[3].status).toBe('failed');
+  create.mockResolvedValue({
+    status: 'completed',
+    output_text: JSON.stringify(validScore),
+  });
   await retryEssay(essay.id);
   expect(essay.status).toBe('completed');
-  expect(create).toHaveBeenCalledTimes(2);
+  expect(create).toHaveBeenCalledTimes(7);
   expect(localOcrPages).toHaveBeenCalledTimes(1);
   expect(cloudOcr).toHaveBeenCalledTimes(1);
   expect(reconcileOcr).toHaveBeenCalledTimes(1);
+});
+
+test('评分格式错误会把上一轮答案和字段错误追加到下一轮请求', async () => {
+  create
+    .mockResolvedValueOnce({status: 'completed', output_text: '{"score": 61}'})
+    .mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify(validScore),
+    });
+  await runEssayPipeline({...essay});
+  expect(create).toHaveBeenCalledTimes(2);
+  const secondInput = JSON.stringify(create.mock.calls[1][0].input);
+  expect(secondInput).toContain('score');
+  expect(secondInput).toContain('评分校验未通过');
+  expect(essay.status).toBe('completed');
 });
 
 test('模型输出截断后不会保存部分评分', async () => {
