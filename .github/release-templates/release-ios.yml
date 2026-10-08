@@ -1,0 +1,15 @@
+name: iOS release (disabled)
+
+# Template only: files outside .github/workflows cannot trigger a workflow.
+# Move this file to workflows and enable the job when signing is ready.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    if: ${{ false }}
+    runs-on: macos-latest
+    steps:
+      - run: echo "iOS release is intentionally disabled"

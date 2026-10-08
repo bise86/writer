@@ -44,7 +44,7 @@ HarmonyOS 工程在 `harmony/`，用 DevEco Studio 打开；Metro 配置已经�
 ## 发布规则
 
 - `.github/workflows/release-android.yml` 只响应 `v*` tag，构建 release APK 并上传到 GitHub Release。
-- iOS 与 HarmonyOS 工作流目前使用空触发器并由条件永久跳过，不会因 push、tag、PR 或手动操作发布。后续配置签名和分发凭据后，再启用对应工作流。
+- iOS 与 HarmonyOS 发布模板保存在 `.github/release-templates/`，不属于 GitHub 活跃工作流，不会触发。模板预设仅 `v*` tag 触发并禁用作业；后续配置签名和分发凭据后，再移入 workflows 并启用。
 
 ```sh
 git tag v0.1.0

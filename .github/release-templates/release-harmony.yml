@@ -1,0 +1,15 @@
+name: HarmonyOS release (disabled)
+
+# Template only: files outside .github/workflows cannot trigger a workflow.
+# Move this file to workflows and enable the job when signing is ready.
+on:
+  push:
+    tags:
+      - 'v*'
+
+jobs:
+  release:
+    if: ${{ false }}
+    runs-on: ubuntu-latest
+    steps:
+      - run: echo "HarmonyOS release is intentionally disabled"
