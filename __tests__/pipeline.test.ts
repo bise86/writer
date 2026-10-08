@@ -6,13 +6,14 @@ import {
   updateEssay,
   updateStep,
 } from '../src/db/database';
-import {cloudOcr, localOcrPages, reconcileOcr} from '../src/services/ocr';
+import {cloudOcr, reconcileOcr} from '../src/services/ocr';
 import {
   retryEssay,
   runEssayPipeline,
   scoreEssay,
 } from '../src/services/pipeline';
 import {DEFAULT_SETTINGS} from '../src/settings';
+import {validateScore} from '../src/services/score-validation';
 import {Essay, PipelineStep, ScoreResult, StepId} from '../src/types';
 
 jest.mock('openai', () => jest.fn());
@@ -27,7 +28,6 @@ jest.mock('../src/db/database', () => ({
   updateStep: jest.fn(),
 }));
 jest.mock('../src/services/ocr', () => ({
-  localOcrPages: jest.fn(),
   cloudOcr: jest.fn(),
   reconcileOcr: jest.fn(),
 }));
@@ -115,16 +115,14 @@ beforeEach(() => {
     createdAt: '2026-10-04T00:00:00.000Z',
     updatedAt: '2026-10-04T00:00:00.000Z',
   };
-  steps = (['local_ocr', 'vision_ocr', 'reconcile', 'scoring'] as StepId[]).map(
-    step => ({
-      essayId: essay.id,
-      step,
-      status: 'pending',
-      detail: '',
-      retryCount: 0,
-      updatedAt: essay.updatedAt,
-    }),
-  );
+  steps = (['vision_ocr', 'reconcile', 'scoring'] as StepId[]).map(step => ({
+    essayId: essay.id,
+    step,
+    status: 'pending',
+    detail: '',
+    retryCount: 0,
+    updatedAt: essay.updatedAt,
+  }));
   (getSettings as jest.Mock).mockResolvedValue({
     ...DEFAULT_SETTINGS,
     apiKey: 'test-key',
@@ -148,7 +146,6 @@ beforeEach(() => {
       );
     },
   );
-  (localOcrPages as jest.Mock).mockResolvedValue({text});
   (cloudOcr as jest.Mock).mockResolvedValue({text});
   (reconcileOcr as jest.Mock).mockResolvedValue({text, corrections: '一致'});
   create.mockResolvedValue({
@@ -182,7 +179,7 @@ test('评分失败时保留识别结果，不生成基础分数，重试从评�
   expect(essay.scoreJson).toBe('');
   expect(essay.canonicalText).toBe(text);
   expect(essay.status).toBe('failed');
-  expect(steps[3].status).toBe('failed');
+  expect(steps[2].status).toBe('failed');
   create.mockResolvedValue({
     status: 'completed',
     output_text: JSON.stringify(validScore),
@@ -190,7 +187,6 @@ test('评分失败时保留识别结果，不生成基础分数，重试从评�
   await retryEssay(essay.id);
   expect(essay.status).toBe('completed');
   expect(create).toHaveBeenCalledTimes(7);
-  expect(localOcrPages).toHaveBeenCalledTimes(1);
   expect(cloudOcr).toHaveBeenCalledTimes(1);
   expect(reconcileOcr).toHaveBeenCalledTimes(1);
 });
@@ -218,7 +214,7 @@ test('模型输出截断后不会保存部分评分', async () => {
   });
   await expect(runEssayPipeline({...essay})).rejects.toThrow('输出被截断');
   expect(essay.scoreJson).toBe('');
-  expect(steps[3].status).toBe('failed');
+  expect(steps[2].status).toBe('failed');
 });
 
 test.each([
@@ -256,8 +252,8 @@ test('整个流程只按配置重试 SDK 请求一次，不重新运行已完成
   await jest.runAllTimersAsync();
   expect(await result).toBeInstanceOf(Error);
   expect(create).toHaveBeenCalledTimes(2);
-  expect(steps[3].retryCount).toBe(1);
-  expect(steps[3].status).toBe('failed');
+  expect(steps[2].retryCount).toBe(1);
+  expect(steps[2].status).toBe('failed');
   expect(cloudOcr).toHaveBeenCalledTimes(1);
 });
 
@@ -266,7 +262,7 @@ test('同一作文不能并发提交，当前处理不受第二次点击影响',
   const pendingOcr = new Promise<{text: string}>(resolve => {
     release = resolve;
   });
-  (localOcrPages as jest.Mock).mockReturnValueOnce(pendingOcr);
+  (cloudOcr as jest.Mock).mockReturnValueOnce(pendingOcr);
   const first = runEssayPipeline({...essay});
   await expect(runEssayPipeline({...essay})).rejects.toThrow('正在处理中');
   release({text});
@@ -279,8 +275,92 @@ test('校对失败后仅重新校对和评分', async () => {
   (reconcileOcr as jest.Mock).mockRejectedValueOnce(new Error('校对失败'));
   await expect(runEssayPipeline({...essay})).rejects.toThrow('校对失败');
   await retryEssay(essay.id);
-  expect(localOcrPages).toHaveBeenCalledTimes(1);
   expect(cloudOcr).toHaveBeenCalledTimes(1);
   expect(reconcileOcr).toHaveBeenCalledTimes(2);
   expect(essay.status).toBe('completed');
+});
+
+test('后续原图复核纠正标题，旧本地文字不再参与评分', async () => {
+  essay.title = '错误的旧标题';
+  essay.localOcr = '无法辨认的乱字';
+  (cloudOcr as jest.Mock).mockResolvedValue({text: '初次错标题\n' + text});
+  (reconcileOcr as jest.Mock).mockResolvedValue({
+    text,
+    corrections: '原图没有标题',
+  });
+  await runEssayPipeline({...essay});
+  expect(essay.title).toBe('');
+  expect(essay.localOcr).toBe('');
+  expect(reconcileOcr).toHaveBeenCalledWith(
+    essay.imageUris,
+    '初次错标题\n' + text,
+    expect.anything(),
+    expect.anything(),
+  );
+  expect(essay.canonicalText).toBe(text);
+});
+
+test('重新识别失败会清空旧评分和旧原文，不能展示失效结果', async () => {
+  essay.canonicalText = text;
+  essay.scoreJson = JSON.stringify(validScore);
+  essay.status = 'completed';
+  (cloudOcr as jest.Mock).mockRejectedValueOnce(new Error('图片读取失败'));
+  await expect(
+    runEssayPipeline({...essay}, undefined, 'vision_ocr'),
+  ).rejects.toThrow('图片读取失败');
+  expect(essay.canonicalText).toBe('');
+  expect(essay.scoreJson).toBe('');
+  expect(steps.find(item => item.step === 'scoring')?.status).toBe('pending');
+});
+
+test('评分逐段覆盖句子批注，不能只有第一段的批注', () => {
+  const twoParagraphs = {
+    ...validScore,
+    paragraphReviews: [
+      validScore.paragraphReviews![0],
+      {...validScore.paragraphReviews![0], paragraphIndex: 2},
+    ],
+  };
+  expect(() => validateScore(twoParagraphs, text + '\n我走向操场。')).toThrow(
+    '缺少第 2 段的句子批注',
+  );
+});
+
+test('最终标题使用复核纠正的新标题', async () => {
+  (cloudOcr as jest.Mock).mockResolvedValue({text: '雨中的等侍\n' + text});
+  (reconcileOcr as jest.Mock).mockResolvedValue({
+    text: '雨中的等待\n' + text,
+    corrections: '纠正标题形近字',
+  });
+  create.mockResolvedValue({
+    status: 'completed',
+    output_text: JSON.stringify({
+      ...validScore,
+      paragraphReviews: [
+        validScore.paragraphReviews![0],
+        {...validScore.paragraphReviews![0], paragraphIndex: 2},
+      ],
+      annotations: [
+        {...validScore.annotations[0], quote: text},
+        {
+          quote: '雨中的等待',
+          type: 'strength',
+          comment: '标题扣住关键经历',
+          suggestion: '保留并在结尾呼应',
+        },
+      ],
+    }),
+  });
+  await runEssayPipeline({...essay});
+  expect(essay.title).toBe('雨中的等待');
+});
+
+test('重复引用缺少位置时要求模型纠正，不能默认为第一处', () => {
+  const repeated = {
+    ...validScore,
+    annotations: [{...validScore.annotations[0], quote: '雨中'}],
+  };
+  expect(() => validateScore(repeated, '雨中，我在雨中学会了等待。')).toThrow(
+    '出现多次',
+  );
 });

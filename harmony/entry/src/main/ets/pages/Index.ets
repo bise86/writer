@@ -4,9 +4,19 @@ import {
   RNApp,
   RNOHErrorDialog,
   ResourceJSBundleProvider,
-  RNOHCoreContext
+  RNOHCoreContext,
+  ComponentBuilderContext
 } from '@rnoh/react-native-openharmony';
 import { getRNOHPackages } from '../PackageProvider';
+import { RTNPdfView, PDF_VIEW_TYPE } from '@react-native-oh-tpl/react-native-pdf';
+
+@Builder
+function buildEssayComponent(ctx: ComponentBuilderContext) {
+  if (ctx.componentName === PDF_VIEW_TYPE) {
+    RTNPdfView({ ctx: ctx.rnComponentContext, tag: ctx.tag })
+  }
+}
+
 
 @Entry
 @Component
@@ -24,8 +34,10 @@ struct Index {
             name: "EssayLens",
             createRNPackages: getRNOHPackages,
             fontResourceByFontFamily: {},
+            arkTsComponentNames: [PDF_VIEW_TYPE],
             enableDebugger: this.rnohCoreContext?.isDebugModeEnabled,
           },
+          wrappedCustomRNComponentBuilder: wrapBuilder(buildEssayComponent),
           appKey: "EssayLens",
           jsBundleProvider: this.rnohCoreContext?.isDebugModeEnabled ?
             new AnyJSBundleProvider([

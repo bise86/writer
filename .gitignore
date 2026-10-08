@@ -86,3 +86,7 @@ harmony/local.properties
 !.yarn/releases
 !.yarn/sdks
 !.yarn/versions
+
+# Generated Harmony JavaScript bundle and Metro assets
+harmony/entry/src/main/resources/rawfile/bundle.harmony.js
+harmony/entry/src/main/resources/rawfile/assets/

@@ -36,11 +36,11 @@ export async function persistImage(uri: string, asset?: Asset) {
         asset?.width || 2400,
         asset?.height || 2400,
         1,
-        0.92,
+        1,
         'contain',
       );
     } else {
-      const source = asset?.originalPath || uri;
+      const source = uri;
       await RNFS.copyFile(pathFromUri(source), target);
     }
     return `file://${target}`;
@@ -64,6 +64,7 @@ export async function cropImage(uri: string, asset: Asset, preset: CropPreset) {
     cropHeight = height;
     cropWidth = Math.round(cropHeight * ratio);
   }
+  const scale = Math.min(1, 3200 / Math.max(cropWidth, cropHeight));
   const result = await ImageEditor.cropImage(uri, {
     offset: {
       x: Math.floor((width - cropWidth) / 2),
@@ -71,10 +72,10 @@ export async function cropImage(uri: string, asset: Asset, preset: CropPreset) {
     },
     size: {width: cropWidth, height: cropHeight},
     displaySize: {
-      width: Math.min(cropWidth, 1800),
-      height: Math.min(cropHeight, 1800),
+      width: Math.round(cropWidth * scale),
+      height: Math.round(cropHeight * scale),
     },
-    quality: 0.92,
+    quality: 1,
     format: 'jpeg',
   });
   return persistImage(result.uri);

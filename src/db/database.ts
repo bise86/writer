@@ -197,12 +197,7 @@ export async function createEssay(
     'INSERT INTO essays (id, image_uri, image_uris, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
     [id, imageUri, JSON.stringify(imageUris), 'queued', now, now],
   );
-  for (const step of [
-    'local_ocr',
-    'vision_ocr',
-    'reconcile',
-    'scoring',
-  ] as StepId[]) {
+  for (const step of ['vision_ocr', 'reconcile', 'scoring'] as StepId[]) {
     await database.executeSql(
       'INSERT INTO pipeline_steps (essay_id, step, status, updated_at) VALUES (?, ?, ?, ?)',
       [id, step, 'pending', now],
@@ -224,10 +219,9 @@ export async function getEssay(id: string): Promise<Essay | undefined> {
   return {
     id: value.id,
     title:
-      value.title ||
-      recognizedTitle(
-        value.canonical_text || value.vision_ocr || value.local_ocr || '',
-      ),
+      value.canonical_text || value.vision_ocr
+        ? recognizedTitle(value.canonical_text || value.vision_ocr)
+        : value.title || '',
     imageUri: value.image_uri,
     imageUris: parseImageUris(value.image_uris, value.image_uri),
     localOcr: value.local_ocr,
@@ -253,10 +247,9 @@ export async function listEssays(): Promise<Essay[]> {
     values.push({
       id: value.id,
       title:
-        value.title ||
-        recognizedTitle(
-          value.canonical_text || value.vision_ocr || value.local_ocr || '',
-        ),
+        value.canonical_text || value.vision_ocr
+          ? recognizedTitle(value.canonical_text || value.vision_ocr)
+          : value.title || '',
       imageUri: value.image_uri,
       imageUris: parseImageUris(value.image_uris, value.image_uri),
       localOcr: value.local_ocr,
@@ -381,6 +374,24 @@ async function removeEssayImages(rows: ResultSet) {
   }
 }
 
+async function removeEssayPdfCache(ids: string[]) {
+  const prefixes = ids.map(
+    id => `essay-correction-${id.replace(/[^a-zA-Z0-9_-]/g, '_')}-`,
+  );
+  try {
+    for (const file of await RNFS.readDir(RNFS.CachesDirectoryPath)) {
+      if (
+        file.isFile() &&
+        prefixes.some(prefix => file.name.startsWith(prefix))
+      ) {
+        await RNFS.unlink(file.path);
+      }
+    }
+  } catch (_) {
+    // An absent cache directory or an OS-evicted cache is harmless.
+  }
+}
+
 export async function deleteEssay(essayId: string) {
   const database = await db();
   const [images] = await database.executeSql(
@@ -398,13 +409,14 @@ export async function deleteEssay(essayId: string) {
     essayId,
   ]);
   await database.executeSql('DELETE FROM essays WHERE id = ?', [essayId]);
+  await removeEssayPdfCache([essayId]);
 }
 
 export async function clearEssaysBefore(before: Date) {
   const database = await db();
   const cutoff = before.toISOString();
   const [images] = await database.executeSql(
-    'SELECT image_uri, image_uris FROM essays WHERE created_at < ?',
+    'SELECT id, image_uri, image_uris FROM essays WHERE created_at < ?',
     [cutoff],
   );
   await removeEssayImages(images);
@@ -422,6 +434,11 @@ export async function clearEssaysBefore(before: Date) {
   await database.executeSql('DELETE FROM essays WHERE created_at < ?', [
     cutoff,
   ]);
+  const ids: string[] = [];
+  for (let i = 0; i < images.rows.length; i += 1) {
+    ids.push(images.rows.item(i).id);
+  }
+  await removeEssayPdfCache(ids);
 }
 
 /** Remove application logs and temporary cache files. Essay records and images

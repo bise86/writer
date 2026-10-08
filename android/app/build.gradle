@@ -86,6 +86,10 @@ android {
     buildToolsVersion rootProject.ext.buildToolsVersion
     compileSdk rootProject.ext.compileSdkVersion
 
+    packagingOptions {
+        jniLibs.pickFirsts += ["**/libc++_shared.so"]
+    }
+
     namespace "com.essaylens"
     defaultConfig {
         applicationId "com.essaylens"

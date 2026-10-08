@@ -1,6 +1,5 @@
-import React, {useEffect, useMemo, useState} from 'react';
+import React, {useEffect, useState} from 'react';
 import {
-  ActivityIndicator,
   Alert,
   Image,
   PermissionsAndroid,
@@ -24,17 +23,11 @@ import {
   clearEssaysBefore,
   deleteEssay,
   getEssay,
-  getSteps,
   listEssays,
   saveSettings,
 } from './src/db/database';
-import {
-  AppSettings,
-  Essay,
-  PipelineStep,
-  ScoreResult,
-  StepId,
-} from './src/types';
+import {AppSettings, Essay} from './src/types';
+import Detail from './src/components/EssayDetail';
 import {retryEssay, runEssayPipeline} from './src/services/pipeline';
 import {
   OUTPUT_TOKEN_OPTIONS,
@@ -43,25 +36,6 @@ import {
 } from './src/settings';
 import {cropImage, CropPreset, persistImage} from './src/services/images';
 import Startup, {StartupData} from './src/components/Startup';
-
-const STEP_LABELS: Record<StepId, string> = {
-  local_ocr: '本地 OCR 识别',
-  vision_ocr: '云端图片识别',
-  reconcile: '双路文字对照',
-  scoring: '评分与批注',
-};
-
-const emptyScore: ScoreResult = {
-  score: 0,
-  bandId: 'unqualified',
-  dimensionScores: {},
-  summary: '',
-  strengths: [],
-  weaknesses: [],
-  improvements: [],
-  suggestions: [],
-  annotations: [],
-};
 
 function Button({
   title,
@@ -93,44 +67,6 @@ function Button({
 
 function Card({children, style}: {children: React.ReactNode; style?: any}) {
   return <View style={[styles.card, style]}>{children}</View>;
-}
-
-function Progress({steps}: {steps: PipelineStep[]}) {
-  return (
-    <Card>
-      <Text style={styles.cardTitle}>处理进度</Text>
-      {(['local_ocr', 'vision_ocr', 'reconcile', 'scoring'] as StepId[]).map(
-        step => {
-          const item = steps.find(value => value.step === step);
-          const status = item?.status || 'pending';
-          return (
-            <View key={step} style={styles.stepRow}>
-              <View
-                style={[
-                  styles.stepDot,
-                  status === 'success' && styles.successDot,
-                  status === 'failed' && styles.errorDot,
-                  status === 'running' && styles.runningDot,
-                ]}
-              />
-              <View style={styles.stepText}>
-                <Text style={styles.stepName}>{STEP_LABELS[step]}</Text>
-                <Text style={styles.stepDetail}>
-                  {item?.detail || '等待处理'}
-                </Text>
-              </View>
-              {status === 'running' && (
-                <ActivityIndicator size="small" color="#2563eb" />
-              )}
-              {status === 'failed' && (
-                <Text style={styles.errorText}>失败</Text>
-              )}
-            </View>
-          );
-        },
-      )}
-    </Card>
-  );
 }
 
 function Home({
@@ -365,308 +301,6 @@ function ManageEssays({
   );
 }
 
-function StageOutput({title, value}: {title: string; value: string}) {
-  return (
-    <View style={styles.stageOutput}>
-      <Text style={styles.stageOutputTitle}>{title}</Text>
-      <Text style={styles.stageOutputText}>{value || '等待该阶段输出'}</Text>
-    </View>
-  );
-}
-
-function Detail({
-  essay,
-  onBack,
-  onRetry,
-}: {
-  essay: Essay;
-  onBack: () => void;
-  onRetry: () => void;
-}) {
-  const [steps, setSteps] = useState<PipelineStep[]>([]);
-  const [title, setTitle] = useState(essay.title || '');
-  const [activeTab, setActiveTab] = useState<'stage' | 'result'>(
-    essay.status === 'completed' ? 'result' : 'stage',
-  );
-  useEffect(() => {
-    getSteps(essay.id).then(setSteps);
-    const timer = setInterval(() => getSteps(essay.id).then(setSteps), 1200);
-    return () => clearInterval(timer);
-  }, [essay.id, essay.status]);
-  useEffect(() => {
-    if (essay.title) {
-      setTitle(essay.title);
-    }
-  }, [essay.title]);
-  useEffect(() => {
-    setActiveTab(essay.status === 'completed' ? 'result' : 'stage');
-  }, [essay.status]);
-  const score = useMemo(() => {
-    try {
-      return essay.scoreJson
-        ? (JSON.parse(essay.scoreJson) as ScoreResult)
-        : emptyScore;
-    } catch (_) {
-      return emptyScore;
-    }
-  }, [essay.scoreJson]);
-  const statusText =
-    essay.status === 'completed'
-      ? '评分完成'
-      : essay.status === 'failed'
-      ? '处理失败'
-      : '正在处理';
-  return (
-    <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container}>
-        <View style={styles.header}>
-          <Pressable onPress={onBack}>
-            <Text style={styles.back}>‹ 返回</Text>
-          </Pressable>
-          <Text style={styles.headerStatus}>{statusText}</Text>
-        </View>
-        <Card>
-          <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-            {(essay.imageUris?.length ? essay.imageUris : [essay.imageUri]).map(
-              (uri, index) => (
-                <Image
-                  key={`${uri}-${index}`}
-                  source={{uri}}
-                  style={styles.preview}
-                />
-              ),
-            )}
-          </ScrollView>
-          <TextInput
-            style={styles.titleInput}
-            value={
-              title ||
-              (essay.status === 'completed' ? '未命名作文' : '正在识别标题…')
-            }
-            editable={false}
-            accessibilityLabel="作文标题（由 OCR 识别）"
-          />
-        </Card>
-        <View style={styles.tabBar}>
-          <Pressable
-            onPress={() => setActiveTab('stage')}
-            style={[styles.tab, activeTab === 'stage' && styles.activeTab]}>
-            <Text
-              style={[
-                styles.tabText,
-                activeTab === 'stage' && styles.activeTabText,
-              ]}>
-              阶段输出
-            </Text>
-          </Pressable>
-          {essay.status === 'completed' && (
-            <Pressable
-              onPress={() => setActiveTab('result')}
-              style={[styles.tab, activeTab === 'result' && styles.activeTab]}>
-              <Text
-                style={[
-                  styles.tabText,
-                  activeTab === 'result' && styles.activeTabText,
-                ]}>
-                最终结果
-              </Text>
-            </Pressable>
-          )}
-        </View>
-        {activeTab === 'stage' && (
-          <>
-            <Progress steps={steps} />
-            {essay.status === 'failed' && (
-              <Card style={styles.errorCard}>
-                <Text style={styles.errorText}>
-                  {essay.error || '处理失败'}
-                </Text>
-                <Button title="重试全部流程" onPress={onRetry} />
-              </Card>
-            )}
-            <Card>
-              <Text style={styles.sectionHeading}>阶段输出</Text>
-              <StageOutput title="本地 OCR 结果" value={essay.localOcr} />
-              <StageOutput title="云端图片识别结果" value={essay.visionOcr} />
-              <StageOutput
-                title="双路对照后的正文"
-                value={essay.canonicalText}
-              />
-              <StageOutput title="对照说明" value={essay.corrections} />
-              <StageOutput
-                title="评分阶段状态"
-                value={
-                  steps.find(item => item.step === 'scoring')?.detail ||
-                  '等待处理'
-                }
-              />
-            </Card>
-          </>
-        )}
-        {activeTab === 'result' && essay.status === 'completed' && (
-          <>
-            <Text style={styles.sectionHeading}>最终结果</Text>
-            <Card style={styles.scoreCard}>
-              <Text style={styles.scoreLabel}>总评</Text>
-              <Text style={styles.score}>
-                {score.score}
-                <Text style={styles.scoreMax}> / 100</Text>
-              </Text>
-              <Text style={styles.band}>{score.bandName || score.bandId}</Text>
-              <Text style={styles.body}>{score.summary}</Text>
-            </Card>
-            {score.dimensionFeedback && (
-              <Card>
-                <Text style={styles.cardTitle}>各部分优缺点与改进</Text>
-                {[
-                  ['thesis', '审题与立意'],
-                  ['content', '内容与选材'],
-                  ['structure', '结构与技法'],
-                  ['language', '语言与表达'],
-                  ['format', '书写与规范'],
-                ].map(([key, label]) => {
-                  const feedback = score.dimensionFeedback?.[key];
-                  return feedback ? (
-                    <View key={key} style={styles.feedbackBlock}>
-                      <Text style={styles.feedbackTitle}>{label}</Text>
-                      <Text style={styles.feedbackLine}>
-                        优点：{feedback.strengths.join('；') || '暂无'}
-                      </Text>
-                      <Text style={styles.feedbackLine}>
-                        问题：{feedback.weaknesses.join('；') || '暂无'}
-                      </Text>
-                      <Text style={styles.feedbackImprove}>
-                        改进：{feedback.improvements.join('；')}
-                      </Text>
-                    </View>
-                  ) : null;
-                })}
-              </Card>
-            )}
-            {!!score.paragraphReviews?.length && (
-              <Card>
-                <Text style={styles.cardTitle}>分段批注</Text>
-                {score.paragraphReviews.map(review => (
-                  <View
-                    key={review.paragraphIndex}
-                    style={styles.feedbackBlock}>
-                    <Text style={styles.feedbackTitle}>
-                      第 {review.paragraphIndex} 段
-                    </Text>
-                    <Text style={styles.feedbackLine}>
-                      优点：{review.strengths.join('；') || '暂无'}
-                    </Text>
-                    <Text style={styles.feedbackLine}>
-                      问题：{review.weaknesses.join('；') || '暂无'}
-                    </Text>
-                    <Text style={styles.feedbackImprove}>
-                      改进：{review.improvements.join('；')}
-                    </Text>
-                  </View>
-                ))}
-              </Card>
-            )}
-            <Card>
-              <Text style={styles.cardTitle}>分项评分</Text>
-              {[
-                ['thesis', '审题与立意', 25],
-                ['content', '内容与选材', 25],
-                ['structure', '结构与技法', 20],
-                ['language', '语言与表达', 20],
-                ['format', '书写与规范', 10],
-              ].map(([key, label, max]) => (
-                <View key={String(key)} style={styles.metric}>
-                  <View style={styles.metricLabel}>
-                    <Text style={styles.body}>{label}</Text>
-                    <Text style={styles.metricValue}>
-                      {score.dimensionScores?.[String(key)] || 0}/{String(max)}
-                    </Text>
-                  </View>
-                  <View style={styles.bar}>
-                    <View
-                      style={[
-                        styles.barFill,
-                        {
-                          width: `${Math.min(
-                            100,
-                            ((score.dimensionScores?.[String(key)] || 0) /
-                              Number(max)) *
-                              100,
-                          )}%`,
-                        },
-                      ]}
-                    />
-                  </View>
-                </View>
-              ))}
-            </Card>
-            <BulletCard
-              title="写得好的地方"
-              values={score.strengths}
-              color="#15803d"
-            />
-            <BulletCard
-              title="需要改进"
-              values={score.weaknesses.concat(score.improvements)}
-              color="#b45309"
-            />
-            <BulletCard
-              title="下一步建议"
-              values={score.suggestions}
-              color="#2563eb"
-            />
-            <Card>
-              <Text style={styles.cardTitle}>原文批注</Text>
-              {score.annotations.length ? (
-                score.annotations.map((annotation, index) => (
-                  <View
-                    key={`${annotation.quote}-${index}`}
-                    style={styles.annotation}>
-                    <Text style={styles.quote}>“{annotation.quote}”</Text>
-                    <Text style={styles.annotationComment}>
-                      {annotation.comment}
-                    </Text>
-                    <Text style={styles.annotationSuggestion}>
-                      修改：{annotation.suggestion}
-                    </Text>
-                  </View>
-                ))
-              ) : (
-                <Text style={styles.muted}>模型没有返回可定位批注。</Text>
-              )}
-            </Card>
-          </>
-        )}
-      </ScrollView>
-    </SafeAreaView>
-  );
-}
-
-function BulletCard({
-  title,
-  values,
-  color,
-}: {
-  title: string;
-  values: string[];
-  color: string;
-}) {
-  return (
-    <Card>
-      <Text style={[styles.cardTitle, {color}]}>{title}</Text>
-      {values.length ? (
-        values.map((value, index) => (
-          <Text style={styles.bullet} key={`${value}-${index}`}>
-            • {value}
-          </Text>
-        ))
-      ) : (
-        <Text style={styles.muted}>暂无</Text>
-      )}
-    </Card>
-  );
-}
-
 function Settings({
   value,
   onSave,
@@ -715,8 +349,7 @@ function Settings({
         {field('apiKey', 'Token（API Key）')}
         {field('modelName', '模型名称')}
         <Text style={styles.muted}>
-          图片识别、文字校对和评分共用此云端模型，请选择支持图片输入的模型。本地
-          OCR 无需配置。
+          图片识别、原图复核和评分共用此云端模型，请选择支持图片输入的模型。
         </Text>
         {field(
           'contextWindow',
@@ -935,9 +568,9 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
             mediaType: 'photo',
             cameraType: 'back',
             includeBase64: false,
-            maxWidth: 2200,
-            maxHeight: 2200,
-            quality: 0.9,
+            maxWidth: 3200,
+            maxHeight: 3200,
+            quality: 1,
             saveToPhotos: false,
           });
           if (result.errorCode) {
@@ -958,9 +591,9 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
         const result = await launchImageLibrary({
           mediaType: 'photo',
           includeBase64: false,
-          maxWidth: 2200,
-          maxHeight: 2200,
-          quality: 0.9,
+          maxWidth: 3200,
+          maxHeight: 3200,
+          quality: 1,
           selectionLimit: 0,
           assetRepresentationMode: 'compatible',
         });
@@ -1023,6 +656,14 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
           setScreen('home');
           refresh();
         }}
+        onRecognize={() =>
+          runEssayPipeline(selected, undefined, 'vision_ocr')
+            .then(async () => {
+              setSelected(await getEssay(selected.id));
+              refresh();
+            })
+            .catch(async () => setSelected(await getEssay(selected.id)))
+        }
         onRetry={() =>
           retryEssay(selected.id)
             .then(async () => {
@@ -1071,7 +712,6 @@ const styles = StyleSheet.create({
   settingsIcon: {fontSize: 25, color: '#475569'},
   back: {fontSize: 16, color: '#2563eb', fontWeight: '700'},
   headerTitle: {fontSize: 18, fontWeight: '800', color: '#0f172a'},
-  headerStatus: {fontSize: 13, color: '#64748b'},
   card: {
     backgroundColor: '#fff',
     borderRadius: 16,
@@ -1153,129 +793,7 @@ const styles = StyleSheet.create({
     color: '#0f172a',
     marginBottom: 12,
   },
-  stepRow: {flexDirection: 'row', alignItems: 'center', paddingVertical: 8},
-  stepDot: {
-    width: 10,
-    height: 10,
-    borderRadius: 5,
-    backgroundColor: '#cbd5e1',
-    marginRight: 12,
-  },
-  successDot: {backgroundColor: '#16a34a'},
-  runningDot: {backgroundColor: '#2563eb'},
-  errorDot: {backgroundColor: '#dc2626'},
-  stepText: {flex: 1},
-  stepName: {fontSize: 14, fontWeight: '700', color: '#334155'},
-  stepDetail: {fontSize: 12, color: '#94a3b8', marginTop: 2},
   errorText: {color: '#dc2626', fontSize: 13},
-  errorCard: {
-    borderWidth: 1,
-    borderColor: '#fecaca',
-    backgroundColor: '#fff7f7',
-  },
-  preview: {
-    width: 280,
-    height: 320,
-    borderRadius: 12,
-    backgroundColor: '#e2e8f0',
-    resizeMode: 'contain',
-  },
-  titleInput: {
-    fontSize: 17,
-    fontWeight: '700',
-    color: '#0f172a',
-    borderBottomWidth: 1,
-    borderBottomColor: '#e2e8f0',
-    paddingVertical: 10,
-    marginTop: 8,
-  },
-  tabBar: {
-    flexDirection: 'row',
-    backgroundColor: '#e2e8f0',
-    borderRadius: 12,
-    padding: 4,
-    marginBottom: 14,
-  },
-  tab: {
-    flex: 1,
-    alignItems: 'center',
-    paddingVertical: 11,
-    borderRadius: 9,
-  },
-  activeTab: {backgroundColor: '#fff', elevation: 1},
-  tabText: {fontSize: 14, color: '#64748b', fontWeight: '700'},
-  activeTabText: {color: '#1d4ed8'},
-  sectionHeading: {
-    fontSize: 19,
-    fontWeight: '800',
-    color: '#0f172a',
-    marginBottom: 10,
-  },
-  stageOutput: {
-    borderTopWidth: 1,
-    borderTopColor: '#e2e8f0',
-    paddingTop: 10,
-    marginTop: 10,
-  },
-  stageOutputTitle: {fontSize: 14, fontWeight: '800', color: '#334155'},
-  stageOutputText: {
-    fontSize: 14,
-    lineHeight: 22,
-    color: '#475569',
-    marginTop: 5,
-  },
-  feedbackBlock: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#93c5fd',
-    paddingLeft: 12,
-    marginBottom: 15,
-  },
-  feedbackTitle: {
-    fontSize: 15,
-    fontWeight: '800',
-    color: '#1e3a8a',
-    marginBottom: 5,
-  },
-  feedbackLine: {fontSize: 13, lineHeight: 20, color: '#475569'},
-  feedbackImprove: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: '#b45309',
-    marginTop: 3,
-  },
-  body: {fontSize: 14, lineHeight: 22, color: '#334155'},
-  essayText: {fontSize: 15, lineHeight: 26, color: '#1e293b'},
-  scoreCard: {backgroundColor: '#172554'},
-  scoreLabel: {color: '#bfdbfe', fontSize: 13, fontWeight: '700'},
-  score: {fontSize: 52, color: '#fff', fontWeight: '900', marginTop: 2},
-  scoreMax: {fontSize: 18, color: '#bfdbfe', fontWeight: '500'},
-  band: {color: '#93c5fd', fontSize: 15, fontWeight: '800', marginBottom: 12},
-  metric: {marginBottom: 12},
-  metricLabel: {flexDirection: 'row', justifyContent: 'space-between'},
-  metricValue: {fontSize: 13, color: '#2563eb', fontWeight: '800'},
-  bar: {
-    height: 7,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 4,
-    marginTop: 6,
-    overflow: 'hidden',
-  },
-  barFill: {height: 7, backgroundColor: '#2563eb', borderRadius: 4},
-  bullet: {fontSize: 14, lineHeight: 23, color: '#334155', marginBottom: 4},
-  annotation: {
-    borderLeftWidth: 3,
-    borderLeftColor: '#f59e0b',
-    paddingLeft: 12,
-    marginBottom: 14,
-  },
-  quote: {fontSize: 15, fontWeight: '700', color: '#0f172a', marginBottom: 5},
-  annotationComment: {fontSize: 14, lineHeight: 21, color: '#475569'},
-  annotationSuggestion: {
-    fontSize: 13,
-    lineHeight: 20,
-    color: '#b45309',
-    marginTop: 4,
-  },
   field: {marginBottom: 15},
   fieldLabel: {
     fontSize: 13,

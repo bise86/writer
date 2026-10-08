@@ -25,3 +25,7 @@ add_library(rnoh_app SHARED
 target_link_libraries(rnoh_app PUBLIC rnoh)
 
 autolink_libraries(rnoh_app)
+
+# PDF uses a custom ArkTS view and C++ component descriptor.
+add_subdirectory("${CMAKE_CURRENT_SOURCE_DIR}/../../../oh_modules/@react-native-oh-tpl/react-native-pdf/src/main/cpp" ./pdfview)
+target_link_libraries(rnoh_app PUBLIC rnoh_pdf_view)

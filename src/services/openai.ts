@@ -424,7 +424,10 @@ export async function visionResponse(
       {
         role: 'user',
         content: [
-          {type: 'input_text', text: '请识别这张作文图片。'},
+          {
+            type: 'input_text',
+            text: '请按图片顺序完成识别或复核任务，以图片中的作文为准。',
+          },
           ...images.map(imageUrl => ({
             type: 'input_image' as const,
             image_url: imageUrl,

@@ -181,21 +181,40 @@ export function validateScore(
         issues.push(`${path}.quote 必须逐字引用原文中的连续文字`);
         return;
       }
-      const start =
+      const hasValidStart =
         Number.isInteger(annotation.start) &&
         annotation.start >= 0 &&
         originalText.slice(
           annotation.start,
           annotation.start + annotation.quote.length,
-        ) === annotation.quote
-          ? annotation.start
-          : quoteIndex;
+        ) === annotation.quote;
+      if (
+        !hasValidStart &&
+        originalText.indexOf(annotation.quote, quoteIndex + 1) >= 0
+      ) {
+        issues.push(
+          `${path}.quote 在原文中出现多次，请填写准确的 start/end，或扩展引用使其唯一，不能猜测批注位置`,
+        );
+        return;
+      }
+      const start = hasValidStart ? annotation.start : quoteIndex;
       annotations.push({
         ...annotation,
         start,
         end: start + annotation.quote.length,
       } as ScoreResult['annotations'][number]);
     });
+  }
+  for (const paragraph of paragraphs) {
+    if (
+      !annotations.some(
+        item => item.start! < paragraph.end && item.end! > paragraph.start,
+      )
+    ) {
+      issues.push(
+        `annotations 缺少第 ${paragraph.index} 段的句子批注，请逐字引用并评价该段内容`,
+      );
+    }
   }
   if (issues.length) {
     throw new ScoreValidationError(issues);

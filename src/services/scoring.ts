@@ -53,7 +53,7 @@ ${JSON.stringify(example)}
 3. 语言只有通顺没有表现力、主题没有自然深化时不得进入 high 及以上档次。结构、修辞、描写、叙述、抒情等技法按实际作用评价，不能数技法加分。
 4. dimensionFeedback 必须完整包含五项，每项都有 strengths、weaknesses、improvements 三个字符串数组；improvements 至少一条可执行建议。
 5. paragraphReviews 必须按照输入段落索引逐段输出，每段恰好一份，不遗漏、不重复；分别说明优点、不足和具体修改方法。
-6. annotations 至少一条，必须逐字引用原文连续文字；type 只能为 strength/improvement/grammar/structure/style。优点和问题都要批注，comment 解释原因，suggestion 给出具体改法。start/end 不确定时填 -1，由程序定位。
+6. annotations 必须逐句检查，标出有依据的亮点、不足和改进处；每个段落（包括标题行）至少一条可定位批注，优先引用完整句子，不用全篇一条笼统评价替代。不得为凑数编造优点或错误；必须逐字引用原文连续文字；type 只能为 strength/improvement/grammar/structure/style。优点和问题都要批注，comment 解释原因，suggestion 给出具体改法。start/end 是原文 UTF-16 起止位置（end 不含），重复句子要分别定位，不确定时填 -1，由程序定位。不得把【辨认不清】当成学生的错字扣分，说明识别不确定对判断的影响。
 7. summary 是总评；strengths、weaknesses、improvements、suggestions 都必须是字符串数组，后两项不可为空。没有原始命题信息时不要臆断题目要求，明确评价限度。
 8. 如果收到“评分校验未通过”反馈，必须保留此前正确内容，结合反馈重新输出完整 JSON；不能只输出差异、解释、Markdown、空数组或删除批注来规避校验。`;
 }
