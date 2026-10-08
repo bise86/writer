@@ -44,10 +44,35 @@ HarmonyOS 工程在 `harmony/`，用 DevEco Studio 打开；Metro 配置已经�
 ## 发布规则
 
 - `.github/workflows/release-android.yml` 只响应 `v*` tag，构建 release APK 并上传到 GitHub Release。
-- Android 正式包固定复用 LibreOffice 的现有签名密钥，不生成新密钥。writer 仓库必须设置同一套 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` Actions Secrets。每次构建只是从 Secret 还原同一份密钥文件，结束后删除临时副本。
-- 签名证书 SHA-256 固定为 `401c364400502e375cc5ae34bb2e02eada34c748249d59accbb642ad0054df3c`，见 `android/signing/release-certificate.sha256`，来源为 LibreOffice 已发布 APK 的证书，有效期至 2054-02-14。缺少密钥、证书不符或 APK 验签失败时停止发布；禁止回退调试签名。直接从本地构建 release 也执行相同校验。
-- 现存的旧 Writer 发布包曾使用调试证书，与正式证书不同；首次切换签名前需处理现有安装和本地作文数据，不能直接覆盖升级。此后持续使用上述固定证书。
+- Android 正式包使用本 App 独立的固定签名密钥，别名为 `essaylens-release`。每次构建只从 Actions Secrets 还原同一份密钥，结束后删除临时副本；发布流程不生成新密钥。
+- 公共证书指纹保存在 `android/signing/release-certificate.sha256`。缺少密钥、证书不符或 APK 验签失败时停止发布；禁止回退调试签名。本地 release 构建也执行同样的校验。
+- 新密钥已在本机生成，保存在 `/home/esgyn/.local/share/essaylens/signing/`，证书有效期约 100 年。整个目录需要独立备份，尤其是 `.p12` 和密码文件；这些私有文件不提交 Git。当前旧安装包使用调试证书，首次换签不能直接覆盖安装，需先处理本地作文数据。
 - iOS 与 HarmonyOS 发布模板保存在 `.github/release-templates/`，不属于 GitHub 活跃工作流，不会触发。模板预设仅 `v*` tag 触发并禁用作业；后续配置签名和分发凭据后，再移入 workflows 并启用。
+
+首次创建一份全新的签名密钥时，在仓库根目录运行以下命令（本机已执行，不要重复生成）：
+
+```sh
+bash scripts/create-android-signing.sh
+```
+
+需要本机安装 Java 的 `keytool` 和 Python 3。脚本默认保存在 `$HOME/.local/share/essaylens/signing/`（设置了 `XDG_DATA_HOME` 时使用该目录下的 `essaylens/signing/`），目录已存在就停止，避免替换旧密钥。它生成一份 PKCS12 密钥、随机长密码、Base64 文件和 GitHub 配置文件，并自动更新仓库中的公共证书指纹。`password.txt` 同时作为密钥库密码和私钥密码。
+
+在 [writer 的 Actions Secrets 页面](https://github.com/bise86/writer/settings/secrets/actions) 中点击 **New repository secret**（已有同名项则更新），配置：
+
+| Name | Secret 内容 |
+| --- | --- |
+| `ANDROID_KEYSTORE_BASE64` | 私有目录内 `keystore.base64` 的完整文本 |
+| `ANDROID_KEYSTORE_PASSWORD` | `password.txt` 的内容，去掉末尾换行 |
+| `ANDROID_KEY_ALIAS` | `essaylens-release` |
+| `ANDROID_KEY_PASSWORD` | 与 `ANDROID_KEYSTORE_PASSWORD` 相同 |
+
+有 GitHub CLI 且已登录的机器，也可一次导入四项：
+
+```sh
+gh secret set --repo bise86/writer --env-file /home/esgyn/.local/share/essaylens/signing/github-secrets.env
+```
+
+私有目录需要长期保留、备份和复用，不要在每次发布前运行生成命令。配置 Secrets、提交并推送匹配的证书指纹后，再推送版本 tag 触发发布。
 
 ```sh
 git tag v0.1.0
