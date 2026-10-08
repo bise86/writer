@@ -1,4 +1,7 @@
-import type {ResponseInput} from 'openai/resources/responses/responses';
+import type {
+  ResponseFormatTextConfig,
+  ResponseInput,
+} from 'openai/resources/responses/responses';
 import {AppSettings} from '../types';
 
 export interface HistoryMessage {
@@ -18,6 +21,7 @@ export interface RequestOptions {
   // The current input and instructions (including the rubric) are immutable.
   history?: HistoryMessage[];
   onProgress?: RequestProgress;
+  textFormat?: ResponseFormatTextConfig;
 }
 
 export class ContextBudgetError extends Error {}

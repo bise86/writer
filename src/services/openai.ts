@@ -73,6 +73,22 @@ function unsupportedEndpoint(error: unknown) {
   return [404, 405, 501].includes(statusOf(error) || 0);
 }
 
+// Only negotiate output formats after an explicit capability rejection. Auth,
+// image, context and invalid-schema errors must not trigger extra requests.
+function unsupportedTextFormat(error: unknown) {
+  if (![400, 422].includes(statusOf(error) || 0)) {
+    return false;
+  }
+  const message = error instanceof Error ? error.message : String(error);
+  return (
+    /text[.\s_["']*format|json_schema|json_object/i.test(message) &&
+    /not supported|does not support|unsupported|unknown (?:field|parameter)|unrecognized (?:field|parameter)/i.test(
+      message,
+    ) &&
+    !/invalid (?:json )?schema|schema is invalid/i.test(message)
+  );
+}
+
 function estimatedRequest(input: ModelInput, instructions: string) {
   return estimateInputTokens(input) + estimateTextTokens(instructions) + 32;
 }
@@ -183,8 +199,16 @@ async function prepareInput(
   validateHistory(history);
   const native = usesOpenAIContext(settings, model);
   const {inputLimit, compactThreshold} = contextBudget(settings);
+  const textConfig = options.textFormat
+    ? {format: options.textFormat}
+    : undefined;
+  const formatTokens = textConfig
+    ? estimateTextTokens(JSON.stringify(textConfig))
+    : 0;
   async function count(current: ModelInput, force = false) {
-    const estimated = force ? 0 : estimatedRequest(current, instructions);
+    const estimated = force
+      ? 0
+      : estimatedRequest(current, instructions) + formatTokens;
     if (native && (force || estimated >= compactThreshold)) {
       try {
         const result = await requestWithRetry(
@@ -195,6 +219,7 @@ async function prepareInput(
                     model,
                     input: current,
                     instructions,
+                    ...(textConfig ? {text: textConfig} : {}),
                     reasoning: {
                       effort: normalizeReasoningEffort(
                         settings.reasoningEffort,
@@ -207,6 +232,7 @@ async function prepareInput(
                   model,
                   input: current,
                   instructions,
+                  ...(textConfig ? {text: textConfig} : {}),
                   reasoning: {
                     effort: normalizeReasoningEffort(settings.reasoningEffort),
                   },
@@ -355,6 +381,9 @@ export async function runResponse(
       reasoning: {effort: normalizeReasoningEffort(actual.reasoningEffort)},
       store: false,
     };
+    if (options.textFormat) {
+      request.text = {format: options.textFormat};
+    }
     if (usesOpenAIContext(actual, activeModel)) {
       request.context_management = [
         {
@@ -365,16 +394,40 @@ export async function runResponse(
       request.truncation = 'disabled';
     }
     await options.onProgress?.('正在请求模型');
-    const response = await requestWithRetry(
-      () =>
-        options.signal
-          ? client.responses.create(request, {signal: options.signal})
-          : client.responses.create(request),
-      actual.retryCount,
-      '模型请求',
-      options.onProgress,
-      options.signal,
-    );
+    const send = () =>
+      requestWithRetry(
+        () =>
+          options.signal
+            ? client.responses.create({...request}, {signal: options.signal})
+            : client.responses.create({...request}),
+        actual.retryCount,
+        '模型请求',
+        options.onProgress,
+        options.signal,
+      );
+    let response;
+    for (;;) {
+      try {
+        response = await send();
+        break;
+      } catch (error) {
+        checkCancelled(options.signal);
+        const format = request.text?.format?.type;
+        if (!format || format === 'text' || !unsupportedTextFormat(error)) {
+          throw error;
+        }
+        // At most two compatibility fallbacks; keep input, model and rules.
+        request.text =
+          format === 'json_schema'
+            ? {format: {type: 'json_object'}}
+            : undefined;
+        await options.onProgress?.(
+          format === 'json_schema'
+            ? '模型服务不支持结构化输出，改用 JSON 模式并继续校验'
+            : '模型服务不支持 JSON 模式，按格式提示生成并继续校验',
+        );
+      }
+    }
     return {
       text: completedText(response),
       usage: {

@@ -187,6 +187,112 @@ test('云端 OCR 使用唯一配置的模型', async () => {
   expect(create.mock.calls[0][0].reasoning).toEqual({effort: 'none'});
 });
 
+const reviewFormat = {
+  type: 'json_schema' as const,
+  name: 'ocr_review',
+  strict: true,
+  schema: {
+    type: 'object',
+    properties: {text: {type: 'string'}, corrections: {type: 'string'}},
+    required: ['text', 'corrections'],
+    additionalProperties: false,
+  },
+};
+
+test('结构化输出约束计入上下文预算，超限时不发送请求', async () => {
+  const configured = {...settings, contextWindow: 4096, maxOutputTokens: 512};
+  const text = 'a'.repeat(3100);
+  await runResponse(text, 'JSON', configured);
+  create.mockClear();
+  await expect(
+    runResponse(text, 'JSON', configured, configured.modelName, {
+      textFormat: reviewFormat,
+    }),
+  ).rejects.toThrow('超过可用输入预算');
+  expect(create).not.toHaveBeenCalled();
+});
+
+test('原生 token 计数收到与最终请求相同的输出约束', async () => {
+  await runResponse(
+    'a'.repeat(7900),
+    'JSON',
+    {...openai, contextWindow: 10000, maxOutputTokens: 500},
+    openai.modelName,
+    {textFormat: reviewFormat},
+  );
+  expect(count.mock.calls[0][0].text).toEqual({format: reviewFormat});
+  expect(create.mock.calls[0][0].text).toEqual({format: reviewFormat});
+});
+
+test.each([settings, openai])(
+  '图片复核按 Responses 协议发送结构化输出参数：$modelName',
+  async configured => {
+    await visionResponse(
+      'data:image/png;base64,test',
+      '复核并输出 JSON',
+      configured,
+      {
+        textFormat: reviewFormat,
+      },
+    );
+    const body = create.mock.calls[0][0];
+    expect(body.text).toEqual({format: reviewFormat});
+    expect(body).not.toHaveProperty('response_format');
+    expect(body.input[0].content[1]).toEqual({
+      type: 'input_image',
+      image_url: 'data:image/png;base64,test',
+      detail: 'high',
+    });
+  },
+);
+
+test('网关明确不支持格式参数时最多兼容两次，原图、原文和规则不变', async () => {
+  create
+    .mockRejectedValueOnce(
+      failure(400, 'text.format json_schema is not supported'),
+    )
+    .mockRejectedValueOnce(failure(422, 'Unsupported parameter: text.format'))
+    .mockResolvedValueOnce(done('{"text":"原文","corrections":"已核实"}'));
+  await visionResponse(
+    'data:image/png;base64,test',
+    '复核并输出 JSON',
+    settings,
+    {
+      textFormat: reviewFormat,
+    },
+  );
+  const requests = create.mock.calls.map(([body]) => body);
+  expect(requests.map(body => body.text?.format.type)).toEqual([
+    'json_schema',
+    'json_object',
+    undefined,
+  ]);
+  for (const body of requests) {
+    expect(body.input).toEqual(requests[0].input);
+    expect(body.instructions).toBe('复核并输出 JSON');
+  }
+});
+
+test.each([
+  [401, 'json_schema not supported'],
+  [400, 'input_image is not supported'],
+  [400, 'Invalid schema for text.format json_schema: unsupported field'],
+  [400, 'context_length_exceeded'],
+])('非格式能力错误不触发兼容请求：%s %s', async (status, message) => {
+  create.mockRejectedValue(failure(Number(status), String(message)));
+  await expect(
+    visionResponse('data:image/png;base64,test', '输出 JSON', settings, {
+      textFormat: reviewFormat,
+    }),
+  ).rejects.toThrow();
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+test('原文转录请求仍使用纯文本，不强制任何 JSON 格式', async () => {
+  await visionResponse('data:image/png;base64,test', '逐字转录', settings);
+  expect(create.mock.calls[0][0]).not.toHaveProperty('text');
+});
+
 test('DeepSeek 分段压缩历史，当前原文和细则不参与摘要', async () => {
   const configured = {...settings, contextWindow: 4096, maxOutputTokens: 512};
   const input = '不可替换的作文原文';
