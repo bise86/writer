@@ -67,6 +67,9 @@ export interface ScoreResult {
   suggestions: string[];
   annotations: Annotation[];
   dimensionFeedback?: Record<string, WritingFeedback>;
+  titleFeedback?: WritingFeedback;
+  /** Missing on older scores whose numbering included the title. */
+  paragraphIndexing?: 'body-v1';
   paragraphReviews?: (WritingFeedback & {paragraphIndex: number})[];
 }
 

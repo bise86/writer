@@ -336,10 +336,11 @@ test('最终标题使用复核纠正的新标题', async () => {
     status: 'completed',
     output_text: JSON.stringify({
       ...validScore,
-      paragraphReviews: [
-        validScore.paragraphReviews![0],
-        {...validScore.paragraphReviews![0], paragraphIndex: 2},
-      ],
+      titleFeedback: {
+        strengths: ['标题紧扣经历'],
+        weaknesses: [],
+        improvements: ['在结尾呼应标题'],
+      },
       annotations: [
         {...validScore.annotations[0], quote: text},
         {
@@ -353,6 +354,50 @@ test('最终标题使用复核纠正的新标题', async () => {
   });
   await runEssayPipeline({...essay});
   expect(essay.title).toBe('雨中的等待');
+  const saved = JSON.parse(essay.scoreJson) as ScoreResult;
+  expect(saved.paragraphIndexing).toBe('body-v1');
+  expect(saved.paragraphReviews?.map(item => item.paragraphIndex)).toEqual([1]);
+  const request = create.mock.calls[0][0];
+  expect(request.instructions).toContain('标题不是正文段落');
+  expect(request.input).toContain(
+    '"kind":"title","label":"标题","text":"雨中的等待"',
+  );
+  expect(request.input).toContain(
+    '"kind":"paragraph","label":"第 1 段","paragraphIndex":1',
+  );
+});
+
+test('标题必须单独评价，不能继续混入正文段落列表', () => {
+  const original = '雨中的等待\n' + text;
+  const result = {
+    ...validScore,
+    annotations: [
+      {...validScore.annotations[0], quote: '雨中的等待'},
+      {...validScore.annotations[0], quote: text},
+    ],
+  };
+  expect(() => validateScore(result, original)).toThrow('titleFeedback');
+  const withTitle = {
+    ...result,
+    titleFeedback: {
+      strengths: ['标题扣题'],
+      weaknesses: [],
+      improvements: ['结尾照应'],
+    },
+  };
+  expect(validateScore(withTitle, original).paragraphReviews).toHaveLength(1);
+  expect(() =>
+    validateScore(
+      {
+        ...withTitle,
+        paragraphReviews: [
+          ...withTitle.paragraphReviews!,
+          {...withTitle.paragraphReviews![0], paragraphIndex: 2},
+        ],
+      },
+      original,
+    ),
+  ).toThrow('paragraphIndex 必须在 1..1');
 });
 
 test('重复引用缺少位置时要求模型纠正，不能默认为第一处', () => {

@@ -1,6 +1,6 @@
 import rules from '../assets/scoring-rules.json';
 import {ScoreResult} from '../types';
-import {essayParagraphs} from './essay-text';
+import {essaySections, sectionLabel} from './essay-text';
 
 function isObject(value: unknown): value is Record<string, any> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -115,7 +115,15 @@ export function validateScore(
     }
   }
 
-  const paragraphs = essayParagraphs(originalText);
+  const sections = essaySections(originalText);
+  const paragraphs = sections.filter(section => section.kind === 'paragraph');
+  if (sections.some(section => section.kind === 'title')) {
+    validateFeedback(
+      'titleFeedback（标题评价，不计入正文段落）',
+      value.titleFeedback,
+      issues,
+    );
+  }
   if (!Array.isArray(value.paragraphReviews)) {
     issues.push(
       'paragraphReviews 必须逐段输出 paragraphIndex、strengths、weaknesses、improvements',
@@ -205,14 +213,16 @@ export function validateScore(
       } as ScoreResult['annotations'][number]);
     });
   }
-  for (const paragraph of paragraphs) {
+  for (const paragraph of sections) {
     if (
       !annotations.some(
         item => item.start! < paragraph.end && item.end! > paragraph.start,
       )
     ) {
       issues.push(
-        `annotations 缺少第 ${paragraph.index} 段的句子批注，请逐字引用并评价该段内容`,
+        `annotations 缺少${sectionLabel(
+          paragraph,
+        )}的句子批注，请逐字引用并评价该部分内容`,
       );
     }
   }
@@ -221,6 +231,7 @@ export function validateScore(
   }
   return {
     ...value,
+    paragraphIndexing: 'body-v1',
     bandName: band?.name || '未达强化及格',
     annotations,
   } as ScoreResult;

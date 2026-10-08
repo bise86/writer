@@ -3,6 +3,7 @@ import {
   PDFDict,
   PDFName,
   PDFRawStream,
+  PDFPage,
   decodePDFRawStream,
 } from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
@@ -79,7 +80,7 @@ test('生成含中文原文和长批注的多页真实 PDF', async () => {
     annotations: [
       {
         ...score.annotations[0],
-        comment: '声音描写应当服务于人物情绪。'.repeat(180),
+        comment: '声音描写应当服务于人物情绪。'.repeat(400),
       },
       score.annotations[1],
     ],
@@ -112,4 +113,82 @@ test('生成含中文原文和长批注的多页真实 PDF', async () => {
   expect(bytes.length).toBeLessThan(500_000);
   // A real artifact is also inspected with a PDF renderer during development.
   writeFileSync(join(tmpdir(), 'writer-annotated-test.pdf'), bytes);
+}, 30000);
+
+test('标题独立编号，长段原文和全部评语完整绘制并跨页接续', async () => {
+  const title = '春天的发现';
+  const first =
+    '段首：我推开窗。' +
+    Array.from(
+      {length: 100},
+      (_, i) => `第${i + 1}处细节，风吹过树梢，我记下眼前的颜色与声音。`,
+    ).join('') +
+    '段尾：这些发现让我学会认真观察生活。';
+  const second = '最后一段：我合上本子，准备明天继续观察。';
+  const original = `${title}\n\n${first}\n\n${second}`;
+  const legacy = {
+    ...score,
+    annotations: [
+      {...score.annotations[0], quote: title, comment: '标题聚焦发现'},
+      {
+        ...score.annotations[0],
+        quote: '段首：我推开窗。',
+        comment: '观察从具体场景开始',
+      },
+      {...score.annotations[1], quote: second, suggestion: '保留下一步行动'},
+    ],
+    paragraphReviews: [
+      '标题的旧评价',
+      '正文首段的旧评价',
+      '正文末段的旧评价',
+    ].map((value, i) => ({
+      paragraphIndex: i + 1,
+      strengths: [value],
+      weaknesses: [],
+      improvements: [`${value}的完整修改建议`],
+    })),
+  };
+  const drawText = jest.spyOn(PDFPage.prototype, 'drawText');
+  try {
+    const base64 = await buildAnnotatedPdf(original, title, legacy);
+    const calls = [...drawText.mock.calls];
+    const drawnBody = calls
+      .filter(([, options]) => options?.size === 12)
+      .map(([value]) => value)
+      .join('');
+    expect(drawnBody).toBe(first + second);
+    expect(
+      calls
+        .filter(([, options]) => options?.size === 16)
+        .map(([value]) => value),
+    ).toEqual([title]);
+    const drawn = calls.map(([value]) => value).join('\n');
+    expect(drawn).toContain('标题 · 原文');
+    expect(drawn).toContain('第 1 段 · 原文（续）');
+    expect(drawn).toContain('第 2 段 · 原文');
+    expect(drawn).not.toContain('第 3 段');
+    expect(drawn.indexOf('标题整体评价')).toBeLessThan(
+      drawn.indexOf('标题的旧评价'),
+    );
+    expect(drawn.indexOf('第 1 段整体评价')).toBeLessThan(
+      drawn.indexOf('正文首段的旧评价'),
+    );
+    expect(drawn).toContain('正文末段的旧评价的完整修改建议');
+    for (const [, options] of calls.filter(
+      ([, drawOptions]) => drawOptions?.size !== 8,
+    )) {
+      expect(options?.y).toBeGreaterThanOrEqual(48);
+      expect(options?.y).toBeLessThanOrEqual(807);
+    }
+    const bytes = Buffer.from(base64, 'base64');
+    const pdf = await PDFDocument.load(bytes);
+    expect(pdf.getPageCount()).toBeGreaterThan(2);
+    writeFileSync(join(tmpdir(), 'writer-full-paragraph-test.pdf'), bytes);
+    writeFileSync(
+      join(tmpdir(), 'writer-full-paragraph-expected.json'),
+      JSON.stringify({title, first, second}),
+    );
+  } finally {
+    drawText.mockRestore();
+  }
 }, 30000);

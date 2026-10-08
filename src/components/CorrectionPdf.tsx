@@ -88,7 +88,9 @@ export default function CorrectionPdf({
   return (
     <View style={styles.root}>
       <View style={styles.toolbar}>
-        <Text style={styles.help}>原文与批注 · 可双指缩放 {page}</Text>
+        <Text style={styles.help}>
+          各段原文完整展示，批注列于下方 · 可双指缩放 {page}
+        </Text>
         <Pressable
           accessibilityRole="button"
           onPress={exportPdf}

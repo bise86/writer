@@ -217,6 +217,11 @@ export default function EssayDetail({
                     <View style={styles.stage} key={id}>
                       <View style={styles.stageText}>
                         <Text style={styles.subheading}>{label}</Text>
+                        {id === 'reconcile' && (
+                          <Text style={styles.muted}>
+                            再次对照原照片核对识别结果，不润色或改写作文。
+                          </Text>
+                        )}
                         <Text
                           style={[
                             styles.muted,

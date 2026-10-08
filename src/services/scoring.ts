@@ -2,7 +2,7 @@ import rules from '../assets/scoring-rules.json';
 import {getScoreAttempts, getSettings, saveScoreAttempt} from '../db/database';
 import {AppSettings, ScoreResult} from '../types';
 import {HistoryMessage, RequestOptions} from './context';
-import {essayParagraphs} from './essay-text';
+import {essaySections, sectionLabel} from './essay-text';
 import {parseJson, runResponse} from './openai';
 import {checkCancelled} from './request';
 import {ScoreValidationError, validateScore} from './score-validation';
@@ -31,6 +31,7 @@ export function scoreInstructions() {
     weaknesses: ['全文最需要改进的问题'],
     improvements: ['下一步可执行的改法'],
     suggestions: ['训练和复写建议'],
+    titleFeedback: feedback,
     paragraphReviews: [{paragraphIndex: 1, ...feedback}],
     annotations: [
       {
@@ -52,8 +53,8 @@ ${JSON.stringify(example)}
 2. bandId 严格使用规则中的英文 id。先按实际作文检查区间、分项底线和封顶规则；不满足底线时降低分数并重新定档，不能为了进入某档抬高分数。总分低于 60 时使用 unqualified。
 3. 语言只有通顺没有表现力、主题没有自然深化时不得进入 high 及以上档次。结构、修辞、描写、叙述、抒情等技法按实际作用评价，不能数技法加分。
 4. dimensionFeedback 必须完整包含五项，每项都有 strengths、weaknesses、improvements 三个字符串数组；improvements 至少一条可执行建议。
-5. paragraphReviews 必须按照输入段落索引逐段输出，每段恰好一份，不遗漏、不重复；分别说明优点、不足和具体修改方法。
-6. annotations 必须逐句检查，标出有依据的亮点、不足和改进处；每个段落（包括标题行）至少一条可定位批注，优先引用完整句子，不用全篇一条笼统评价替代。不得为凑数编造优点或错误；必须逐字引用原文连续文字；type 只能为 strength/improvement/grammar/structure/style。优点和问题都要批注，comment 解释原因，suggestion 给出具体改法。start/end 是原文 UTF-16 起止位置（end 不含），重复句子要分别定位，不确定时填 -1，由程序定位。不得把【辨认不清】当成学生的错字扣分，说明识别不确定对判断的影响。
+5. 标题不是正文段落，单独在 titleFeedback 中评价其优点、不足和具体改法（字段同上）；没有标题时省略 titleFeedback。paragraphReviews 只包含正文，严格按输入 paragraphIndex 从 1 开始逐段输出，每段恰好一份，不遗漏、不重复；分别说明优点、不足和具体修改方法。不得把标题当作第 1 段，也不得让正文编号整体后移。
+6. annotations 必须逐句检查，标出有依据的亮点、不足和改进处；标题（如有）和每个正文段落各至少一条可定位批注，优先引用完整句子，不用全篇一条笼统评价替代。不得为凑数编造优点或错误；必须逐字引用原文连续文字，不得用省略号或摘要替代引用；type 只能为 strength/improvement/grammar/structure/style。优点和问题都要批注，comment 解释原因，suggestion 给出具体改法。start/end 是原文 UTF-16 起止位置（end 不含），重复句子要分别定位，不确定时填 -1，由程序定位。不得把【辨认不清】当成学生的错字扣分，说明识别不确定对判断的影响。
 7. summary 是总评；strengths、weaknesses、improvements、suggestions 都必须是字符串数组，后两项不可为空。没有原始命题信息时不要臆断题目要求，明确评价限度。
 8. 如果收到“评分校验未通过”反馈，必须保留此前正确内容，结合反馈重新输出完整 JSON；不能只输出差异、解释、Markdown、空数组或删除批注来规避校验。`;
 }
@@ -91,9 +92,13 @@ export async function scoreEssay(
     );
     const response = await runResponse(
       `请评价以下完整作文，不要省略任何段落。\n原文：\n${text}\n段落索引（仅用于定位）：\n${JSON.stringify(
-        essayParagraphs(text).map(paragraph => ({
-          paragraphIndex: paragraph.index,
-          text: paragraph.text,
+        essaySections(text).map(section => ({
+          kind: section.kind,
+          label: sectionLabel(section),
+          ...(section.kind === 'paragraph'
+            ? {paragraphIndex: section.index}
+            : {}),
+          text: section.text,
         })),
       )}${
         correction ? `\n上一轮校验反馈（必须逐条解决）：\n${correction}` : ''

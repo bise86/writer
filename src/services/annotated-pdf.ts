@@ -1,7 +1,11 @@
 import {PDFDocument, PDFFont, PDFPage, rgb} from 'pdf-lib';
 import fontkit from '@pdf-lib/fontkit';
 import {Annotation, ScoreResult} from '../types';
-import {essayParagraphs} from './essay-text';
+import {
+  essaySections,
+  normalizeSavedParagraphReviews,
+  sectionLabel,
+} from './essay-text';
 
 const COLORS = {
   text: rgb(0.12, 0.16, 0.22),
@@ -90,7 +94,7 @@ export function locateAnnotations(text: string, annotations: Annotation[]) {
   });
 }
 
-/** Actual searchable PDF, with a bundled CJK font and printed margin comments. */
+/** Actual searchable PDF: complete original text, then each section's comments. */
 export async function buildAnnotatedPdf(
   text: string,
   title: string,
@@ -130,16 +134,15 @@ export async function buildAnnotatedPdf(
     color = COLORS.text,
   ) => page.drawText(display(value), {font, x, y, size, color});
   const annotations = locateAnnotations(text, score.annotations);
-  const paragraphs = essayParagraphs(text);
+  const sections = essaySections(text);
+  const feedback = normalizeSavedParagraphReviews(score, text);
   pdf.setTitle(`${title || '未命名作文'} · 批改`);
   pdf.setAuthor('EssayLens');
   pdf.setSubject('原文、分段评语和句子批注');
   let page: PDFPage;
   let y = 0;
   const leftX = 36;
-  const rightX = 356;
-  const bodyWidth = 292;
-  const noteWidth = 203;
+  const bodyWidth = 523;
   const bottom = 48;
   const newPage = () => {
     page = pdf.addPage([595.28, 841.89]);
@@ -157,51 +160,90 @@ export async function buildAnnotatedPdf(
       9,
       COLORS.muted,
     );
-    draw(page, '原文', leftX, headingY - 28, 11);
-    draw(page, '批注', rightX, headingY - 28, 11);
-    page.drawLine({
-      start: {x: 341, y: headingY - 14},
-      end: {x: 341, y: bottom},
-      thickness: 0.6,
-      color: rgb(0.83, 0.86, 0.9),
-    });
-    y = headingY - 54;
+    y = headingY - 35;
   };
   newPage();
-  for (const paragraph of paragraphs) {
-    const body = wrapPdfText(
-      paragraph.text,
-      bodyWidth,
-      measure(12),
-      paragraph.start,
-    );
-    const notes: {text: string; color: ReturnType<typeof rgb>}[] = [];
-    const addNote = (value: string, color = COLORS.muted) => {
-      notes.push(
-        ...wrapPdfText(value, noteWidth, measure(9)).map(line => ({
-          text: line.text,
-          color,
-        })),
-      );
-    };
-    for (const annotation of annotations.filter(
-      item => item.start >= paragraph.start && item.start < paragraph.end,
-    )) {
-      addNote(
-        `[${annotation.number}] ${LABELS[annotation.type]}：${
-          annotation.quote
-        }`,
-        colorFor(annotation.type),
-      );
-      addNote(`评语：${annotation.comment}`);
-      addNote(`建议：${annotation.suggestion}`, COLORS.improvement);
-      addNote(' ');
+  for (const section of sections) {
+    const label = sectionLabel(section);
+    const bodySize = section.kind === 'title' ? 16 : 12;
+    if (y - bottom < 80) {
+      newPage();
     }
-    const review = score.paragraphReviews?.find(
-      item => item.paragraphIndex === paragraph.index,
+    draw(page!, `${label} · 原文`, leftX, y, 10, COLORS.muted);
+    y -= 26;
+    const body = wrapPdfText(
+      section.text,
+      bodyWidth,
+      measure(bodySize),
+      section.start,
     );
+    // Render every original line before any feedback. A long paragraph carries
+    // on to the next page; neither model quotes nor summaries replace its text.
+    for (const line of body) {
+      if (y - bottom < 4) {
+        newPage();
+        draw(page!, `${label} · 原文（续）`, leftX, y, 10, COLORS.muted);
+        y -= 26;
+      }
+      const ranges = annotations.filter(
+        item => item.start < line.end && item.end > line.start,
+      );
+      for (const annotation of ranges) {
+        const from = Math.max(line.start, annotation.start) - line.start;
+        const to = Math.min(line.end, annotation.end) - line.start;
+        const x = leftX + measure(bodySize)(line.text.slice(0, from));
+        const width = measure(bodySize)(line.text.slice(from, to));
+        page!.drawRectangle({
+          x,
+          y: y - 3,
+          width,
+          height: bodySize + 4,
+          color: colorFor(annotation.type),
+          opacity: 0.13,
+        });
+        page!.drawLine({
+          start: {x, y: y - 3},
+          end: {x: x + width, y: y - 3},
+          color: colorFor(annotation.type),
+          thickness: 0.6,
+        });
+      }
+      draw(page!, line.text, leftX, y, bodySize);
+      const markers = ranges
+        .filter(item => item.start >= line.start && item.start < line.end)
+        .map(item => item.number);
+      if (markers.length) {
+        draw(
+          page!,
+          `[${markers.join(',')}]`,
+          leftX,
+          y + bodySize + 1,
+          6,
+          COLORS.muted,
+        );
+      }
+      y -= bodySize + 12;
+    }
+    y -= 6;
+    const addNote = (value: string, color = COLORS.muted) => {
+      for (const line of wrapPdfText(value, bodyWidth, measure(10))) {
+        if (y - bottom < 4) {
+          newPage();
+          draw(page!, `${label} · 批注（续）`, leftX, y, 10, COLORS.muted);
+          y -= 24;
+        }
+        draw(page!, line.text, leftX, y, 10, color);
+        y -= 16;
+      }
+    };
+    const review =
+      section.kind === 'title'
+        ? feedback.titleFeedback
+        : feedback.paragraphReviews?.find(
+            item => item.paragraphIndex === section.index,
+          );
     if (review) {
-      addNote(`第 ${paragraph.index} 段整体评价`);
+      addNote(`${label}整体评价`);
       review.strengths.forEach(item =>
         addNote(`优点：${item}`, COLORS.strength),
       );
@@ -212,86 +254,23 @@ export async function buildAnnotatedPdf(
         addNote(`改进：${item}`, COLORS.improvement),
       );
     }
-    if (!notes.length) {
-      addNote('本段暂无已保存的批注。');
+    const sectionAnnotations = annotations.filter(
+      item => item.start < section.end && item.end > section.start,
+    );
+    for (const annotation of sectionAnnotations) {
+      y -= 8;
+      addNote(
+        `[${annotation.number}] ${LABELS[annotation.type]}`,
+        colorFor(annotation.type),
+      );
+      addNote(`引用：${annotation.quote}`);
+      addNote(`评语：${annotation.comment}`);
+      addNote(`建议：${annotation.suggestion}`, COLORS.improvement);
     }
-    let bodyIndex = 0;
-    let noteIndex = 0;
-    let continuation = false;
-    while (bodyIndex < body.length || noteIndex < notes.length) {
-      if (y - bottom < 65) {
-        newPage();
-      }
-      draw(
-        page!,
-        `第 ${paragraph.index} 段${continuation ? '（续）' : ''}`,
-        leftX,
-        y,
-        9,
-        COLORS.muted,
-      );
-      y -= 21;
-      const bodyCount = Math.min(
-        body.length - bodyIndex,
-        Math.floor((y - bottom) / 21) + 1,
-      );
-      const noteCount = Math.min(
-        notes.length - noteIndex,
-        Math.floor((y - bottom) / 14) + 1,
-      );
-      for (let i = 0; i < bodyCount; i += 1) {
-        const line = body[bodyIndex + i];
-        const lineY = y - i * 21;
-        const ranges = annotations.filter(
-          item => item.start < line.end && item.end > line.start,
-        );
-        for (const annotation of ranges) {
-          const from = Math.max(line.start, annotation.start) - line.start;
-          const to = Math.min(line.end, annotation.end) - line.start;
-          const x = leftX + measure(12)(line.text.slice(0, from));
-          const width = measure(12)(line.text.slice(from, to));
-          page!.drawRectangle({
-            x,
-            y: lineY - 3,
-            width,
-            height: 16,
-            color: colorFor(annotation.type),
-            opacity: 0.13,
-          });
-          page!.drawLine({
-            start: {x, y: lineY - 3},
-            end: {x: x + width, y: lineY - 3},
-            color: colorFor(annotation.type),
-            thickness: 0.6,
-          });
-        }
-        draw(page!, line.text, leftX, lineY, 12);
-        const markers = ranges
-          .filter(item => item.start >= line.start && item.start < line.end)
-          .map(item => item.number);
-        if (markers.length) {
-          draw(
-            page!,
-            `[${markers.join(',')}]`,
-            leftX,
-            lineY + 13,
-            6,
-            COLORS.muted,
-          );
-        }
-      }
-      for (let i = 0; i < noteCount; i += 1) {
-        const note = notes[noteIndex + i];
-        draw(page!, note.text, rightX, y - i * 14, 9, note.color);
-      }
-      y -= Math.max(bodyCount * 21, noteCount * 14) + 18;
-      bodyIndex += bodyCount;
-      noteIndex += noteCount;
-      continuation = true;
-      if (bodyIndex < body.length || noteIndex < notes.length) {
-        newPage();
-      }
+    if (!review && !sectionAnnotations.length) {
+      addNote('此处暂无已保存的批注。');
     }
+    y -= 24;
     // Yield between paragraphs so React Native can paint progress indicators.
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
@@ -299,7 +278,7 @@ export async function buildAnnotatedPdf(
   pages.forEach((item, index) => {
     draw(
       item,
-      `${index + 1} / ${pages.length}    原文保持识别结果，修改建议列于旁注`,
+      `${index + 1} / ${pages.length}    原文完整展示，修改建议列于各段下方`,
       leftX,
       25,
       8,
