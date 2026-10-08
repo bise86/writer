@@ -379,7 +379,8 @@ function Settings({
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>评分与批注圆桌评审</Text>
           <Text style={styles.muted}>
-            默认关闭。启用后，由同一模型分别扮演不同角色，独立审阅、讨论并投票；评分和批注都需过半同意。会增加处理时间和模型用量。
+            默认关闭。选择 3 或 5
+            后，提示模型按相应角色数量进行圆桌讨论和投票，统一生成最终评分与批注。角色分工、会议讨论和结果修订均由模型完成。
           </Text>
           <View style={styles.actionRow}>
             {ROUNDTABLE_OPTIONS.map(size => (

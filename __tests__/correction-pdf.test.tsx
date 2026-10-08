@@ -52,6 +52,7 @@ test('生成的同一个 PDF 可直接预览并以文件方式导出', async () 
   await render();
   const path = (RNFS.writeFile as jest.Mock).mock.calls[0][0];
   expect(view.root.findByType(Pdf).props.source.uri).toBe(`file://${path}`);
+  expect(view.root.findByType(Pdf).props.fitPolicy).toBe(0);
   await click('导出 PDF');
   expect(Share.open).toHaveBeenCalledWith(
     expect.objectContaining({

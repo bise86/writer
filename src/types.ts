@@ -72,35 +72,6 @@ export interface ScoreResult {
   /** Missing on older scores whose numbering included the title. */
   paragraphIndexing?: 'body-v1';
   paragraphReviews?: (WritingFeedback & {paragraphIndex: number})[];
-  roundtable?: RoundtableReport;
-}
-
-export interface ReviewOpinion {
-  scoreApproved: boolean;
-  annotationsApproved: boolean;
-  scoreReason: string;
-  annotationsReason: string;
-  changes: string[];
-}
-
-export interface RoleOpinion extends ReviewOpinion {
-  roleId: string;
-  roleName: string;
-}
-
-export interface RoundtableRound {
-  round: number;
-  draftScore: number;
-  reviews: RoleOpinion[];
-  votes: RoleOpinion[];
-  scoreVotes: number;
-  annotationVotes: number;
-}
-
-export interface RoundtableReport {
-  reviewerCount: 3 | 5;
-  majority: number;
-  rounds: RoundtableRound[];
 }
 
 export interface WritingFeedback {

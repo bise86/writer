@@ -133,7 +133,7 @@ export function locateAnnotations(text: string, annotations: Annotation[]) {
   });
 }
 
-/** Searchable two-column PDF. Original text and comments have independent cursors. */
+/** Every comment page includes its section in full in the left column. */
 export async function buildAnnotatedPdf(
   text: string,
   title: string,
@@ -178,19 +178,20 @@ export async function buildAnnotatedPdf(
   pdf.setTitle(`${title || '未命名作文'} · 批改`);
   pdf.setAuthor('EssayLens');
   pdf.setSubject('原文、分段评语和句子批注');
-  let page: PDFPage;
+  let page: PDFPage | undefined;
   let y = 0;
   const leftX = 36;
   const bodyWidth = 292;
   const rightX = 356;
   const noteWidth = 203;
   const bottom = 48;
-  const newPage = () => {
-    page = pdf.addPage([595.28, 841.89]);
-    const heading = wrapPdfText(title || '未命名作文', 520, measure(15));
-    let headingY = 807;
+  const heading = wrapPdfText(title || '未命名作文', 520, measure(15));
+  const headerSpace = 34.89 + heading.length * 21 + 54;
+  const newPage = (height: number) => {
+    page = pdf.addPage([595.28, height]);
+    let headingY = height - 34.89;
     heading.forEach(line => {
-      draw(page, line.text, leftX, headingY, 15);
+      draw(page!, line.text, leftX, headingY, 15);
       headingY -= 21;
     });
     draw(
@@ -211,7 +212,6 @@ export async function buildAnnotatedPdf(
     });
     y = headingY - 54;
   };
-  newPage();
   for (const section of sections) {
     const label = sectionLabel(section);
     const bodySize = section.kind === 'title' ? 16 : 12;
@@ -265,26 +265,16 @@ export async function buildAnnotatedPdf(
     if (!notes.length) {
       addNote('此处暂无已保存的批注。');
     }
-    let bodyIndex = 0;
     let noteIndex = 0;
-    // Neither column is bounded by the other column's length. Keep rendering
-    // until both are exhausted, including paragraphs spanning several pages.
-    while (bodyIndex < body.length || noteIndex < notes.length) {
-      if (y - bottom < 80) {
-        newPage();
+    const bodyBlockHeight = 28 + body.length * bodyHeight;
+    // Enlarge the page for a long paragraph instead of clipping, shrinking, or
+    // referring readers to another page. Every continuation repeats this block.
+    const pageHeight = Math.max(841.89, headerSpace + bodyBlockHeight + bottom);
+    while (noteIndex < notes.length) {
+      if (!page || y - bottom + 0.01 < bodyBlockHeight) {
+        newPage(pageHeight);
       }
-      if (bodyIndex < body.length) {
-        draw(
-          page!,
-          `${label} · 原文${bodyIndex ? '（续）' : ''}`,
-          leftX,
-          y,
-          10,
-          COLORS.muted,
-        );
-      } else {
-        draw(page!, '本段原文已在前页完整展示', leftX, y, 9, COLORS.muted);
-      }
+      draw(page!, `${label} · 完整原文`, leftX, y, 10, COLORS.muted);
       if (noteIndex < notes.length) {
         draw(
           page!,
@@ -296,16 +286,12 @@ export async function buildAnnotatedPdf(
         );
       }
       y -= 28;
-      const bodyCount = Math.min(
-        body.length - bodyIndex,
-        Math.floor((y - bottom) / bodyHeight) + 1,
-      );
       const noteCount = Math.min(
         notes.length - noteIndex,
         Math.floor((y - bottom) / 14) + 1,
       );
-      for (let i = 0; i < bodyCount; i += 1) {
-        const line = body[bodyIndex + i];
+      for (let i = 0; i < body.length; i += 1) {
+        const line = body[i];
         const lineY = y - i * bodyHeight;
         for (const run of coloredPdfRuns(line, annotations)) {
           const x =
@@ -340,11 +326,10 @@ export async function buildAnnotatedPdf(
         const note = notes[noteIndex + i];
         draw(page!, note.text, rightX, y - i * 14, 9, note.color);
       }
-      bodyIndex += bodyCount;
       noteIndex += noteCount;
-      y -= Math.max(bodyCount * bodyHeight, noteCount * 14) + 18;
-      if (bodyIndex < body.length || noteIndex < notes.length) {
-        newPage();
+      y -= Math.max(body.length * bodyHeight, noteCount * 14) + 18;
+      if (noteIndex < notes.length) {
+        newPage(pageHeight);
       }
     }
     await new Promise<void>(resolve => setTimeout(resolve, 0));

@@ -24,9 +24,6 @@ jest.mock('../src/db/database', () => ({
   getSteps: jest.fn(),
   getScoreAttempts: jest.fn(),
   saveScoreAttempt: jest.fn(),
-  clearRoundtableState: jest.fn(),
-  getRoundtableState: jest.fn(),
-  saveRoundtableState: jest.fn(),
   updateEssay: jest.fn(),
   updateStep: jest.fn(),
 }));
@@ -173,38 +170,19 @@ test('有效评分按原文定位批注并持久化', async () => {
   expect(steps.every(item => item.status === 'success')).toBe(true);
 });
 
-test('圆桌评审通过完整流程保存票数和批注，完成后可以重新评审', async () => {
+test('启用圆桌仍然只请求一次最终评分，提示包含人数，完成后可重新评分', async () => {
   (getSettings as jest.Mock).mockResolvedValue({
     ...DEFAULT_SETTINGS,
     apiKey: 'test-key',
     roundtableSize: 3,
   });
-  create.mockImplementation(async request => ({
-    status: 'completed',
-    output_text: JSON.stringify(
-      request.instructions.includes('你参加作文评分和批注的圆桌评审')
-        ? {
-            scoreApproved: true,
-            annotationsApproved: true,
-            scoreReason: '符合原文',
-            annotationsReason: '引用正确',
-            changes: [],
-          }
-        : validScore,
-    ),
-  }));
   await runEssayPipeline({...essay});
   expect(essay.status).toBe('completed');
-  expect(JSON.parse(essay.scoreJson).roundtable.rounds[0]).toMatchObject({
-    scoreVotes: 3,
-    annotationVotes: 3,
-  });
-  expect(create).toHaveBeenCalledTimes(7);
-  const database = require('../src/db/database');
-  expect(database.clearRoundtableState).toHaveBeenCalledTimes(1);
+  expect(JSON.parse(essay.scoreJson).score).toBe(61);
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(create.mock.calls[0][0].instructions).toContain('组织 3 个不同角色');
   await retryEssay(essay.id);
-  expect(database.clearRoundtableState).toHaveBeenCalledTimes(2);
-  expect(create).toHaveBeenCalledTimes(14);
+  expect(create).toHaveBeenCalledTimes(2);
   expect(cloudOcr).toHaveBeenCalledTimes(1);
 });
 
@@ -227,9 +205,6 @@ test('评分失败时保留识别结果，不生成基础分数，重试从评�
   expect(create).toHaveBeenCalledTimes(7);
   expect(cloudOcr).toHaveBeenCalledTimes(1);
   expect(reconcileOcr).toHaveBeenCalledTimes(1);
-  expect(
-    require('../src/db/database').clearRoundtableState,
-  ).toHaveBeenCalledTimes(1);
 });
 
 test('评分格式错误会把上一轮答案和字段错误追加到下一轮请求', async () => {

@@ -13,7 +13,6 @@ import {getSteps} from '../db/database';
 import {Essay, PipelineStep, ScoreResult, StepId} from '../types';
 import {recognizedTitle} from '../services/essay-text';
 import CorrectionPdf from './CorrectionPdf';
-import RoundtableSummary from './RoundtableSummary';
 
 const STAGES: [StepId, string][] = [
   ['vision_ocr', '逐页图片识别'],
@@ -329,11 +328,6 @@ export default function EssayDetail({
                   </View>
                 ))}
               </Card>
-              {score.roundtable && (
-                <Card>
-                  <RoundtableSummary report={score.roundtable} />
-                </Card>
-              )}
               <Card>
                 <Text style={styles.heading}>各项优缺点与改进</Text>
                 {DIMENSIONS.map(([key, label]) => {

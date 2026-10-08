@@ -89,8 +89,7 @@ export default function CorrectionPdf({
     <View style={styles.root}>
       <View style={styles.toolbar}>
         <Text style={styles.help}>
-          左侧完整原文，右侧批注 · 彩色文字与划线对应批注编号 · 可双指缩放{' '}
-          {page}
+          左侧完整原文，右侧批注 · 批注续页重复本段全文 · 可双指缩放 {page}
         </Text>
         <Pressable
           accessibilityRole="button"
@@ -122,6 +121,7 @@ export default function CorrectionPdf({
             cache: false,
           }}
           style={styles.pdf}
+          fitPolicy={0}
           trustAllCerts={false}
           onPageChanged={(current, count) => setPage(`${current}/${count}`)}
           onError={reason => setError(String(reason))}

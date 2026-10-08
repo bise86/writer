@@ -230,12 +230,19 @@ export function validateScore(
     throw new ScoreValidationError(issues);
   }
   return {
-    ...value,
-    // Votes are computed by the app after separate reviewer requests, never by
-    // the model generating a score. Do not accept a fabricated voting report.
-    roundtable: undefined,
+    score: value.score,
+    bandId: value.bandId,
+    dimensionScores: value.dimensionScores,
+    dimensionFeedback: value.dimensionFeedback,
+    summary: value.summary,
+    strengths: value.strengths,
+    weaknesses: value.weaknesses,
+    improvements: value.improvements,
+    suggestions: value.suggestions,
+    titleFeedback: value.titleFeedback,
+    paragraphReviews: value.paragraphReviews,
     paragraphIndexing: 'body-v1',
     bandName: band?.name || '未达强化及格',
     annotations,
-  } as ScoreResult;
+  };
 }

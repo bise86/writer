@@ -166,11 +166,31 @@ test('生成含中文原文和长批注的多页真实 PDF', async () => {
       .map(([value]) => value)
       .join('');
     expect(notes).toContain(comment);
-    const body = drawText.mock.calls
-      .filter(([, opts]) => opts?.size === 12)
-      .map(([value]) => value)
-      .join('');
-    expect(body).toBe('雨声敲着窗。我很难过。我终于走出门，雨停了。');
+    const pages = [...new Set(drawText.mock.contexts)];
+    let repeated = 0;
+    for (const page of pages) {
+      const calls = drawText.mock.calls.filter(
+        (_, index) => drawText.mock.contexts[index] === page,
+      );
+      const body = calls
+        .filter(([, opts]) => opts?.size === 12)
+        .map(([value]) => value)
+        .join('');
+      if (calls.some(([value]) => value === '第 1 段 · 完整原文')) {
+        expect(body).toContain('雨声敲着窗。我很难过。');
+        repeated++;
+      }
+      expect(calls.map(([value]) => value).join('')).not.toMatch(
+        /已在前|原文（续）/,
+      );
+    }
+    expect(repeated).toBeGreaterThan(2);
+    expect(
+      drawText.mock.calls
+        .filter(([, opts]) => opts?.size === 12)
+        .map(([value]) => value)
+        .join(''),
+    ).toContain('我终于走出门，雨停了。');
   } finally {
     drawText.mockRestore();
   }
@@ -199,7 +219,7 @@ test('生成含中文原文和长批注的多页真实 PDF', async () => {
   writeFileSync(join(tmpdir(), 'writer-annotated-test.pdf'), bytes);
 }, 30000);
 
-test('标题独立编号，长段原文和全部评语完整绘制并跨页接续', async () => {
+test('长段扩展页面保持正常字号，批注续页逐页重复该段全文', async () => {
   const title = '春天的发现';
   const first =
     '段首：我推开窗。' +
@@ -217,7 +237,7 @@ test('标题独立编号，长段原文和全部评语完整绘制并跨页接�
       {
         ...score.annotations[0],
         quote: '段首：我推开窗。',
-        comment: '观察从具体场景开始',
+        comment: '观察从具体场景开始。'.repeat(600),
       },
       {...score.annotations[1], quote: second, suggestion: '保留下一步行动'},
     ],
@@ -240,16 +260,36 @@ test('标题独立编号，长段原文和全部评语完整绘制并跨页接�
       .filter(([, options]) => options?.size === 12)
       .map(([value]) => value)
       .join('');
-    expect(drawnBody).toBe(first + second);
+    const paragraphPages = [...new Set(drawText.mock.contexts)].filter(page =>
+      calls.some(
+        ([value], index) =>
+          value === '第 1 段 · 完整原文' &&
+          drawText.mock.contexts[index] === page,
+      ),
+    );
+    expect(paragraphPages.length).toBeGreaterThan(1);
+    for (const page of paragraphPages) {
+      const bodyOnPage = calls
+        .filter(
+          ([, options], index) =>
+            drawText.mock.contexts[index] === page && options?.size === 12,
+        )
+        .map(([value]) => value)
+        .join('');
+      expect(bodyOnPage).toBe(first);
+      expect((page as PDFPage).getHeight()).toBeGreaterThan(841.89);
+    }
+    expect(drawnBody).toBe(first.repeat(paragraphPages.length) + second);
     expect(
       calls
         .filter(([, options]) => options?.size === 16)
         .map(([value]) => value),
     ).toEqual([title]);
     const drawn = calls.map(([value]) => value).join('\n');
-    expect(drawn).toContain('标题 · 原文');
-    expect(drawn).toContain('第 1 段 · 原文（续）');
-    expect(drawn).toContain('第 2 段 · 原文');
+    expect(drawn).toContain('标题 · 完整原文');
+    expect(drawn).toContain('第 1 段 · 批注（续）');
+    expect(drawn).toContain('第 2 段 · 完整原文');
+    expect(drawn).not.toMatch(/已在前|原文（续）/);
     expect(drawn).not.toContain('第 3 段');
     expect(drawn.indexOf('标题整体评价')).toBeLessThan(
       drawn.indexOf('标题的旧评价'),
@@ -268,12 +308,14 @@ test('标题独立编号，长段原文和全部评语完整绘制并跨页接�
       expect(options?.x).toBeGreaterThanOrEqual(36);
       expect(options?.x).toBeLessThan(341);
     }
-    for (const [, options] of calls.filter(
-      ([, drawOptions]) => drawOptions?.size !== 8,
-    )) {
-      expect(options?.y).toBeGreaterThanOrEqual(48);
-      expect(options?.y).toBeLessThanOrEqual(807);
-    }
+    calls.forEach(([, options], index) => {
+      if (options?.size !== 8) {
+        expect(options?.y).toBeGreaterThanOrEqual(48);
+        expect(options?.y).toBeLessThanOrEqual(
+          (drawText.mock.contexts[index] as PDFPage).getHeight() - 30,
+        );
+      }
+    });
     const bytes = Buffer.from(base64, 'base64');
     const pdf = await PDFDocument.load(bytes);
     expect(pdf.getPageCount()).toBeGreaterThan(2);
