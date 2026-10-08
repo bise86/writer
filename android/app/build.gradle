@@ -59,9 +59,8 @@ react {
  */
 def enableProguardInReleaseBuilds = false
 
-// CI can provide the LibreOffice-compatible signing material through
-// environment variables. The local debug keystore remains available for
-// development and for a first release run when repository secrets are absent.
+// Release builds always reuse the permanent key supplied by environment.
+// Missing credentials must never select a debug or newly generated key.
 def releaseKeystoreFile = System.getenv("ANDROID_KEYSTORE_FILE")
 def releaseKeystorePassword = System.getenv("ANDROID_KEYSTORE_PASSWORD")
 def releaseKeyAlias = System.getenv("ANDROID_KEY_ALIAS")
@@ -105,8 +104,8 @@ android {
             keyAlias 'androiddebugkey'
             keyPassword 'android'
         }
-        if (hasReleaseSigning) {
-            release {
+        release {
+            if (hasReleaseSigning) {
                 storeFile file(releaseKeystoreFile)
                 storePassword releaseKeystorePassword
                 keyAlias releaseKeyAlias
@@ -119,7 +118,7 @@ android {
             signingConfig signingConfigs.debug
         }
         release {
-            signingConfig hasReleaseSigning ? signingConfigs.release : signingConfigs.debug
+            signingConfig signingConfigs.release
             minifyEnabled enableProguardInReleaseBuilds
             proguardFiles getDefaultProguardFile("proguard-android.txt"), "proguard-rules.pro"
         }
@@ -134,5 +133,29 @@ dependencies {
         implementation("com.facebook.react:hermes-android")
     } else {
         implementation jscFlavor
+    }
+}
+
+// Enforce the same certificate for local release builds as for GitHub releases.
+def validatePermanentReleaseSigning = tasks.register("validatePermanentReleaseSigning") {
+    doLast {
+        if (!hasReleaseSigning) {
+            throw new GradleException("Permanent Android signing credentials are required for a release build; debug signing is not allowed.")
+        }
+        def keystore = java.security.KeyStore.getInstance(file(releaseKeystoreFile), releaseKeystorePassword.toCharArray())
+        if (!keystore.isKeyEntry(releaseKeyAlias) || keystore.getKey(releaseKeyAlias, releaseKeyPassword.toCharArray()) == null) {
+            throw new GradleException("The configured release alias must contain the existing signing private key.")
+        }
+        def certificate = keystore.getCertificate(releaseKeyAlias)
+        def actual = java.security.MessageDigest.getInstance("SHA-256").digest(certificate.encoded).encodeHex().toString()
+        def expected = rootProject.file("signing/release-certificate.sha256").text.trim().toLowerCase(java.util.Locale.ROOT)
+        if (!(expected ==~ /[0-9a-f]{64}/) || actual != expected) {
+            throw new GradleException("Release certificate differs from the permanent certificate. Refusing to change the app signing identity.")
+        }
+    }
+}
+tasks.configureEach { task ->
+    if (task.name == "preReleaseBuild" || task.name == "validateSigningRelease") {
+        task.dependsOn(validatePermanentReleaseSigning)
     }
 }

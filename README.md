@@ -44,6 +44,9 @@ HarmonyOS 工程在 `harmony/`，用 DevEco Studio 打开；Metro 配置已经�
 ## 发布规则
 
 - `.github/workflows/release-android.yml` 只响应 `v*` tag，构建 release APK 并上传到 GitHub Release。
+- Android 正式包固定复用 LibreOffice 的现有签名密钥，不生成新密钥。writer 仓库必须设置同一套 `ANDROID_KEYSTORE_BASE64`、`ANDROID_KEYSTORE_PASSWORD`、`ANDROID_KEY_ALIAS`、`ANDROID_KEY_PASSWORD` Actions Secrets。每次构建只是从 Secret 还原同一份密钥文件，结束后删除临时副本。
+- 签名证书 SHA-256 固定为 `401c364400502e375cc5ae34bb2e02eada34c748249d59accbb642ad0054df3c`，见 `android/signing/release-certificate.sha256`，来源为 LibreOffice 已发布 APK 的证书，有效期至 2054-02-14。缺少密钥、证书不符或 APK 验签失败时停止发布；禁止回退调试签名。直接从本地构建 release 也执行相同校验。
+- 现存的旧 Writer 发布包曾使用调试证书，与正式证书不同；首次切换签名前需处理现有安装和本地作文数据，不能直接覆盖升级。此后持续使用上述固定证书。
 - iOS 与 HarmonyOS 发布模板保存在 `.github/release-templates/`，不属于 GitHub 活跃工作流，不会触发。模板预设仅 `v*` tag 触发并禁用作业；后续配置签名和分发凭据后，再移入 workflows 并启用。
 
 ```sh
