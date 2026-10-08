@@ -30,6 +30,45 @@ const colorFor = (type: Annotation['type']) =>
 
 type Line = {text: string; start: number; end: number};
 
+/** Partition, rather than overpaint, so colored text remains searchable once.
+ * Overlapping annotations use problem > improvement > strength precedence. */
+export function coloredPdfRuns(
+  line: Line,
+  annotations: (Annotation & {start: number; end: number})[],
+) {
+  const ranges = annotations.filter(
+    item => item.start < line.end && item.end > line.start,
+  );
+  const boundaries = [
+    ...new Set([
+      line.start,
+      line.end,
+      ...ranges.flatMap(item => [
+        Math.max(line.start, item.start),
+        Math.min(line.end, item.end),
+      ]),
+    ]),
+  ].sort((a, b) => a - b);
+  const priority = (type: Annotation['type']) =>
+    type === 'grammar' || type === 'structure'
+      ? 3
+      : type === 'strength'
+      ? 1
+      : 2;
+  return boundaries.slice(0, -1).map((start, i) => {
+    const end = boundaries[i + 1];
+    const strongest = ranges
+      .filter(item => item.start < end && item.end > start)
+      .sort((a, b) => priority(b.type) - priority(a.type))[0];
+    return {
+      text: line.text.slice(start - line.start, end - line.start),
+      start,
+      end,
+      type: strongest?.type,
+    };
+  });
+}
+
 /** Code-point wrapping retains UTF-16 offsets used by the scorer. */
 export function wrapPdfText(
   text: string,
@@ -94,7 +133,7 @@ export function locateAnnotations(text: string, annotations: Annotation[]) {
   });
 }
 
-/** Actual searchable PDF: complete original text, then each section's comments. */
+/** Searchable two-column PDF. Original text and comments have independent cursors. */
 export async function buildAnnotatedPdf(
   text: string,
   title: string,
@@ -142,7 +181,9 @@ export async function buildAnnotatedPdf(
   let page: PDFPage;
   let y = 0;
   const leftX = 36;
-  const bodyWidth = 523;
+  const bodyWidth = 292;
+  const rightX = 356;
+  const noteWidth = 203;
   const bottom = 48;
   const newPage = () => {
     page = pdf.addPage([595.28, 841.89]);
@@ -160,81 +201,35 @@ export async function buildAnnotatedPdf(
       9,
       COLORS.muted,
     );
-    y = headingY - 35;
+    draw(page, '原文', leftX, headingY - 28, 11);
+    draw(page, '批注', rightX, headingY - 28, 11);
+    page.drawLine({
+      start: {x: 341, y: headingY - 14},
+      end: {x: 341, y: bottom},
+      thickness: 0.6,
+      color: rgb(0.83, 0.86, 0.9),
+    });
+    y = headingY - 54;
   };
   newPage();
   for (const section of sections) {
     const label = sectionLabel(section);
     const bodySize = section.kind === 'title' ? 16 : 12;
-    if (y - bottom < 80) {
-      newPage();
-    }
-    draw(page!, `${label} · 原文`, leftX, y, 10, COLORS.muted);
-    y -= 26;
+    const bodyHeight = bodySize + 10;
     const body = wrapPdfText(
       section.text,
       bodyWidth,
       measure(bodySize),
       section.start,
     );
-    // Render every original line before any feedback. A long paragraph carries
-    // on to the next page; neither model quotes nor summaries replace its text.
-    for (const line of body) {
-      if (y - bottom < 4) {
-        newPage();
-        draw(page!, `${label} · 原文（续）`, leftX, y, 10, COLORS.muted);
-        y -= 26;
-      }
-      const ranges = annotations.filter(
-        item => item.start < line.end && item.end > line.start,
-      );
-      for (const annotation of ranges) {
-        const from = Math.max(line.start, annotation.start) - line.start;
-        const to = Math.min(line.end, annotation.end) - line.start;
-        const x = leftX + measure(bodySize)(line.text.slice(0, from));
-        const width = measure(bodySize)(line.text.slice(from, to));
-        page!.drawRectangle({
-          x,
-          y: y - 3,
-          width,
-          height: bodySize + 4,
-          color: colorFor(annotation.type),
-          opacity: 0.13,
-        });
-        page!.drawLine({
-          start: {x, y: y - 3},
-          end: {x: x + width, y: y - 3},
-          color: colorFor(annotation.type),
-          thickness: 0.6,
-        });
-      }
-      draw(page!, line.text, leftX, y, bodySize);
-      const markers = ranges
-        .filter(item => item.start >= line.start && item.start < line.end)
-        .map(item => item.number);
-      if (markers.length) {
-        draw(
-          page!,
-          `[${markers.join(',')}]`,
-          leftX,
-          y + bodySize + 1,
-          6,
-          COLORS.muted,
-        );
-      }
-      y -= bodySize + 12;
-    }
-    y -= 6;
+    const notes: {text: string; color: ReturnType<typeof rgb>}[] = [];
     const addNote = (value: string, color = COLORS.muted) => {
-      for (const line of wrapPdfText(value, bodyWidth, measure(10))) {
-        if (y - bottom < 4) {
-          newPage();
-          draw(page!, `${label} · 批注（续）`, leftX, y, 10, COLORS.muted);
-          y -= 24;
-        }
-        draw(page!, line.text, leftX, y, 10, color);
-        y -= 16;
-      }
+      notes.push(
+        ...wrapPdfText(value, noteWidth, measure(9)).map(line => ({
+          text: line.text,
+          color,
+        })),
+      );
     };
     const review =
       section.kind === 'title'
@@ -253,12 +248,11 @@ export async function buildAnnotatedPdf(
       review.improvements.forEach(item =>
         addNote(`改进：${item}`, COLORS.improvement),
       );
+      addNote(' ');
     }
-    const sectionAnnotations = annotations.filter(
+    for (const annotation of annotations.filter(
       item => item.start < section.end && item.end > section.start,
-    );
-    for (const annotation of sectionAnnotations) {
-      y -= 8;
+    )) {
       addNote(
         `[${annotation.number}] ${LABELS[annotation.type]}`,
         colorFor(annotation.type),
@@ -266,19 +260,102 @@ export async function buildAnnotatedPdf(
       addNote(`引用：${annotation.quote}`);
       addNote(`评语：${annotation.comment}`);
       addNote(`建议：${annotation.suggestion}`, COLORS.improvement);
+      addNote(' ');
     }
-    if (!review && !sectionAnnotations.length) {
+    if (!notes.length) {
       addNote('此处暂无已保存的批注。');
     }
-    y -= 24;
-    // Yield between paragraphs so React Native can paint progress indicators.
+    let bodyIndex = 0;
+    let noteIndex = 0;
+    // Neither column is bounded by the other column's length. Keep rendering
+    // until both are exhausted, including paragraphs spanning several pages.
+    while (bodyIndex < body.length || noteIndex < notes.length) {
+      if (y - bottom < 80) {
+        newPage();
+      }
+      if (bodyIndex < body.length) {
+        draw(
+          page!,
+          `${label} · 原文${bodyIndex ? '（续）' : ''}`,
+          leftX,
+          y,
+          10,
+          COLORS.muted,
+        );
+      } else {
+        draw(page!, '本段原文已在前页完整展示', leftX, y, 9, COLORS.muted);
+      }
+      if (noteIndex < notes.length) {
+        draw(
+          page!,
+          `${label} · 批注${noteIndex ? '（续）' : ''}`,
+          rightX,
+          y,
+          10,
+          COLORS.muted,
+        );
+      }
+      y -= 28;
+      const bodyCount = Math.min(
+        body.length - bodyIndex,
+        Math.floor((y - bottom) / bodyHeight) + 1,
+      );
+      const noteCount = Math.min(
+        notes.length - noteIndex,
+        Math.floor((y - bottom) / 14) + 1,
+      );
+      for (let i = 0; i < bodyCount; i += 1) {
+        const line = body[bodyIndex + i];
+        const lineY = y - i * bodyHeight;
+        for (const run of coloredPdfRuns(line, annotations)) {
+          const x =
+            leftX +
+            measure(bodySize)(line.text.slice(0, run.start - line.start));
+          const color = run.type ? colorFor(run.type) : COLORS.text;
+          draw(page!, run.text, x, lineY, bodySize, color);
+          if (run.type) {
+            page!.drawLine({
+              start: {x, y: lineY - 3},
+              end: {x: x + measure(bodySize)(run.text), y: lineY - 3},
+              color,
+              thickness: 0.8,
+            });
+          }
+        }
+        const markers = annotations
+          .filter(item => item.start >= line.start && item.start < line.end)
+          .map(item => item.number);
+        if (markers.length) {
+          draw(
+            page!,
+            `[${markers.join(',')}]`,
+            leftX,
+            lineY + bodySize + 1,
+            6,
+            COLORS.muted,
+          );
+        }
+      }
+      for (let i = 0; i < noteCount; i += 1) {
+        const note = notes[noteIndex + i];
+        draw(page!, note.text, rightX, y - i * 14, 9, note.color);
+      }
+      bodyIndex += bodyCount;
+      noteIndex += noteCount;
+      y -= Math.max(bodyCount * bodyHeight, noteCount * 14) + 18;
+      if (bodyIndex < body.length || noteIndex < notes.length) {
+        newPage();
+      }
+    }
     await new Promise<void>(resolve => setTimeout(resolve, 0));
   }
   const pages = pdf.getPages();
   pages.forEach((item, index) => {
     draw(
       item,
-      `${index + 1} / ${pages.length}    原文完整展示，修改建议列于各段下方`,
+      `${index + 1} / ${
+        pages.length
+      }    左侧完整原文 · 右侧批注 · 编号对应彩色划线`,
       leftX,
       25,
       8,

@@ -231,6 +231,9 @@ export function validateScore(
   }
   return {
     ...value,
+    // Votes are computed by the app after separate reviewer requests, never by
+    // the model generating a score. Do not accept a fabricated voting report.
+    roundtable: undefined,
     paragraphIndexing: 'body-v1',
     bandName: band?.name || '未达强化及格',
     annotations,

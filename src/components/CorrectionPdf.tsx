@@ -89,7 +89,8 @@ export default function CorrectionPdf({
     <View style={styles.root}>
       <View style={styles.toolbar}>
         <Text style={styles.help}>
-          各段原文完整展示，批注列于下方 · 可双指缩放 {page}
+          左侧完整原文，右侧批注 · 彩色文字与划线对应批注编号 · 可双指缩放{' '}
+          {page}
         </Text>
         <Pressable
           accessibilityRole="button"

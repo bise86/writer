@@ -13,6 +13,7 @@ import {
   DEFAULT_SETTINGS,
   legacyDefaultChanges,
   normalizeReasoningEffort,
+  ROUNDTABLE_OPTIONS,
   validateSettings,
 } from '../settings';
 
@@ -141,6 +142,11 @@ async function initializeDatabase() {
     feedback TEXT NOT NULL,
     created_at TEXT NOT NULL
   )`);
+  await database.executeSql(`CREATE TABLE IF NOT EXISTS roundtable_sessions (
+    essay_id TEXT PRIMARY KEY NOT NULL,
+    state_json TEXT NOT NULL,
+    updated_at TEXT NOT NULL
+  )`);
   if (version.rows.item(0).user_version < 5) {
     // Migrate the previous application default. Any user-selected budget remains
     // intact; missing values are seeded from DEFAULT_SETTINGS below.
@@ -156,6 +162,22 @@ async function initializeDatabase() {
       [key, String(value)],
     );
   }
+  // Initialization runs once before the app starts any pipeline. Native process
+  // termination leaves stored progress behind, but no request is still running.
+  // Preserve OCR, drafts and ballots so the normal retry path can resume them.
+  const interrupted =
+    "('queued', 'local_ocr', 'vision_ocr', 'reconcile', 'scoring')";
+  const message = '上次处理已中断，点击重试可从已保存的进度继续。';
+  const now = new Date().toISOString();
+  await database.executeSql(
+    `UPDATE pipeline_steps SET status = 'failed', detail = detail || ?, updated_at = ?
+     WHERE status = 'running' AND essay_id IN (SELECT id FROM essays WHERE status IN ${interrupted})`,
+    [`\n${message}`, now],
+  );
+  await database.executeSql(
+    `UPDATE essays SET status = 'failed', error = ?, updated_at = ? WHERE status IN ${interrupted}`,
+    [message, now],
+  );
   return database;
 }
 
@@ -402,6 +424,10 @@ export async function deleteEssay(essayId: string) {
   await database.executeSql('DELETE FROM score_attempts WHERE essay_id = ?', [
     essayId,
   ]);
+  await database.executeSql(
+    'DELETE FROM roundtable_sessions WHERE essay_id = ?',
+    [essayId],
+  );
   await database.executeSql('DELETE FROM pipeline_steps WHERE essay_id = ?', [
     essayId,
   ]);
@@ -422,6 +448,10 @@ export async function clearEssaysBefore(before: Date) {
   await removeEssayImages(images);
   await database.executeSql(
     'DELETE FROM score_attempts WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
+    [cutoff],
+  );
+  await database.executeSql(
+    'DELETE FROM roundtable_sessions WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
     [cutoff],
   );
   await database.executeSql(
@@ -488,6 +518,9 @@ export async function getSettings(): Promise<AppSettings> {
     retryCount: Number.isFinite(Number(values.retryCount))
       ? Math.max(0, Number(values.retryCount))
       : DEFAULT_SETTINGS.retryCount,
+    roundtableSize:
+      ROUNDTABLE_OPTIONS.find(size => size === Number(values.roundtableSize)) ??
+      0,
     apiBaseUrl: values.apiBaseUrl || DEFAULT_SETTINGS.apiBaseUrl,
     apiKey: values.apiKey || '',
   };
@@ -511,6 +544,38 @@ export async function saveSettings(settings: AppSettings) {
 
 export async function initDatabase() {
   await db();
+}
+
+export async function getRoundtableState(essayId: string): Promise<unknown> {
+  const database = await db();
+  const [result] = await database.executeSql(
+    'SELECT state_json FROM roundtable_sessions WHERE essay_id = ?',
+    [essayId],
+  );
+  if (!result.rows.length) {
+    return undefined;
+  }
+  try {
+    return JSON.parse(result.rows.item(0).state_json);
+  } catch {
+    return undefined;
+  }
+}
+
+export async function saveRoundtableState(essayId: string, state: unknown) {
+  const database = await db();
+  await database.executeSql(
+    'INSERT OR REPLACE INTO roundtable_sessions (essay_id, state_json, updated_at) VALUES (?, ?, ?)',
+    [essayId, JSON.stringify(state), new Date().toISOString()],
+  );
+}
+
+export async function clearRoundtableState(essayId: string) {
+  const database = await db();
+  await database.executeSql(
+    'DELETE FROM roundtable_sessions WHERE essay_id = ?',
+    [essayId],
+  );
 }
 
 export async function getScoreAttempts(

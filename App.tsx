@@ -32,6 +32,7 @@ import {retryEssay, runEssayPipeline} from './src/services/pipeline';
 import {
   OUTPUT_TOKEN_OPTIONS,
   REASONING_LEVELS,
+  ROUNDTABLE_OPTIONS,
   validateSettings,
 } from './src/settings';
 import {cropImage, CropPreset, persistImage} from './src/services/images';
@@ -375,6 +376,22 @@ function Settings({
           </View>
         </View>
         {field('retryCount', '失败重试次数（0 表示不重试）', 'numeric')}
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>评分与批注圆桌评审</Text>
+          <Text style={styles.muted}>
+            默认关闭。启用后，由同一模型分别扮演不同角色，独立审阅、讨论并投票；评分和批注都需过半同意。会增加处理时间和模型用量。
+          </Text>
+          <View style={styles.actionRow}>
+            {ROUNDTABLE_OPTIONS.map(size => (
+              <Button
+                key={size}
+                title={size === 0 ? '0 · 关闭' : `${size} 个角色`}
+                secondary={settings.roundtableSize !== size}
+                onPress={() => setSettings({...settings, roundtableSize: size})}
+              />
+            ))}
+          </View>
+        </View>
         <View style={styles.field}>
           <Text style={styles.fieldLabel}>
             思考级别：

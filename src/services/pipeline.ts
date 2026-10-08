@@ -4,6 +4,7 @@ import {
   getSteps,
   updateEssay,
   updateStep,
+  clearRoundtableState,
 } from '../db/database';
 import {Essay, StepId} from '../types';
 import {cloudOcr, reconcileOcr} from './ocr';
@@ -59,6 +60,9 @@ export async function runEssayPipeline(
     }
     if (start > 1 && !essay.canonicalText.trim()) {
       start = 1;
+    }
+    if (start <= 1 || essay.status === 'completed') {
+      await clearRoundtableState(essay.id);
     }
     // A new recognition invalidates all downstream outputs and progress.
     for (const id of STEPS.slice(start)) {

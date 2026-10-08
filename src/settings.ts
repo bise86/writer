@@ -2,6 +2,7 @@ import {AppSettings} from './types';
 
 export const REASONING_LEVELS = ['none', 'low', 'high', 'max'] as const;
 export const OUTPUT_TOKEN_OPTIONS = [4000, 8000, 16000, 32000, 64000] as const;
+export const ROUNDTABLE_OPTIONS = [0, 3, 5] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   modelName: 'deepseek-flash',
@@ -10,6 +11,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   compactionThreshold: 0.8,
   maxOutputTokens: 32000,
   retryCount: 1,
+  roundtableSize: 0,
   apiBaseUrl: 'https://api.deepseek.com',
   apiKey: 'sk-5bf8ed2e47414c9892d5776399f7c042',
 };
@@ -39,6 +41,14 @@ export function validateSettings(settings: AppSettings): AppSettings {
   const contextWindow = integer(settings.contextWindow, '上下文大小', 1024);
   const maxOutputTokens = integer(settings.maxOutputTokens, '输出长度', 1);
   const retryCount = integer(settings.retryCount, '重试次数', 0);
+  const roundtableSize = integer(
+    settings.roundtableSize ?? 0,
+    '圆桌评审人数',
+    0,
+  );
+  if (!ROUNDTABLE_OPTIONS.some(value => value === roundtableSize)) {
+    throw new Error('圆桌评审人数只能为 0、3 或 5');
+  }
   const compactionThreshold = Number(settings.compactionThreshold);
   if (
     !Number.isFinite(compactionThreshold) ||
@@ -73,6 +83,7 @@ export function validateSettings(settings: AppSettings): AppSettings {
     contextWindow,
     maxOutputTokens,
     retryCount,
+    roundtableSize: roundtableSize as AppSettings['roundtableSize'],
     compactionThreshold,
     reasoningEffort: normalizeReasoningEffort(settings.reasoningEffort),
   };

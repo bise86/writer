@@ -9,6 +9,7 @@ import {
 import fontkit from '@pdf-lib/fontkit';
 import {
   buildAnnotatedPdf,
+  coloredPdfRuns,
   locateAnnotations,
   wrapPdfText,
 } from '../src/services/annotated-pdf';
@@ -74,22 +75,105 @@ test('重复句子采用评分指定位置，失效批注不会贴到无关句�
     locateAnnotations(text, [{...score.annotations[0], quote: '风声'}]),
   ).toThrow('无法定位');
 });
+
+test('交叠批注按问题优先着色，每个原文字只绘制一次', () => {
+  const text = '风吹过树梢，我记下颜色与声音。';
+  const runs = coloredPdfRuns({text, start: 10, end: 10 + text.length}, [
+    {...score.annotations[0], start: 10, end: 16},
+    {...score.annotations[1], start: 13, end: 19},
+    {...score.annotations[1], type: 'grammar', start: 14, end: 15},
+  ]);
+  expect(runs.map(run => run.text).join('')).toBe(text);
+  expect(runs.find(run => run.start === 14)?.type).toBe('grammar');
+  expect(runs.find(run => run.start === 13)?.type).toBe('improvement');
+  expect(runs[0].type).toBe('strength');
+  expect(runs[runs.length - 1].type).toBeUndefined();
+});
+
+test('左栏原文以绿色、红色、棕色文字及同色下划线标记，右栏包含对应编号', async () => {
+  const drawText = jest.spyOn(PDFPage.prototype, 'drawText');
+  const drawLine = jest.spyOn(PDFPage.prototype, 'drawLine');
+  const annotations = [
+    {...score.annotations[0], quote: '雨声'},
+    {...score.annotations[1], quote: '声因', type: 'grammar' as const},
+    {...score.annotations[1], quote: '我很难过'},
+  ];
+  try {
+    await buildAnnotatedPdf('雨声很响，声因清晰，我很难过。', '听雨', {
+      ...score,
+      annotations,
+    });
+    const body = drawText.mock.calls.filter(
+      ([, options]) => options?.size === 12,
+    );
+    const colored = body.filter(([value]) =>
+      ['雨声', '声因', '我很难过'].includes(value),
+    );
+    expect(colored).toHaveLength(3);
+    expect(
+      new Set(colored.map(([, opts]) => JSON.stringify(opts?.color))).size,
+    ).toBe(3);
+    for (const [, opts] of colored) {
+      expect(drawLine.mock.calls).toEqual(
+        expect.arrayContaining([
+          [
+            expect.objectContaining({
+              start: {x: opts!.x, y: opts!.y! - 3},
+              color: opts!.color,
+              thickness: 0.8,
+            }),
+          ],
+        ]),
+      );
+    }
+    const notes = drawText.mock.calls
+      .filter(([, opts]) => opts?.x === 356)
+      .map(([value]) => value)
+      .join('');
+    expect(notes).toContain('[1] 亮点');
+    expect(notes).toContain('[2] 字词语病');
+    expect(notes).toContain('[3] 待改进');
+  } finally {
+    drawText.mockRestore();
+    drawLine.mockRestore();
+  }
+});
 test('生成含中文原文和长批注的多页真实 PDF', async () => {
+  const comment = Array.from(
+    {length: 400},
+    (_, i) => `第${i + 1}条：声音描写应当服务于人物情绪。`,
+  ).join('');
   const longScore = {
     ...score,
     annotations: [
       {
         ...score.annotations[0],
-        comment: '声音描写应当服务于人物情绪。'.repeat(400),
+        comment,
       },
       score.annotations[1],
     ],
   };
-  const base64 = await buildAnnotatedPdf(
-    '雨声敲着窗。我很难过。\n我终于走出门，雨停了。',
-    '雨中的成长',
-    longScore,
-  );
+  const drawText = jest.spyOn(PDFPage.prototype, 'drawText');
+  let base64: string;
+  try {
+    base64 = await buildAnnotatedPdf(
+      '雨声敲着窗。我很难过。\n我终于走出门，雨停了。',
+      '雨中的成长',
+      longScore,
+    );
+    const notes = drawText.mock.calls
+      .filter(([, opts]) => opts?.x === 356 && opts?.size === 9)
+      .map(([value]) => value)
+      .join('');
+    expect(notes).toContain(comment);
+    const body = drawText.mock.calls
+      .filter(([, opts]) => opts?.size === 12)
+      .map(([value]) => value)
+      .join('');
+    expect(body).toBe('雨声敲着窗。我很难过。我终于走出门，雨停了。');
+  } finally {
+    drawText.mockRestore();
+  }
   const bytes = Buffer.from(base64, 'base64');
   expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
   const document = await PDFDocument.load(bytes);
@@ -173,7 +257,17 @@ test('标题独立编号，长段原文和全部评语完整绘制并跨页接�
     expect(drawn.indexOf('第 1 段整体评价')).toBeLessThan(
       drawn.indexOf('正文首段的旧评价'),
     );
-    expect(drawn).toContain('正文末段的旧评价的完整修改建议');
+    const drawnNotes = calls
+      .filter(([, options]) => options?.x === 356)
+      .map(([value]) => value)
+      .join('');
+    expect(drawnNotes).toContain('正文末段的旧评价的完整修改建议');
+    for (const [, options] of calls.filter(
+      ([, opts]) => opts?.size === 12 || opts?.size === 16,
+    )) {
+      expect(options?.x).toBeGreaterThanOrEqual(36);
+      expect(options?.x).toBeLessThan(341);
+    }
     for (const [, options] of calls.filter(
       ([, drawOptions]) => drawOptions?.size !== 8,
     )) {

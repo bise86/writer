@@ -6,6 +6,8 @@ import {essaySections, sectionLabel} from './essay-text';
 import {parseJson, runResponse} from './openai';
 import {checkCancelled} from './request';
 import {ScoreValidationError, validateScore} from './score-validation';
+import {validateSettings} from '../settings';
+import {roundtableScore} from './roundtable';
 
 export function scoreInstructions() {
   const feedback = {
@@ -68,6 +70,10 @@ export async function scoreEssay(
     throw new Error('未识别到作文正文，不能评分');
   }
   const actualSettings = settings || (await getSettings());
+  const configured = validateSettings(actualSettings);
+  if (configured.roundtableSize !== 0) {
+    return roundtableScore(text, configured, options, scoreInstructions());
+  }
   const history: HistoryMessage[] = [...(options.history || [])];
   if (options.essayId) {
     for (const attempt of await getScoreAttempts(options.essayId)) {

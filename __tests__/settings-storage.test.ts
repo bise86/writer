@@ -12,6 +12,7 @@ let stored: Record<string, string>;
 let version: number;
 let essayColumns: string[];
 let essayRows: {id: string; image_uri: string; image_uris?: string}[];
+let reviewStates: Record<string, string>;
 let database: typeof import('../src/db/database');
 
 function result(items: object[]) {
@@ -27,8 +28,20 @@ beforeEach(() => {
   version = 0;
   essayColumns = [];
   essayRows = [];
+  reviewStates = {};
   mockExecute.mockImplementation(
     async (sql: string, parameters: string[] = []) => {
+      if (sql.startsWith('INSERT OR REPLACE INTO roundtable_sessions')) {
+        reviewStates[parameters[0]] = parameters[1];
+      } else if (sql.startsWith('SELECT state_json FROM roundtable_sessions')) {
+        return result(
+          reviewStates[parameters[0]]
+            ? [{state_json: reviewStates[parameters[0]]}]
+            : [],
+        );
+      } else if (sql === 'DELETE FROM roundtable_sessions WHERE essay_id = ?') {
+        delete reviewStates[parameters[0]];
+      }
       if (sql.includes('CREATE TABLE IF NOT EXISTS essays')) {
         if (!essayColumns.length) {
           essayColumns = ['id', 'image_uri', 'image_uris'];
@@ -86,6 +99,81 @@ test('新安装只有一个模型配置', async () => {
   expect(await database.getSettings()).toEqual(DEFAULT_SETTINGS);
   expect(stored).not.toHaveProperty('visionModelName');
   expect(version).toBe(5);
+});
+
+test('已有安装升级默认关闭圆桌，并创建可恢复的评审状态表', async () => {
+  version = 5;
+  stored = {modelName: 'existing-model'};
+  expect((await database.getSettings()).roundtableSize).toBe(0);
+  expect(mockExecute).toHaveBeenCalledWith(
+    expect.stringContaining('CREATE TABLE IF NOT EXISTS roundtable_sessions'),
+  );
+});
+
+test.each([0, 3, 5] as const)(
+  '圆桌人数 %s 保存到 SQLite 并恢复',
+  async roundtableSize => {
+    await database.saveSettings({...DEFAULT_SETTINGS, roundtableSize});
+    expect((await database.getSettings()).roundtableSize).toBe(roundtableSize);
+  },
+);
+
+test('非法人数不覆盖已保存的圆桌设置', async () => {
+  await database.saveSettings({...DEFAULT_SETTINGS, roundtableSize: 5});
+  await expect(
+    database.saveSettings({
+      ...DEFAULT_SETTINGS,
+      roundtableSize: 4,
+    } as unknown as AppSettings),
+  ).rejects.toThrow('0、3 或 5');
+  expect((await database.getSettings()).roundtableSize).toBe(5);
+});
+
+test('圆桌状态跨数据库连接恢复，删除作文同步删除其状态', async () => {
+  const state = {
+    nextRound: 1,
+    exchanges: {'vote:0:content': [{output: 'stored vote', feedback: ''}]},
+  };
+  await database.saveRoundtableState('essay-1', state);
+  await database.saveRoundtableState('essay-2', state);
+  jest.resetModules();
+  database = require('../src/db/database');
+  expect(await database.getRoundtableState('essay-1')).toEqual(state);
+  await database.deleteEssay('essay-1');
+  expect(await database.getRoundtableState('essay-1')).toBeUndefined();
+  expect(await database.getRoundtableState('essay-2')).toEqual(state);
+  await database.clearRoundtableState('essay-2');
+  expect(await database.getRoundtableState('essay-2')).toBeUndefined();
+});
+
+test('启动把中断的流程变为可重试，保留评分与圆桌上下文；不会在每次读取时重置', async () => {
+  await database.initDatabase();
+  const recoveries = mockExecute.mock.calls.filter(([sql]) =>
+    sql.startsWith("UPDATE essays SET status = 'failed'"),
+  );
+  expect(recoveries).toHaveLength(1);
+  expect(recoveries[0][0]).toContain(
+    "WHERE status IN ('queued', 'local_ocr', 'vision_ocr', 'reconcile', 'scoring')",
+  );
+  expect(recoveries[0][0]).not.toContain('score_json');
+  expect(recoveries[0][1][0]).toContain('从已保存的进度继续');
+  expect(
+    mockExecute.mock.calls.some(([sql]) =>
+      sql.includes("WHERE status = 'running' AND essay_id IN"),
+    ),
+  ).toBe(true);
+  expect(
+    mockExecute.mock.calls.some(([sql]) =>
+      sql.startsWith('DELETE FROM roundtable_sessions'),
+    ),
+  ).toBe(false);
+  await database.getSettings();
+  await database.initDatabase();
+  expect(
+    mockExecute.mock.calls.filter(([sql]) =>
+      sql.startsWith("UPDATE essays SET status = 'failed'"),
+    ),
+  ).toHaveLength(1);
 });
 
 test('已有安装删除独立 OCR 设置，保留用户自定义主模型和密钥', async () => {
