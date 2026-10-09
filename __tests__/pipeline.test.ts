@@ -14,7 +14,13 @@ import {
 } from '../src/services/pipeline';
 import {DEFAULT_SETTINGS} from '../src/settings';
 import {validateScore} from '../src/services/score-validation';
-import {Essay, PipelineStep, ScoreResult, StepId} from '../src/types';
+import {
+  Essay,
+  ModelCall,
+  PipelineStep,
+  ScoreResult,
+  StepId,
+} from '../src/types';
 
 jest.mock('openai', () => jest.fn());
 jest.mock('react-native-fs', () => ({}));
@@ -24,6 +30,8 @@ jest.mock('../src/db/database', () => ({
   getSteps: jest.fn(),
   getScoreAttempts: jest.fn(),
   saveScoreAttempt: jest.fn(),
+  saveModelCall: jest.fn(),
+  saveEssayScore: jest.fn(),
   updateEssay: jest.fn(),
   updateStep: jest.fn(),
 }));
@@ -134,6 +142,15 @@ beforeEach(() => {
   const database = require('../src/db/database');
   database.getScoreAttempts.mockResolvedValue([]);
   database.saveScoreAttempt.mockResolvedValue(undefined);
+  database.saveModelCall.mockResolvedValue(undefined);
+  database.saveEssayScore.mockImplementation(
+    async (_id: string, _run: string, value: ScoreResult) => {
+      Object.assign(essay, {
+        scoreJson: JSON.stringify(value),
+        status: 'completed',
+      });
+    },
+  );
   (updateEssay as jest.Mock).mockImplementation(async (_id, patch) =>
     Object.assign(essay, patch),
   );
@@ -168,6 +185,79 @@ test('有效评分按原文定位批注并持久化', async () => {
     '雨中',
   );
   expect(steps.every(item => item.status === 'success')).toBe(true);
+});
+
+test('多页识别、网络重试、复核和评分纠错的实际调用都按阶段累计，重新评分不覆盖', async () => {
+  jest.useFakeTimers();
+  essay.imageUris = [
+    'data:image/jpeg;base64,one',
+    'data:image/jpeg;base64,two',
+  ];
+  const actualOcr = jest.requireActual('../src/services/ocr');
+  (cloudOcr as jest.Mock).mockImplementation(actualOcr.cloudOcr);
+  (reconcileOcr as jest.Mock).mockImplementation(actualOcr.reconcileOcr);
+  let drafts = 0;
+  const database = require('../src/db/database');
+  const records = new Map<
+    string,
+    {stage: StepId; runId: string; call: ModelCall}
+  >();
+  database.saveModelCall.mockImplementation(
+    async (_essayId: string, runId: string, stage: StepId, call: ModelCall) => {
+      records.set(call.id, {runId, stage, call});
+    },
+  );
+  create.mockImplementation(async request => {
+    if (create.mock.calls.length === 1) {
+      throw Object.assign(new Error('retry'), {status: 503});
+    }
+    const output = request.instructions.includes('只输出这一页')
+      ? text
+      : request.instructions.includes('重新逐页阅读')
+      ? JSON.stringify({text, corrections: '核对完成'})
+      : ++drafts === 1
+      ? '{"score":61}'
+      : JSON.stringify(validScore);
+    return {
+      status: 'completed',
+      output_text: output,
+      usage: {
+        input_tokens: 100,
+        output_tokens: 20,
+        input_tokens_details: {cached_tokens: 10, cache_write_tokens: 5},
+      },
+    };
+  });
+  const pending = runEssayPipeline({...essay});
+  await jest.runAllTimersAsync();
+  await pending;
+  expect(essay.status).toBe('completed');
+  expect(create).toHaveBeenCalledTimes(6);
+  expect([...records.values()].map(record => record.stage)).toEqual([
+    'vision_ocr',
+    'vision_ocr',
+    'vision_ocr',
+    'reconcile',
+    'scoring',
+    'scoring',
+  ]);
+  expect([...records.values()][0].call).toMatchObject({
+    status: 'failed',
+    inputTokens: null,
+  });
+  expect(
+    [...records.values()].reduce(
+      (sum, record) => sum + (record.call.inputTokens || 0),
+      0,
+    ),
+  ).toBe(500);
+  await retryEssay(essay.id);
+  expect(create).toHaveBeenCalledTimes(7);
+  expect(records.size).toBe(7);
+  expect(new Set([...records.values()].map(record => record.runId)).size).toBe(
+    2,
+  );
+  expect(database.saveEssayScore).toHaveBeenCalledTimes(2);
 });
 
 test('启用圆桌仍然只请求一次最终评分，提示包含人数，完成后可重新评分', async () => {

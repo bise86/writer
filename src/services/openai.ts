@@ -6,6 +6,7 @@ import type {
 import {toResponseInputItems} from 'openai/lib/responses/ResponseInputItems';
 import RNFS from 'react-native-fs';
 import {AppSettings} from '../types';
+import {parseUsage, trackModelCall} from './usage';
 import {normalizeReasoningEffort, validateSettings} from '../settings';
 import {
   contextBudget,
@@ -26,12 +27,6 @@ import {
   requestWithRetry,
   statusOf,
 } from './request';
-
-export interface ResponseUsage {
-  inputTokens: number;
-  outputTokens: number;
-  totalTokens: number;
-}
 
 function clientFor(settings: AppSettings) {
   if (!settings.apiKey.trim()) {
@@ -128,42 +123,52 @@ async function summarizeHistory(
       );
       const response = await requestWithRetry(
         () =>
-          options.signal
-            ? client.responses.create(
-                {
-                  model,
-                  instructions: `${SUMMARY_INSTRUCTIONS}\n请尽量控制在 ${Math.max(
-                    32,
-                    Math.floor(summaryBudget / 4),
-                  )} 字以内。`,
-                  input: chunks[i],
-                  max_output_tokens: Math.min(
-                    settings.maxOutputTokens,
-                    summaryBudget,
-                  ),
-                  reasoning: {
-                    effort: normalizeReasoningEffort(settings.reasoningEffort),
-                  },
-                  store: false,
-                },
-                {signal: options.signal},
-              )
-            : client.responses.create({
-                model,
-                instructions: `${SUMMARY_INSTRUCTIONS}\n请尽量控制在 ${Math.max(
-                  32,
-                  Math.floor(summaryBudget / 4),
-                )} 字以内。`,
-                input: chunks[i],
-                max_output_tokens: Math.min(
-                  settings.maxOutputTokens,
-                  summaryBudget,
-                ),
-                reasoning: {
-                  effort: normalizeReasoningEffort(settings.reasoningEffort),
-                },
-                store: false,
-              }),
+          trackModelCall(
+            () =>
+              options.signal
+                ? client.responses.create(
+                    {
+                      model,
+                      instructions: `${SUMMARY_INSTRUCTIONS}\n请尽量控制在 ${Math.max(
+                        32,
+                        Math.floor(summaryBudget / 4),
+                      )} 字以内。`,
+                      input: chunks[i],
+                      max_output_tokens: Math.min(
+                        settings.maxOutputTokens,
+                        summaryBudget,
+                      ),
+                      reasoning: {
+                        effort: normalizeReasoningEffort(
+                          settings.reasoningEffort,
+                        ),
+                      },
+                      store: false,
+                    },
+                    {signal: options.signal},
+                  )
+                : client.responses.create({
+                    model,
+                    instructions: `${SUMMARY_INSTRUCTIONS}\n请尽量控制在 ${Math.max(
+                      32,
+                      Math.floor(summaryBudget / 4),
+                    )} 字以内。`,
+                    input: chunks[i],
+                    max_output_tokens: Math.min(
+                      settings.maxOutputTokens,
+                      summaryBudget,
+                    ),
+                    reasoning: {
+                      effort: normalizeReasoningEffort(
+                        settings.reasoningEffort,
+                      ),
+                    },
+                    store: false,
+                  }),
+            'summary',
+            model,
+            options.onCall,
+          ),
         settings.retryCount,
         '历史摘要',
         options.onProgress,
@@ -213,30 +218,38 @@ async function prepareInput(
       try {
         const result = await requestWithRetry(
           () =>
-            options.signal
-              ? client.responses.inputTokens.count(
-                  {
-                    model,
-                    input: current,
-                    instructions,
-                    ...(textConfig ? {text: textConfig} : {}),
-                    reasoning: {
-                      effort: normalizeReasoningEffort(
-                        settings.reasoningEffort,
-                      ),
-                    },
-                  },
-                  {signal: options.signal},
-                )
-              : client.responses.inputTokens.count({
-                  model,
-                  input: current,
-                  instructions,
-                  ...(textConfig ? {text: textConfig} : {}),
-                  reasoning: {
-                    effort: normalizeReasoningEffort(settings.reasoningEffort),
-                  },
-                }),
+            trackModelCall(
+              () =>
+                options.signal
+                  ? client.responses.inputTokens.count(
+                      {
+                        model,
+                        input: current,
+                        instructions,
+                        ...(textConfig ? {text: textConfig} : {}),
+                        reasoning: {
+                          effort: normalizeReasoningEffort(
+                            settings.reasoningEffort,
+                          ),
+                        },
+                      },
+                      {signal: options.signal},
+                    )
+                  : client.responses.inputTokens.count({
+                      model,
+                      input: current,
+                      instructions,
+                      ...(textConfig ? {text: textConfig} : {}),
+                      reasoning: {
+                        effort: normalizeReasoningEffort(
+                          settings.reasoningEffort,
+                        ),
+                      },
+                    }),
+              'count',
+              model,
+              options.onCall,
+            ),
           settings.retryCount,
           '上下文计数',
           options.onProgress,
@@ -284,20 +297,26 @@ async function prepareInput(
       await options.onProgress?.('正在压缩历史内容，保留当前作文及评分细则');
       const compacted = await requestWithRetry(
         () =>
-          options.signal
-            ? client.responses.compact(
-                {
-                  model,
-                  input: history,
-                  instructions: SUMMARY_INSTRUCTIONS,
-                },
-                {signal: options.signal},
-              )
-            : client.responses.compact({
-                model,
-                input: history,
-                instructions: SUMMARY_INSTRUCTIONS,
-              }),
+          trackModelCall(
+            () =>
+              options.signal
+                ? client.responses.compact(
+                    {
+                      model,
+                      input: history,
+                      instructions: SUMMARY_INSTRUCTIONS,
+                    },
+                    {signal: options.signal},
+                  )
+                : client.responses.compact({
+                    model,
+                    input: history,
+                    instructions: SUMMARY_INSTRUCTIONS,
+                  }),
+            'compact',
+            model,
+            options.onCall,
+          ),
         settings.retryCount,
         '历史压缩',
         options.onProgress,
@@ -397,9 +416,18 @@ export async function runResponse(
     const send = () =>
       requestWithRetry(
         () =>
-          options.signal
-            ? client.responses.create({...request}, {signal: options.signal})
-            : client.responses.create({...request}),
+          trackModelCall(
+            () =>
+              options.signal
+                ? client.responses.create(
+                    {...request},
+                    {signal: options.signal},
+                  )
+                : client.responses.create({...request}),
+            'response',
+            activeModel,
+            options.onCall,
+          ),
         actual.retryCount,
         '模型请求',
         options.onProgress,
@@ -430,11 +458,7 @@ export async function runResponse(
     }
     return {
       text: completedText(response),
-      usage: {
-        inputTokens: response.usage?.input_tokens || 0,
-        outputTokens: response.usage?.output_tokens || 0,
-        totalTokens: response.usage?.total_tokens || 0,
-      } as ResponseUsage,
+      usage: parseUsage(response.usage),
     };
   } catch (error) {
     checkCancelled(options.signal);

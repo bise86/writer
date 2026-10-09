@@ -1,7 +1,7 @@
 import OpenAI from 'openai';
 import type {ResponseInput} from 'openai/resources/responses/responses';
 import {DEFAULT_SETTINGS, validateSettings} from '../src/settings';
-import {AppSettings} from '../src/types';
+import {AppSettings, ModelCall} from '../src/types';
 import {runResponse, visionResponse} from '../src/services/openai';
 import {
   contextBudget,
@@ -294,6 +294,7 @@ test('原文转录请求仍使用纯文本，不强制任何 JSON 格式', async
 });
 
 test('DeepSeek 分段压缩历史，当前原文和细则不参与摘要', async () => {
+  const onCall = jest.fn(async (_call: ModelCall) => {});
   const configured = {...settings, contextWindow: 4096, maxOutputTokens: 512};
   const input = '不可替换的作文原文';
   const instructions = '完整的评分细则';
@@ -315,7 +316,7 @@ test('DeepSeek 分段压缩历史，当前原文和细则不参与摘要', async
     instructions,
     configured,
     configured.modelName,
-    {history},
+    {history, onCall},
   );
   expect(result.text).toBe('最终结果');
   expect(create.mock.calls.length).toBeGreaterThan(2);
@@ -337,6 +338,14 @@ test('DeepSeek 分段压缩历史，当前原文和细则不参与摘要', async
   expect(JSON.stringify(history)).toBe(snapshot);
   expect(compact).not.toHaveBeenCalled();
   expect(count).not.toHaveBeenCalled();
+  const recorded = onCall.mock.calls
+    .map(([call]) => call)
+    .filter(call => call.status !== 'running');
+  expect(recorded).toHaveLength(create.mock.calls.length);
+  expect(
+    recorded.slice(0, -1).every(call => call.operation === 'summary'),
+  ).toBe(true);
+  expect(recorded[recorded.length - 1].operation).toBe('response');
 });
 
 test('返回更长的摘要会停止，不会陷入无限循环或继续评分', async () => {
@@ -367,6 +376,7 @@ test('过大的历史有请求次数上限，不会无界收费', async () => {
 });
 
 test('GPT 原生压缩只收到历史，完整压缩输出与当前原文一起重放', async () => {
+  const onCall = jest.fn(async (_call: ModelCall) => {});
   const configured = {...openai, contextWindow: 10000, maxOutputTokens: 500};
   const history = [{role: 'assistant' as const, content: 'a'.repeat(8300)}];
   const output = [
@@ -382,6 +392,7 @@ test('GPT 原生压缩只收到历史，完整压缩输出与当前原文一起�
   compact.mockResolvedValue({output});
   await runResponse('完整作文', '完整细则', configured, configured.modelName, {
     history,
+    onCall,
   });
   expect(compact).toHaveBeenCalledWith(
     expect.objectContaining({model: configured.modelName, input: history}),
@@ -392,6 +403,89 @@ test('GPT 原生压缩只收到历史，完整压缩输出与当前原文一起�
   ]);
   expect(create.mock.calls[0][0].instructions).toBe('完整细则');
   expect(count.mock.calls[1][0].model).toBe(configured.modelName);
+  const recorded = onCall.mock.calls
+    .map(([call]) => call)
+    .filter(call => call.status !== 'running');
+  expect(recorded.map(call => call.operation)).toEqual([
+    'count',
+    'compact',
+    'count',
+    'response',
+  ]);
+  expect(recorded[0]).toMatchObject({
+    inputTokens: null,
+    measuredInputTokens: 8500,
+  });
+});
+
+test('SDK 每次重试独立计数，失败与成功分别保留', async () => {
+  jest.useFakeTimers();
+  const onCall = jest.fn(async (_call: ModelCall) => {});
+  create
+    .mockRejectedValueOnce(failure(503))
+    .mockResolvedValueOnce({
+      ...done(),
+      usage: {input_tokens: 100, output_tokens: 20},
+    });
+  const pending = runResponse(
+    '原文',
+    '规则',
+    {...settings, retryCount: 1},
+    settings.modelName,
+    {onCall},
+  );
+  await jest.runAllTimersAsync();
+  await pending;
+  const recorded = onCall.mock.calls
+    .map(([call]) => call)
+    .filter(call => call.status !== 'running');
+  expect(recorded.map(call => call.status)).toEqual(['failed', 'completed']);
+  expect(new Set(recorded.map(call => call.id)).size).toBe(2);
+  expect(recorded[0].inputTokens).toBeNull();
+  expect(recorded[1].inputTokens).toBe(100);
+});
+
+test('JSON 输出模式兼容回退的每次实际请求都保留统计', async () => {
+  const onCall = jest.fn(async (_call: ModelCall) => {});
+  create
+    .mockRejectedValueOnce(
+      failure(400, 'text.format json_schema not supported'),
+    )
+    .mockRejectedValueOnce(
+      failure(400, 'text.format json_object not supported'),
+    )
+    .mockResolvedValueOnce(done());
+  await runResponse('原文', '规则', settings, settings.modelName, {
+    onCall,
+    textFormat: {type: 'json_schema', name: 'test', schema: {type: 'object'}},
+  });
+  const recorded = onCall.mock.calls
+    .map(([call]) => call)
+    .filter(call => call.status !== 'running');
+  expect(recorded.map(call => call.status)).toEqual([
+    'failed',
+    'failed',
+    'completed',
+  ]);
+});
+
+test('统计写入失败不会触发收费请求的网络重试', async () => {
+  const onCall = jest
+    .fn()
+    .mockResolvedValueOnce(undefined)
+    .mockRejectedValueOnce(
+      Object.assign(new Error('disk full'), {status: 503}),
+    );
+  await expect(
+    runResponse(
+      '原文',
+      '规则',
+      {...settings, retryCount: 2},
+      settings.modelName,
+      {onCall},
+    ),
+  ).rejects.toThrow('统计保存失败');
+  expect(create).toHaveBeenCalledTimes(1);
 });
 
 test('原生压缩接口不存在时回退历史摘要，不把整个作文发去摘要', async () => {

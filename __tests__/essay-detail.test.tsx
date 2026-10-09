@@ -1,11 +1,12 @@
 import React from 'react';
-import {Pressable, Text} from 'react-native';
+import {Image, Pressable, Text, View} from 'react-native';
 import {act, create, ReactTestRenderer} from 'react-test-renderer';
 import EssayDetail from '../src/components/EssayDetail';
 import {Essay, ScoreResult} from '../src/types';
 
 jest.mock('../src/db/database', () => ({getSteps: jest.fn(async () => [])}));
 jest.mock('../src/components/CorrectionPdf', () => 'CorrectionPdf');
+jest.mock('../src/components/UsageDetails', () => 'UsageDetails');
 const score: ScoreResult = {
   score: 80,
   bandId: 'high',
@@ -77,12 +78,14 @@ test('识别完成才出现原文且排在首位，成功时自动切换评分�
   await render();
   expect(tabs().map(item => item.findByType(Text).props.children)).toEqual([
     '阶段输出',
+    '消耗详情',
   ]);
   essay = {...essay, status: 'scoring', canonicalText: '正确标题\n第一段。'};
   await update();
   expect(tabs().map(item => item.findByType(Text).props.children)).toEqual([
     '原文',
     '阶段输出',
+    '消耗详情',
   ]);
   expect(text()).not.toContain('旧错标题');
   select('原文');
@@ -94,6 +97,7 @@ test('识别完成才出现原文且排在首位，成功时自动切换评分�
     '阶段输出',
     '评分结果',
     '批改',
+    '消耗详情',
   ]);
   expect(text()).toContain('总评文字');
   expect(text().indexOf('各项评分')).toBeLessThan(text().indexOf('立意优点'));
@@ -112,7 +116,47 @@ test('重新识别后隐藏旧原文、旧评分和批改页', async () => {
   select('批改');
   essay = {...essay, status: 'vision_ocr', canonicalText: '', scoreJson: ''};
   await update();
-  expect(tabs()).toHaveLength(1);
+  expect(tabs()).toHaveLength(2);
   expect(text()).toContain('处理进度');
   expect(view.root.findAllByType('CorrectionPdf' as any)).toHaveLength(0);
+});
+
+test('原始照片从识别前就显示在标题和页卡之间，切换所有页卡都保留', async () => {
+  essay.imageUris = ['file:///1.jpg', 'file:///2.jpg'];
+  await render();
+  const photoBlock = view.root
+    .findAllByType(View)
+    .find(item => item.props.accessibilityLabel === '原始照片')!;
+  expect(
+    photoBlock.findAllByType(Image).map(item => item.props.source.uri),
+  ).toEqual(essay.imageUris);
+  const parent = photoBlock.parent!;
+  const nodes = parent.children;
+  const titleIndex = nodes.findIndex(
+    item =>
+      typeof item !== 'string' && item.props.accessibilityLabel === '作文标题',
+  );
+  const photoIndex = nodes.indexOf(photoBlock);
+  const tabIndex = nodes.findIndex(
+    item =>
+      typeof item !== 'string' && item.props.accessibilityRole === 'tablist',
+  );
+  expect(titleIndex).toBeLessThan(photoIndex);
+  expect(photoIndex).toBeLessThan(tabIndex);
+  select('消耗详情');
+  expect(view.root.findAllByType('UsageDetails' as any)).toHaveLength(1);
+  expect(view.root.findAllByType(Image)).toHaveLength(2);
+  essay = {
+    ...essay,
+    status: 'completed',
+    canonicalText: '标题\n正文',
+    scoreJson: JSON.stringify(score),
+  };
+  await update();
+  for (const label of ['原文', '评分结果', '批改', '消耗详情']) {
+    select(label);
+    expect(
+      view.root.findAllByType(Image).map(item => item.props.source.uri),
+    ).toEqual(essay.imageUris);
+  }
 });

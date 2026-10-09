@@ -89,7 +89,7 @@ export default function CorrectionPdf({
     <View style={styles.root}>
       <View style={styles.toolbar}>
         <Text style={styles.help}>
-          左侧完整原文，右侧批注 · 批注续页重复本段全文 · 可双指缩放 {page}
+          左侧完整原文，右侧批注 · 原文完整展示一次 · 可双指缩放 {page}
         </Text>
         <Pressable
           accessibilityRole="button"

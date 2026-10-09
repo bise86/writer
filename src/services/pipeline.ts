@@ -4,12 +4,15 @@ import {
   getSteps,
   updateEssay,
   updateStep,
+  saveModelCall,
+  saveEssayScore,
 } from '../db/database';
 import {Essay, StepId} from '../types';
 import {cloudOcr, reconcileOcr} from './ocr';
 import {RequestProgress} from './context';
 import {scoreEssay} from './scoring';
 import {recognizedTitle} from './essay-text';
+import {newRecordId} from './usage';
 
 export {scoreEssay} from './scoring';
 
@@ -51,6 +54,10 @@ export async function runEssayPipeline(
     throw new Error('这篇作文正在处理中，请等待当前流程结束');
   }
   inFlight.add(essay.id);
+  const runId = newRecordId('run');
+  const usage =
+    (stage: StepId) => (call: Parameters<typeof saveModelCall>[3]) =>
+      saveModelCall(essay.id, runId, stage, call);
   try {
     const settings = await getSettings();
     let start = Math.max(0, STEPS.indexOf(startFrom));
@@ -81,6 +88,7 @@ export async function runEssayPipeline(
       const vision = await step(essay.id, 'vision_ocr', onProgress, report =>
         cloudOcr(imageUris, settings, {
           onProgress: report,
+          onCall: usage('vision_ocr'),
           onPage: async text => {
             await updateEssay(essay.id, {
               visionOcr: text,
@@ -102,7 +110,10 @@ export async function runEssayPipeline(
     if (start <= 1) {
       await updateEssay(essay.id, {status: 'reconcile'});
       const reconciled = await step(essay.id, 'reconcile', onProgress, report =>
-        reconcileOcr(imageUris, visionText, settings, {onProgress: report}),
+        reconcileOcr(imageUris, visionText, settings, {
+          onProgress: report,
+          onCall: usage('reconcile'),
+        }),
       );
       canonicalText = reconciled.text;
       await updateEssay(essay.id, {
@@ -118,13 +129,10 @@ export async function runEssayPipeline(
       scoreEssay(canonicalText, settings, {
         onProgress: report,
         essayId: essay.id,
+        onCall: usage('scoring'),
       }),
     );
-    await updateEssay(essay.id, {
-      scoreJson: JSON.stringify(score),
-      status: 'completed',
-      updatedAt: new Date().toISOString(),
-    });
+    await saveEssayScore(essay.id, runId, score, settings);
     return score;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

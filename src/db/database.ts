@@ -7,7 +7,16 @@ import {
   ScoreAttempt,
   StepId,
   StepStatus,
+  ModelCall,
+  ScoreResult,
 } from '../types';
+import {
+  initializeStatistics,
+  readEssayUsage,
+  storeModelCall,
+  storeScore,
+} from './statistics';
+import rules from '../assets/scoring-rules.json';
 import {recognizedTitle} from '../services/essay-text';
 import {
   DEFAULT_SETTINGS,
@@ -159,6 +168,10 @@ async function initializeDatabase() {
       'INSERT OR IGNORE INTO settings (key, value) VALUES (?, ?)',
       [key, String(value)],
     );
+  }
+  await initializeStatistics(database, version.rows.item(0).user_version < 6);
+  if (version.rows.item(0).user_version < 6) {
+    await database.executeSql('PRAGMA user_version = 6');
   }
   // Initialization runs once before the app starts any pipeline. Native process
   // termination leaves stored progress behind, but no request is still running.
@@ -358,12 +371,13 @@ export async function updateStep(
     );
   }
   await database.executeSql(
-    'INSERT INTO app_logs (essay_id, level, message, created_at) VALUES (?, ?, ?, ?)',
+    'INSERT INTO app_logs (essay_id, level, message, created_at) SELECT ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM essays WHERE id = ?)',
     [
       essayId,
       status === 'failed' ? 'error' : 'info',
       `${step}: ${detail}`,
       now,
+      essayId,
     ],
   );
 }
@@ -448,9 +462,10 @@ export async function clearEssaysBefore(before: Date) {
     'DELETE FROM pipeline_steps WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
     [cutoff],
   );
-  await database.executeSql('DELETE FROM app_logs WHERE created_at < ?', [
-    cutoff,
-  ]);
+  await database.executeSql(
+    'DELETE FROM app_logs WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
+    [cutoff],
+  );
   await database.executeSql('DELETE FROM essays WHERE created_at < ?', [
     cutoff,
   ]);
@@ -536,6 +551,35 @@ export async function initDatabase() {
   await db();
 }
 
+export async function saveModelCall(
+  essayId: string,
+  runId: string,
+  stage: StepId,
+  call: ModelCall,
+) {
+  await storeModelCall(await db(), essayId, runId, stage, call);
+}
+
+export async function getEssayUsage(essayId: string) {
+  return readEssayUsage(await db(), essayId);
+}
+
+export async function saveEssayScore(
+  essayId: string,
+  runId: string,
+  score: ScoreResult,
+  settings: AppSettings,
+) {
+  await storeScore(
+    await db(),
+    essayId,
+    runId,
+    score,
+    settings,
+    `${rules.id}:${rules.version}`,
+  );
+}
+
 export async function getScoreAttempts(
   essayId: string,
 ): Promise<ScoreAttempt[]> {
@@ -567,7 +611,7 @@ export async function saveScoreAttempt(
 ) {
   const database = await db();
   await database.executeSql(
-    'INSERT INTO score_attempts (essay_id, source_text, output, feedback, created_at) VALUES (?, ?, ?, ?, ?)',
-    [essayId, sourceText, output, feedback, new Date().toISOString()],
+    'INSERT INTO score_attempts (essay_id, source_text, output, feedback, created_at) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM essays WHERE id = ?)',
+    [essayId, sourceText, output, feedback, new Date().toISOString(), essayId],
   );
 }

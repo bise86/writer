@@ -133,7 +133,7 @@ export function locateAnnotations(text: string, annotations: Annotation[]) {
   });
 }
 
-/** Every comment page includes its section in full in the left column. */
+/** Draw each original character once. Paragraphs and comments stay aligned. */
 export async function buildAnnotatedPdf(
   text: string,
   title: string,
@@ -265,16 +265,34 @@ export async function buildAnnotatedPdf(
     if (!notes.length) {
       addNote('此处暂无已保存的批注。');
     }
+    let bodyIndex = 0;
     let noteIndex = 0;
-    const bodyBlockHeight = 28 + body.length * bodyHeight;
-    // Enlarge the page for a long paragraph instead of clipping, shrinking, or
-    // referring readers to another page. Every continuation repeats this block.
-    const pageHeight = Math.max(841.89, headerSpace + bodyBlockHeight + bottom);
-    while (noteIndex < notes.length) {
-      if (!page || y - bottom + 0.01 < bodyBlockHeight) {
+    const blockHeight =
+      28 + Math.max(body.length * bodyHeight, notes.length * 14);
+    // Keep a whole paragraph and its notes together at readable sizes where
+    // possible. Respect the PDF page-size limit for unusually large sections.
+    const pageHeight = Math.min(
+      14400,
+      Math.max(841.89, headerSpace + blockHeight + bottom),
+    );
+    while (bodyIndex < body.length || noteIndex < notes.length) {
+      if (
+        !page ||
+        y - bottom + 0.01 <
+          Math.min(blockHeight, pageHeight - headerSpace - bottom)
+      ) {
         newPage(pageHeight);
       }
-      draw(page!, `${label} · 完整原文`, leftX, y, 10, COLORS.muted);
+      if (bodyIndex < body.length) {
+        draw(
+          page!,
+          `${label} · 原文${bodyIndex ? '（续）' : ''}`,
+          leftX,
+          y,
+          10,
+          COLORS.muted,
+        );
+      }
       if (noteIndex < notes.length) {
         draw(
           page!,
@@ -286,12 +304,16 @@ export async function buildAnnotatedPdf(
         );
       }
       y -= 28;
+      const bodyCount = Math.min(
+        body.length - bodyIndex,
+        Math.floor((y - bottom) / bodyHeight) + 1,
+      );
       const noteCount = Math.min(
         notes.length - noteIndex,
         Math.floor((y - bottom) / 14) + 1,
       );
-      for (let i = 0; i < body.length; i += 1) {
-        const line = body[i];
+      for (let i = 0; i < bodyCount; i += 1) {
+        const line = body[bodyIndex + i];
         const lineY = y - i * bodyHeight;
         for (const run of coloredPdfRuns(line, annotations)) {
           const x =
@@ -326,9 +348,10 @@ export async function buildAnnotatedPdf(
         const note = notes[noteIndex + i];
         draw(page!, note.text, rightX, y - i * 14, 9, note.color);
       }
+      bodyIndex += bodyCount;
       noteIndex += noteCount;
-      y -= Math.max(body.length * bodyHeight, noteCount * 14) + 18;
-      if (noteIndex < notes.length) {
+      y -= Math.max(bodyCount * bodyHeight, noteCount * 14) + 18;
+      if (bodyIndex < body.length || noteIndex < notes.length) {
         newPage(pageHeight);
       }
     }

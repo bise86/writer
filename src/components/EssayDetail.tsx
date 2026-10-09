@@ -13,6 +13,7 @@ import {getSteps} from '../db/database';
 import {Essay, PipelineStep, ScoreResult, StepId} from '../types';
 import {recognizedTitle} from '../services/essay-text';
 import CorrectionPdf from './CorrectionPdf';
+import UsageDetails from './UsageDetails';
 
 const STAGES: [StepId, string][] = [
   ['vision_ocr', '逐页图片识别'],
@@ -26,7 +27,7 @@ const DIMENSIONS: [string, string, number][] = [
   ['language', '语言与表达', 20],
   ['format', '书写与规范', 10],
 ];
-type Tab = 'original' | 'stage' | 'result' | 'correction';
+type Tab = 'original' | 'stage' | 'result' | 'correction' | 'usage';
 function Card({children}: {children: React.ReactNode}) {
   return <View style={styles.card}>{children}</View>;
 }
@@ -139,6 +140,7 @@ export default function EssayDetail({
           ['correction', '批改'],
         ] as [Tab, string][])
       : []),
+    ['usage', '消耗详情'],
   ];
   const photos = essay.imageUris?.length ? essay.imageUris : [essay.imageUri];
   return (
@@ -158,6 +160,19 @@ export default function EssayDetail({
       <Text accessibilityLabel="作文标题" style={styles.title}>
         {title || (recognized ? '未命名作文' : '正在识别标题…')}
       </Text>
+      <View style={styles.photos} accessibilityLabel="原始照片">
+        <Text style={styles.muted}>原始照片 · {photos.length} 张</Text>
+        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
+          {photos.map((uri, i) => (
+            <Image
+              key={`${uri}-${i}`}
+              source={{uri}}
+              style={styles.photo}
+              accessibilityLabel={`原始照片 ${i + 1}`}
+            />
+          ))}
+        </ScrollView>
+      </View>
       <View style={styles.tabs} accessibilityRole="tablist">
         {tabs.map(([key, label]) => (
           <Pressable
@@ -191,22 +206,9 @@ export default function EssayDetail({
                   {essay.canonicalText}
                 </Text>
               </Card>
-              <Card>
-                <Text style={styles.heading}>
-                  原始照片 · {photos.length} 张
-                </Text>
-                <ScrollView horizontal>
-                  {photos.map((uri, i) => (
-                    <Image
-                      key={`${uri}-${i}`}
-                      source={{uri}}
-                      style={styles.photo}
-                    />
-                  ))}
-                </ScrollView>
-              </Card>
             </>
           )}
+          {activeTab === 'usage' && <UsageDetails essayId={essay.id} />}
           {activeTab === 'stage' && (
             <>
               <Card>
@@ -437,7 +439,15 @@ const styles = StyleSheet.create({
   body: {fontSize: 15, color: '#334155', lineHeight: 25},
   muted: {fontSize: 12, color: '#64748b', lineHeight: 20},
   original: {fontSize: 17, color: '#1e293b', lineHeight: 31, marginTop: 18},
-  photo: {width: 240, height: 320, resizeMode: 'contain', marginRight: 12},
+  photos: {paddingHorizontal: 16, paddingBottom: 10, gap: 6},
+  photo: {
+    width: 84,
+    height: 100,
+    resizeMode: 'contain',
+    marginRight: 10,
+    backgroundColor: '#e2e8f0',
+    borderRadius: 6,
+  },
   feedback: {marginBottom: 14},
   stage: {
     flexDirection: 'row',

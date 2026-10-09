@@ -88,3 +88,42 @@ export interface ScoreAttempt {
   feedback: string;
   createdAt: string;
 }
+
+export interface TokenUsage {
+  inputTokens: number | null;
+  outputTokens: number | null;
+  totalTokens: number | null;
+  cacheReadTokens: number | null;
+  cacheWriteTokens: number | null;
+  cacheMissTokens: number | null;
+  reasoningTokens: number | null;
+}
+
+export type ModelOperation = 'response' | 'summary' | 'compact' | 'count';
+export interface ModelCall extends TokenUsage {
+  id: string;
+  operation: ModelOperation;
+  model: string;
+  status: 'running' | 'completed' | 'incomplete' | 'failed' | 'interrupted';
+  startedAt: string;
+  finishedAt: string | null;
+  durationMs: number | null;
+  responseId: string | null;
+  httpStatus: number | null;
+  measuredInputTokens: number | null;
+  rawUsageJson: string | null;
+}
+
+export interface UsageSummary extends TokenUsage {
+  callCount: number;
+  failedCount: number;
+  runningCount: number;
+  countCallCount: number;
+  missing: Record<keyof TokenUsage, number>;
+}
+
+export interface EssayUsage {
+  total: UsageSummary;
+  stages: Partial<Record<StepId, UsageSummary>>;
+  calls: (ModelCall & {stage: StepId; runId: string})[];
+}

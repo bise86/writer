@@ -166,38 +166,23 @@ test('生成含中文原文和长批注的多页真实 PDF', async () => {
       .map(([value]) => value)
       .join('');
     expect(notes).toContain(comment);
-    const pages = [...new Set(drawText.mock.contexts)];
-    let repeated = 0;
-    for (const page of pages) {
-      const calls = drawText.mock.calls.filter(
-        (_, index) => drawText.mock.contexts[index] === page,
-      );
-      const body = calls
-        .filter(([, opts]) => opts?.size === 12)
-        .map(([value]) => value)
-        .join('');
-      if (calls.some(([value]) => value === '第 1 段 · 完整原文')) {
-        expect(body).toContain('雨声敲着窗。我很难过。');
-        repeated++;
-      }
-      expect(calls.map(([value]) => value).join('')).not.toMatch(
-        /已在前|原文（续）/,
-      );
-    }
-    expect(repeated).toBeGreaterThan(2);
-    expect(
-      drawText.mock.calls
-        .filter(([, opts]) => opts?.size === 12)
-        .map(([value]) => value)
-        .join(''),
-    ).toContain('我终于走出门，雨停了。');
+    const body = drawText.mock.calls
+      .filter(([, opts]) => opts?.size === 12)
+      .map(([value]) => value)
+      .join('');
+    expect(body).toBe('雨声敲着窗。我很难过。我终于走出门，雨停了。');
+    expect(drawText.mock.calls.map(([value]) => value).join('')).not.toMatch(
+      /已在前|重复本段/,
+    );
   } finally {
     drawText.mockRestore();
   }
   const bytes = Buffer.from(base64, 'base64');
   expect(bytes.subarray(0, 5).toString()).toBe('%PDF-');
   const document = await PDFDocument.load(bytes);
-  expect(document.getPageCount()).toBeGreaterThan(2);
+  expect(document.getPages().some(page => page.getHeight() > 841.89)).toBe(
+    true,
+  );
   expect(document.getTitle()).toBe('雨中的成长 · 批改');
   let checkedGlyphs = 0;
   for (const [, object] of document.context.enumerateIndirectObjects()) {
@@ -219,7 +204,7 @@ test('生成含中文原文和长批注的多页真实 PDF', async () => {
   writeFileSync(join(tmpdir(), 'writer-annotated-test.pdf'), bytes);
 }, 30000);
 
-test('长段扩展页面保持正常字号，批注续页逐页重复该段全文', async () => {
+test('长段与长批注对齐，全文只展示一次，保持正常字号', async () => {
   const title = '春天的发现';
   const first =
     '段首：我推开窗。' +
@@ -260,35 +245,24 @@ test('长段扩展页面保持正常字号，批注续页逐页重复该段全�
       .filter(([, options]) => options?.size === 12)
       .map(([value]) => value)
       .join('');
+    expect(drawnBody).toBe(first + second);
     const paragraphPages = [...new Set(drawText.mock.contexts)].filter(page =>
       calls.some(
         ([value], index) =>
-          value === '第 1 段 · 完整原文' &&
-          drawText.mock.contexts[index] === page,
+          value === '第 1 段 · 原文' && drawText.mock.contexts[index] === page,
       ),
     );
-    expect(paragraphPages.length).toBeGreaterThan(1);
-    for (const page of paragraphPages) {
-      const bodyOnPage = calls
-        .filter(
-          ([, options], index) =>
-            drawText.mock.contexts[index] === page && options?.size === 12,
-        )
-        .map(([value]) => value)
-        .join('');
-      expect(bodyOnPage).toBe(first);
-      expect((page as PDFPage).getHeight()).toBeGreaterThan(841.89);
-    }
-    expect(drawnBody).toBe(first.repeat(paragraphPages.length) + second);
+    expect(paragraphPages).toHaveLength(1);
+    expect((paragraphPages[0] as PDFPage).getHeight()).toBeGreaterThan(841.89);
     expect(
       calls
         .filter(([, options]) => options?.size === 16)
         .map(([value]) => value),
     ).toEqual([title]);
     const drawn = calls.map(([value]) => value).join('\n');
-    expect(drawn).toContain('标题 · 完整原文');
-    expect(drawn).toContain('第 1 段 · 批注（续）');
-    expect(drawn).toContain('第 2 段 · 完整原文');
+    expect(drawn).toContain('标题 · 原文');
+    expect(drawn).toContain('第 1 段 · 批注');
+    expect(drawn).toContain('第 2 段 · 原文');
     expect(drawn).not.toMatch(/已在前|原文（续）/);
     expect(drawn).not.toContain('第 3 段');
     expect(drawn.indexOf('标题整体评价')).toBeLessThan(
@@ -324,6 +298,51 @@ test('长段扩展页面保持正常字号，批注续页逐页重复该段全�
       join(tmpdir(), 'writer-full-paragraph-expected.json'),
       JSON.stringify({title, first, second}),
     );
+  } finally {
+    drawText.mockRestore();
+  }
+}, 30000);
+
+test('原文与批注超过页面上限时各自接续，逐字无重复无遗漏，不使用替代提示', async () => {
+  const original = Array.from(
+    {length: 1500},
+    (_, i) => `第${i}处：我推开窗，听见树叶在风中沙沙作响。`,
+  ).join('');
+  const comment = '观察从具体场景开始。'.repeat(4000);
+  const drawText = jest.spyOn(PDFPage.prototype, 'drawText');
+  try {
+    const base64 = await buildAnnotatedPdf(original, '长段落测试', {
+      ...score,
+      paragraphReviews: [],
+      annotations: [{...score.annotations[0], quote: '第0处', comment}],
+    });
+    const calls = drawText.mock.calls;
+    expect(
+      calls
+        .filter(([, opts]) => opts?.size === 12)
+        .map(([value]) => value)
+        .join(''),
+    ).toBe(original);
+    expect(
+      calls
+        .filter(([, opts]) => opts?.x === 356 && opts?.size === 9)
+        .map(([value]) => value)
+        .join(''),
+    ).toContain(comment);
+    expect(calls.map(([value]) => value).join('')).not.toMatch(
+      /已在前|重复本段/,
+    );
+    const pdf = await PDFDocument.load(Buffer.from(base64, 'base64'));
+    expect(pdf.getPageCount()).toBeGreaterThan(2);
+    expect(pdf.getPages().every(page => page.getHeight() <= 14400)).toBe(true);
+    calls.forEach(([, opts], i) => {
+      if (opts?.size !== 8) {
+        expect(opts?.y).toBeGreaterThanOrEqual(48);
+        expect(opts?.y).toBeLessThan(
+          (drawText.mock.contexts[i] as PDFPage).getHeight(),
+        );
+      }
+    });
   } finally {
     drawText.mockRestore();
   }

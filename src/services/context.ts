@@ -2,7 +2,7 @@ import type {
   ResponseFormatTextConfig,
   ResponseInput,
 } from 'openai/resources/responses/responses';
-import {AppSettings} from '../types';
+import {AppSettings, ModelCall} from '../types';
 
 export interface HistoryMessage {
   role: 'user' | 'assistant';
@@ -22,6 +22,8 @@ export interface RequestOptions {
   history?: HistoryMessage[];
   onProgress?: RequestProgress;
   textFormat?: ResponseFormatTextConfig;
+  /** Called before and after every actual SDK attempt, including retries. */
+  onCall?: (call: ModelCall) => Promise<void>;
 }
 
 export class ContextBudgetError extends Error {}
