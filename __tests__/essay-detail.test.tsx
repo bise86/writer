@@ -3,10 +3,12 @@ import {Image, Pressable, Text, View} from 'react-native';
 import {act, create, ReactTestRenderer} from 'react-test-renderer';
 import EssayDetail from '../src/components/EssayDetail';
 import {Essay, ScoreResult} from '../src/types';
+import ImageViewer from '../src/components/ImageViewer';
 
 jest.mock('../src/db/database', () => ({getSteps: jest.fn(async () => [])}));
 jest.mock('../src/components/CorrectionPdf', () => 'CorrectionPdf');
 jest.mock('../src/components/UsageDetails', () => 'UsageDetails');
+jest.mock('../src/components/ImageViewer', () => 'ImageViewer');
 const score: ScoreResult = {
   score: 80,
   bandId: 'high',
@@ -142,6 +144,7 @@ test('原始照片从识别前就显示在标题和页卡之间，切换所有�
       typeof item !== 'string' && item.props.accessibilityRole === 'tablist',
   );
   expect(titleIndex).toBeLessThan(photoIndex);
+  expect(titleIndex).toBeGreaterThanOrEqual(0);
   expect(photoIndex).toBeLessThan(tabIndex);
   select('消耗详情');
   expect(view.root.findAllByType('UsageDetails' as any)).toHaveLength(1);
@@ -159,4 +162,30 @@ test('原始照片从识别前就显示在标题和页卡之间，切换所有�
       view.root.findAllByType(Image).map(item => item.props.source.uri),
     ).toEqual(essay.imageUris);
   }
+});
+
+test('点击第二张照片打开对应大图，关闭后仍在当前页卡，原文按段落展示', async () => {
+  essay = {
+    ...essay,
+    imageUris: ['file:///1.jpg', 'file:///2.jpg'],
+    canonicalText: '春天\n\n第一段。第二句。\n\n第二段。',
+  };
+  await render();
+  select('原文');
+  act(() =>
+    view.root
+      .findAllByType(Pressable)
+      .find(button => button.props.accessibilityLabel === '查看原始照片 2')!
+      .props.onPress(),
+  );
+  const viewer = view.root.findByType(ImageViewer);
+  expect(viewer.props.uris).toEqual(essay.imageUris);
+  expect(viewer.props.initialIndex).toBe(1);
+  act(() => viewer.props.onClose());
+  expect(view.root.findAllByType(ImageViewer)).toHaveLength(0);
+  const original = view.root
+    .findAllByType(Text)
+    .filter(node => node.props.selectable)
+    .map(node => node.props.children);
+  expect(original).toEqual(['春天', '第一段。第二句。', '第二段。']);
 });

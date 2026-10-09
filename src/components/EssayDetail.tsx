@@ -8,12 +8,14 @@ import {
   StyleSheet,
   Text,
   View,
+  useWindowDimensions,
 } from 'react-native';
 import {getSteps} from '../db/database';
 import {Essay, PipelineStep, ScoreResult, StepId} from '../types';
-import {recognizedTitle} from '../services/essay-text';
+import {essaySections, recognizedTitle} from '../services/essay-text';
 import CorrectionPdf from './CorrectionPdf';
 import UsageDetails from './UsageDetails';
+import ImageViewer from './ImageViewer';
 
 const STAGES: [StepId, string][] = [
   ['vision_ocr', '逐页图片识别'],
@@ -80,6 +82,9 @@ export default function EssayDetail({
 }) {
   const [steps, setSteps] = useState<PipelineStep[]>([]);
   const [stepError, setStepError] = useState('');
+  const [photoIndex, setPhotoIndex] = useState<number>();
+  const {height} = useWindowDimensions();
+  const photoHeight = Math.min(320, height * 0.38);
   const [activeTab, setActiveTab] = useState<Tab>(
     essay.status === 'completed' ? 'result' : 'stage',
   );
@@ -161,15 +166,26 @@ export default function EssayDetail({
         {title || (recognized ? '未命名作文' : '正在识别标题…')}
       </Text>
       <View style={styles.photos} accessibilityLabel="原始照片">
-        <Text style={styles.muted}>原始照片 · {photos.length} 张</Text>
+        <View style={styles.photoHeading}>
+          <Text style={styles.subheading}>原始照片 · {photos.length} 张</Text>
+          <Text style={styles.muted}>左右滑动 · 点击放大</Text>
+        </View>
         <ScrollView horizontal showsHorizontalScrollIndicator={false}>
           {photos.map((uri, i) => (
-            <Image
+            <Pressable
               key={`${uri}-${i}`}
-              source={{uri}}
-              style={styles.photo}
-              accessibilityLabel={`原始照片 ${i + 1}`}
-            />
+              accessibilityRole="button"
+              accessibilityLabel={`查看原始照片 ${i + 1}`}
+              onPress={() => setPhotoIndex(i)}>
+              <Image
+                source={{uri}}
+                style={[
+                  styles.photo,
+                  {width: photoHeight * 0.75, height: photoHeight},
+                ]}
+                accessibilityLabel={`原始照片 ${i + 1}`}
+              />
+            </Pressable>
           ))}
         </ScrollView>
       </View>
@@ -202,9 +218,17 @@ export default function EssayDetail({
                 <Text style={styles.muted}>
                   保留作者原有文字，修改建议见“批改”。无法辨认的字会在原文中标明。
                 </Text>
-                <Text selectable style={styles.original}>
-                  {essay.canonicalText}
-                </Text>
+                {essaySections(essay.canonicalText).map(section => (
+                  <Text
+                    key={section.start}
+                    selectable
+                    style={[
+                      styles.original,
+                      section.kind === 'title' && styles.originalTitle,
+                    ]}>
+                    {section.text}
+                  </Text>
+                ))}
               </Card>
             </>
           )}
@@ -386,6 +410,13 @@ export default function EssayDetail({
           )}
         </ScrollView>
       )}
+      {photoIndex !== undefined && (
+        <ImageViewer
+          uris={photos}
+          initialIndex={photoIndex}
+          onClose={() => setPhotoIndex(undefined)}
+        />
+      )}
     </SafeAreaView>
   );
 }
@@ -438,15 +469,24 @@ const styles = StyleSheet.create({
   },
   body: {fontSize: 15, color: '#334155', lineHeight: 25},
   muted: {fontSize: 12, color: '#64748b', lineHeight: 20},
-  original: {fontSize: 17, color: '#1e293b', lineHeight: 31, marginTop: 18},
-  photos: {paddingHorizontal: 16, paddingBottom: 10, gap: 6},
+  original: {fontSize: 17, color: '#1e293b', lineHeight: 31, marginTop: 16},
+  originalTitle: {textAlign: 'center', fontWeight: '700', marginBottom: 4},
+  photos: {
+    marginHorizontal: 16,
+    padding: 16,
+    marginBottom: 12,
+    backgroundColor: '#fff',
+    borderRadius: 14,
+  },
+  photoHeading: {
+    flexDirection: 'row',
+    justifyContent: 'space-between',
+    alignItems: 'center',
+    marginBottom: 8,
+  },
   photo: {
-    width: 84,
-    height: 100,
     resizeMode: 'contain',
-    marginRight: 10,
-    backgroundColor: '#e2e8f0',
-    borderRadius: 6,
+    marginRight: 12,
   },
   feedback: {marginBottom: 14},
   stage: {

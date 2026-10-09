@@ -1,4 +1,4 @@
-import React, {useEffect, useState} from 'react';
+import React, {useEffect, useRef, useState} from 'react';
 import {
   Alert,
   Image,
@@ -35,7 +35,12 @@ import {
   ROUNDTABLE_OPTIONS,
   validateSettings,
 } from './src/settings';
-import {cropImage, CropPreset, persistImage} from './src/services/images';
+import {
+  cropImage,
+  discardPreparedImages,
+  persistImage,
+} from './src/services/images';
+import ImageCropper from './src/components/ImageCropper';
 import Startup, {StartupData} from './src/components/Startup';
 
 function Button({
@@ -76,12 +81,14 @@ function Home({
   onOpen,
   onSettings,
   onManage,
+  capturing,
 }: {
   essays: Essay[];
   onCapture: (camera: boolean) => void;
   onOpen: (id: string) => void;
   onSettings: () => void;
   onManage: () => void;
+  capturing: boolean;
 }) {
   return (
     <SafeAreaView style={styles.safe}>
@@ -109,10 +116,15 @@ function Home({
             可连续拍摄或多选作文页；每页可保留原图或裁剪后再识别。
           </Text>
           <View style={styles.actionRow}>
-            <Button title="拍照" onPress={() => onCapture(true)} />
+            <Button
+              title="拍照"
+              disabled={capturing}
+              onPress={() => onCapture(true)}
+            />
             <Button
               title="选择图片（可多选）"
               secondary
+              disabled={capturing}
               onPress={() => onCapture(false)}
             />
           </View>
@@ -505,6 +517,13 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   const [selected, setSelected] = useState<Essay>();
   const selectedId = selected?.id;
   const [settings, setSettings] = useState(initialData.settings);
+  const captureLock = useRef(false);
+  const [capturing, setCapturing] = useState(false);
+  const [cropTask, setCropTask] = useState<{
+    asset: Asset;
+    pageLabel: string;
+    resolve: (uri?: string) => void;
+  }>();
   const [screen, setScreen] = useState<
     'home' | 'detail' | 'settings' | 'manage'
   >('home');
@@ -519,33 +538,14 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     }, 1200);
     return () => clearInterval(timer);
   }, [screen, selectedId]);
-  const chooseCrop = (): Promise<CropPreset | undefined> =>
-    new Promise(resolve => {
-      Alert.alert('处理图片', '可以保留原图，也可以进行居中裁剪。', [
-        {text: '保留原图', onPress: () => resolve(undefined)},
-        {text: '裁剪为方形', onPress: () => resolve('square')},
-        {text: '裁剪为 4:3', onPress: () => resolve('landscape')},
-      ]);
-    });
-  const prepareAsset = async (asset: Asset | undefined) => {
+  const prepareAsset = async (
+    asset: Asset | undefined,
+    pageLabel: string,
+  ): Promise<string | undefined> => {
     if (!asset?.uri) {
-      return undefined;
+      throw new Error('未读取到所选图片，请重新选择或拍摄');
     }
-    const uri = asset.uri;
-    const preset = await chooseCrop();
-    try {
-      return preset
-        ? await cropImage(uri, asset, preset)
-        : await persistImage(uri, asset);
-    } catch (error) {
-      Alert.alert(
-        '裁剪失败',
-        `${
-          error instanceof Error ? error.message : String(error)
-        }\n将使用原图继续。`,
-      );
-      return persistImage(uri, asset);
-    }
+    return new Promise(resolve => setCropTask({asset, pageLabel, resolve}));
   };
   const askContinueCamera = () =>
     new Promise<boolean>(resolve => {
@@ -570,6 +570,13 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     return result === PermissionsAndroid.RESULTS.GRANTED;
   };
   const capture = async (camera: boolean) => {
+    if (captureLock.current) {
+      return;
+    }
+    captureLock.current = true;
+    setCapturing(true);
+    const imageUris: string[] = [];
+    let committed = false;
     try {
       if (camera && !(await cameraPermission())) {
         Alert.alert(
@@ -578,7 +585,6 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
         );
         return;
       }
-      const imageUris: string[] = [];
       if (camera) {
         let continueCapturing = true;
         while (continueCapturing) {
@@ -586,8 +592,6 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
             mediaType: 'photo',
             cameraType: 'back',
             includeBase64: false,
-            maxWidth: 3200,
-            maxHeight: 3200,
             quality: 1,
             saveToPhotos: false,
           });
@@ -596,21 +600,23 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
               result.errorMessage || `相机错误：${result.errorCode}`,
             );
           }
-          const uri = await prepareAsset(result.assets?.[0]);
-          if (uri) {
-            imageUris.push(uri);
-          }
-          if (!uri || result.didCancel) {
+          if (result.didCancel || !result.assets?.length) {
             break;
           }
+          const uri = await prepareAsset(
+            result.assets[0],
+            `第 ${imageUris.length + 1} 张`,
+          );
+          if (!uri) {
+            return;
+          }
+          imageUris.push(uri);
           continueCapturing = await askContinueCamera();
         }
       } else {
         const result = await launchImageLibrary({
           mediaType: 'photo',
           includeBase64: false,
-          maxWidth: 3200,
-          maxHeight: 3200,
           quality: 1,
           selectionLimit: 0,
           assetRepresentationMode: 'compatible',
@@ -620,17 +626,23 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
             result.errorMessage || `图片选择错误：${result.errorCode}`,
           );
         }
-        for (const asset of result.assets || []) {
-          const uri = await prepareAsset(asset);
-          if (uri) {
-            imageUris.push(uri);
+        const assets = result.assets || [];
+        for (const [index, asset] of assets.entries()) {
+          const uri = await prepareAsset(
+            asset,
+            `${index + 1} / ${assets.length}`,
+          );
+          if (!uri) {
+            return;
           }
+          imageUris.push(uri);
         }
       }
       if (!imageUris.length) {
         return;
       }
       const essay = await createEssay(imageUris);
+      committed = true;
       setSelected(essay);
       setScreen('detail');
       await refresh();
@@ -640,8 +652,39 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
         '无法获取图片',
         error instanceof Error ? error.message : String(error),
       );
+    } finally {
+      if (!committed) {
+        await discardPreparedImages(imageUris);
+      }
+      captureLock.current = false;
+      setCapturing(false);
     }
   };
+  if (cropTask) {
+    return (
+      <ImageCropper
+        key={`${cropTask.pageLabel}-${cropTask.asset.uri}`}
+        uri={cropTask.asset.uri!}
+        pageLabel={cropTask.pageLabel}
+        onCancel={() => {
+          setCropTask(undefined);
+          cropTask.resolve();
+        }}
+        onSubmit={async choice => {
+          const uri =
+            choice.kind === 'original'
+              ? await persistImage(cropTask.asset.uri!, cropTask.asset)
+              : await cropImage(
+                  cropTask.asset.uri!,
+                  choice.source,
+                  choice.rect,
+                );
+          setCropTask(undefined);
+          cropTask.resolve(uri);
+        }}
+      />
+    );
+  }
   if (screen === 'settings') {
     return (
       <Settings
@@ -696,6 +739,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   return (
     <Home
       essays={essays}
+      capturing={capturing}
       onCapture={capture}
       onOpen={async id => {
         setSelected(await getEssay(id));

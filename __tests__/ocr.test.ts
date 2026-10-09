@@ -190,3 +190,36 @@ test('最终失败信息包含模型返回片段，但不泄露密钥', async ()
     '最后回复：[已隐藏密钥] 模型解释',
   );
 });
+
+test('逐页识别和原图复核都按版面分段，复核后的段界原样保留', async () => {
+  (visionResponse as jest.Mock)
+    .mockResolvedValueOnce({text: '春天\n\n第一段的上半句'})
+    .mockResolvedValueOnce({text: '接着写完。\n\n第二段。'})
+    .mockResolvedValueOnce({
+      text: JSON.stringify({
+        text: '春天\n\n第一段的上半句接着写完。\n\n第二段。',
+        corrections:
+          '正文共 2 段。第 2 页首行为续段，合并第 1 段跨页文字；其后的缩进段首单独保留。',
+      }),
+    });
+  const draft = await cloudOcr(['one', 'two'], DEFAULT_SETTINGS);
+  const result = await reconcileOcr(
+    ['one', 'two'],
+    draft.text,
+    DEFAULT_SETTINGS,
+  );
+  expect(result.text.split('\n\n')).toEqual([
+    '春天',
+    '第一段的上半句接着写完。',
+    '第二段。',
+  ]);
+  for (const call of (visionResponse as jest.Mock).mock.calls) {
+    expect(call[1]).toContain('段首缩进');
+    expect(call[1]).toContain('段内不插入换行');
+    expect(call[1]).toContain('不要按文意');
+  }
+  const reviewPrompt = (visionResponse as jest.Mock).mock.calls[2][1];
+  expect(reviewPrompt).toContain('确认是同一自然段才无换行拼接');
+  expect(reviewPrompt).toContain('正文段数');
+  expect(reviewPrompt).toContain('无法确定的段界');
+});

@@ -2,8 +2,7 @@ import ImageEditor from '@react-native-community/image-editor';
 import {Platform} from 'react-native';
 import RNFS from 'react-native-fs';
 import type {Asset} from 'react-native-image-picker';
-
-export type CropPreset = 'square' | 'landscape';
+import {Rect, Size} from './image-geometry';
 
 function pathFromUri(uri: string) {
   return uri.startsWith('file://') ? uri.slice(7) : uri;
@@ -44,32 +43,43 @@ export async function persistImage(uri: string, asset?: Asset) {
       await RNFS.copyFile(pathFromUri(source), target);
     }
     return `file://${target}`;
-  } catch (_) {
-    // Some Android providers expose a content URI that cannot be copied by RNFS.
-    // Keep it; the picker grants the app read access for the current workflow.
-    return uri;
+  } catch (error) {
+    // A temporary picker grant is not durable storage. Keep the editor open
+    // so the user can retry instead of saving an essay with a broken image.
+    throw new Error(
+      `无法保存图片到本机：${
+        error instanceof Error ? error.message : String(error)
+      }`,
+    );
   }
 }
 
-export async function cropImage(uri: string, asset: Asset, preset: CropPreset) {
-  const width = Math.max(1, Math.round(asset.width || 0));
-  const height = Math.max(1, Math.round(asset.height || 0));
-  if (!asset.width || !asset.height) {
-    return persistImage(uri, asset);
+export async function cropImage(uri: string, source: Size, rect: Rect) {
+  if (
+    ![
+      source.width,
+      source.height,
+      rect.x,
+      rect.y,
+      rect.width,
+      rect.height,
+    ].every(Number.isFinite) ||
+    source.width <= 0 ||
+    source.height <= 0 ||
+    rect.x < 0 ||
+    rect.y < 0 ||
+    rect.width < 1 ||
+    rect.height < 1 ||
+    rect.x + rect.width > source.width ||
+    rect.y + rect.height > source.height
+  ) {
+    throw new Error('裁剪范围超出图片，请重新调整裁剪框');
   }
-  const ratio = preset === 'square' ? 1 : 4 / 3;
-  let cropWidth = width;
-  let cropHeight = Math.round(cropWidth / ratio);
-  if (cropHeight > height) {
-    cropHeight = height;
-    cropWidth = Math.round(cropHeight * ratio);
-  }
+  const cropWidth = Math.round(rect.width);
+  const cropHeight = Math.round(rect.height);
   const scale = Math.min(1, 3200 / Math.max(cropWidth, cropHeight));
   const result = await ImageEditor.cropImage(uri, {
-    offset: {
-      x: Math.floor((width - cropWidth) / 2),
-      y: Math.floor((height - cropHeight) / 2),
-    },
+    offset: {x: Math.round(rect.x), y: Math.round(rect.y)},
     size: {width: cropWidth, height: cropHeight},
     displaySize: {
       width: Math.round(cropWidth * scale),
@@ -78,5 +88,23 @@ export async function cropImage(uri: string, asset: Asset, preset: CropPreset) {
     quality: 1,
     format: 'jpeg',
   });
-  return persistImage(result.uri);
+  // Harmony's compatible native module returns a URI string; iOS/Android
+  // return a CropResult object.
+  const outputUri = typeof result === 'string' ? result : result.uri;
+  if (!outputUri) {
+    throw new Error('裁剪未返回有效图片');
+  }
+  return persistImage(outputUri);
+}
+
+export async function discardPreparedImages(uris: string[]) {
+  const prefix = `${RNFS.DocumentDirectoryPath}/essay-images/`;
+  await Promise.all(
+    uris.map(async uri => {
+      const path = pathFromUri(uri);
+      if (path.startsWith(prefix)) {
+        await RNFS.unlink(path).catch(() => undefined);
+      }
+    }),
+  );
 }
