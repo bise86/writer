@@ -4,7 +4,9 @@ import {act, create, ReactTestRenderer} from 'react-test-renderer';
 import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
 import App from '../App';
 import ImageCropper from '../src/components/ImageCropper';
-import {createEssay} from '../src/db/database';
+import Reports from '../src/components/Reports';
+import Detail from '../src/components/EssayDetail';
+import {createEssay, getEssay} from '../src/db/database';
 import {
   cropImage,
   discardPreparedImages,
@@ -22,6 +24,7 @@ jest.mock('../src/components/Startup', () => ({
 }));
 jest.mock('../src/components/ImageCropper', () => 'ImageCropper');
 jest.mock('../src/components/EssayDetail', () => 'EssayDetail');
+jest.mock('../src/components/Reports', () => 'Reports');
 jest.mock('react-native-image-picker', () => ({
   launchCamera: jest.fn(),
   launchImageLibrary: jest.fn(),
@@ -73,6 +76,28 @@ afterEach(() => {
   act(() => view.unmount());
   jest.restoreAllMocks();
   jest.useRealTimers();
+});
+
+test('首页改名且管理旁有报表入口，查看作文后返回保留报表日期', async () => {
+  expect(
+    view.root
+      .findAllByType(Text)
+      .some(node => node.props.children === '作文批改'),
+  ).toBe(true);
+  const labels = view.root.findAllByType(Text).map(node => node.props.children);
+  expect(labels.indexOf('报表')).toBe(labels.indexOf('管理') + 1);
+  press('报表');
+  const range = {start: '2026-01-01', end: '2026-02-01'};
+  act(() => view.root.findByType(Reports).props.onRangeChange(range));
+  (getEssay as jest.Mock).mockResolvedValueOnce({
+    id: 'saved',
+    status: 'completed',
+  });
+  await act(async () =>
+    view.root.findByType(Reports).props.onOpenEssay('saved'),
+  );
+  await act(async () => view.root.findByType(Detail).props.onBack());
+  expect(view.root.findByType(Reports).props.initialRange).toEqual(range);
 });
 
 test('相册多选逐张进入裁剪，混合原图与裁剪后按顺序入库', async () => {

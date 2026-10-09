@@ -101,6 +101,88 @@ beforeEach(() => {
 });
 afterEach(() => rmSync(directory, {recursive: true, force: true}));
 
+test('报表按评分日期去重，包含结束日夜间，后续评分不改写过往报表，删除同步移除', async () => {
+  const essays = await Promise.all(
+    ['a', 'b', 'c', 'd'].map(name => db.createEssay(`file:///${name}.jpg`)),
+  );
+  const saveAt = async (
+    essayId: string,
+    runId: string,
+    date: Date,
+    value = score,
+  ) => {
+    await db.saveEssayScore(essayId, runId, value, settings);
+    await mockExecute(
+      'UPDATE score_records SET scored_at = ? WHERE run_id = ?',
+      [date.toISOString(), runId],
+    );
+  };
+  const newer = {
+    ...score,
+    score: 62,
+    dimensionScores: {...score.dimensionScores, content: 15},
+  };
+  await saveAt(
+    essays[0].id,
+    'before-range',
+    new Date(2026, 8, 30, 23, 59, 59, 999),
+  );
+  await saveAt(essays[0].id, 'first-in-range', new Date(2026, 9, 1));
+  await saveAt(essays[0].id, 'last-in-range', new Date(2026, 9, 4, 12), newer);
+  await saveAt(
+    essays[1].id,
+    'end-of-day',
+    new Date(2026, 9, 9, 23, 59, 59, 999),
+  );
+  await saveAt(essays[2].id, 'after-range', new Date(2026, 9, 10));
+  const range = {start: '2026-10-01', end: '2026-10-09'};
+  const report = await db.getScoreReport(range);
+  expect(report.count).toBe(2);
+  expect(report.entries.map(entry => entry.id)).toEqual([
+    'score_last-in-range',
+    'score_end-of-day',
+  ]);
+  expect(report.average).toMatchObject({total: 61.5, content: 14.5});
+  await saveAt(essays[0].id, 'future-regrade', new Date(2026, 9, 12));
+  expect(await db.getScoreReport(range)).toEqual(report);
+  await db.updateEssay(essays[1].id, {scoreJson: '', status: 'failed'});
+  expect((await db.getScoreReport(range)).count).toBe(2);
+  await db.deleteEssay(essays[0].id);
+  const remaining = await db.getScoreReport(range);
+  expect(remaining.count).toBe(1);
+  expect(remaining.average?.total).toBe(61);
+  expect(
+    (await db.getScoreReport({start: '2000-01-01', end: '2000-01-02'})).average,
+  ).toBeNull();
+}, 30000);
+
+test('评分时间完全相同时报表只取最后保存的一次，并标明旧版估算时间', async () => {
+  const essay = await db.createEssay('file:///one.jpg');
+  await db.saveEssayScore(essay.id, 'tie-a', score, settings);
+  await db.saveEssayScore(
+    essay.id,
+    'tie-b',
+    {
+      ...score,
+      score: 62,
+      dimensionScores: {...score.dimensionScores, content: 15},
+    },
+    settings,
+  );
+  await mockExecute('UPDATE score_records SET scored_at = ?, time_source = ?', [
+    new Date(2026, 9, 9, 12).toISOString(),
+    'legacy_updated_at',
+  ]);
+  const report = await db.getScoreReport({
+    start: '2026-10-09',
+    end: '2026-10-09',
+  });
+  expect(report.count).toBe(1);
+  expect(report.entries[0].id).toBe('score_tie-b');
+  expect(report.highest).toBe(62);
+  expect(report.estimatedCount).toBe(1);
+}, 30000);
+
 test('所有阶段、失败重试和计数请求分别入库，总计无重复，未知用量保留', async () => {
   const essay = await db.createEssay('file:///one.jpg');
   await db.saveModelCall(

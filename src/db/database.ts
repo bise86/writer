@@ -17,6 +17,8 @@ import {
   storeScore,
 } from './statistics';
 import rules from '../assets/scoring-rules.json';
+import {readScoreReport} from './reports';
+import {ReportRange} from '../services/reports';
 import {recognizedTitle} from '../services/essay-text';
 import {
   DEFAULT_SETTINGS,
@@ -562,6 +564,10 @@ export async function saveModelCall(
 
 export async function getEssayUsage(essayId: string) {
   return readEssayUsage(await db(), essayId);
+}
+
+export async function getScoreReport(range: ReportRange) {
+  return readScoreReport(await db(), range);
 }
 
 export async function saveEssayScore(

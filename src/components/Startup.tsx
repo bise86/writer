@@ -94,7 +94,7 @@ export default function Startup({
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.content}>
-        <Text style={styles.title}>作文改进</Text>
+        <Text style={styles.title}>作文批改</Text>
         {!error && <ActivityIndicator size="large" color="#2563eb" />}
         <Text style={styles.stage}>{stage}</Text>
         {!!error && (

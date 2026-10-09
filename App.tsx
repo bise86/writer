@@ -41,6 +41,8 @@ import {
   persistImage,
 } from './src/services/images';
 import ImageCropper from './src/components/ImageCropper';
+import Reports from './src/components/Reports';
+import {recentMonth} from './src/services/reports';
 import Startup, {StartupData} from './src/components/Startup';
 
 function Button({
@@ -81,6 +83,7 @@ function Home({
   onOpen,
   onSettings,
   onManage,
+  onReports,
   capturing,
 }: {
   essays: Essay[];
@@ -88,6 +91,7 @@ function Home({
   onOpen: (id: string) => void;
   onSettings: () => void;
   onManage: () => void;
+  onReports: () => void;
   capturing: boolean;
 }) {
   return (
@@ -96,11 +100,17 @@ function Home({
         <View style={styles.header}>
           <View>
             <Text style={styles.eyebrow}>ESSAY LENS</Text>
-            <Text style={styles.title}>作文改进</Text>
+            <Text style={styles.title}>作文批改</Text>
           </View>
           <View style={styles.headerActions}>
             <Pressable onPress={onManage} style={styles.headerAction}>
               <Text style={styles.headerActionText}>管理</Text>
+            </Pressable>
+            <Pressable
+              onPress={onReports}
+              style={styles.headerAction}
+              accessibilityRole="button">
+              <Text style={styles.headerActionText}>报表</Text>
             </Pressable>
             <Pressable onPress={onSettings}>
               <Text style={styles.settingsIcon}>⚙</Text>
@@ -517,6 +527,8 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   const [selected, setSelected] = useState<Essay>();
   const selectedId = selected?.id;
   const [settings, setSettings] = useState(initialData.settings);
+  const [reportRange, setReportRange] = useState(recentMonth);
+  const [detailOrigin, setDetailOrigin] = useState<'home' | 'reports'>('home');
   const captureLock = useRef(false);
   const [capturing, setCapturing] = useState(false);
   const [cropTask, setCropTask] = useState<{
@@ -525,7 +537,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     resolve: (uri?: string) => void;
   }>();
   const [screen, setScreen] = useState<
-    'home' | 'detail' | 'settings' | 'manage'
+    'home' | 'detail' | 'settings' | 'manage' | 'reports'
   >('home');
 
   const refresh = async () => setEssays(await listEssays());
@@ -644,6 +656,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       const essay = await createEssay(imageUris);
       committed = true;
       setSelected(essay);
+      setDetailOrigin('home');
       setScreen('detail');
       await refresh();
       runEssayPipeline(essay).then(refresh).catch(refresh);
@@ -709,12 +722,38 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       />
     );
   }
+  if (screen === 'reports') {
+    return (
+      <Reports
+        initialRange={reportRange}
+        onRangeChange={setReportRange}
+        onBack={() => setScreen('home')}
+        onOpenEssay={async id => {
+          try {
+            const essay = await getEssay(id);
+            if (!essay) {
+              Alert.alert('作文不存在', '这篇作文已删除，请刷新报表。');
+              return;
+            }
+            setSelected(essay);
+            setDetailOrigin('reports');
+            setScreen('detail');
+          } catch (error) {
+            Alert.alert(
+              '无法打开作文',
+              error instanceof Error ? error.message : String(error),
+            );
+          }
+        }}
+      />
+    );
+  }
   if (screen === 'detail' && selected) {
     return (
       <Detail
         essay={selected}
         onBack={() => {
-          setScreen('home');
+          setScreen(detailOrigin);
           refresh();
         }}
         onRecognize={() =>
@@ -743,10 +782,15 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       onCapture={capture}
       onOpen={async id => {
         setSelected(await getEssay(id));
+        setDetailOrigin('home');
         setScreen('detail');
       }}
       onSettings={() => setScreen('settings')}
       onManage={() => setScreen('manage')}
+      onReports={() => {
+        setReportRange(recentMonth());
+        setScreen('reports');
+      }}
     />
   );
 }
