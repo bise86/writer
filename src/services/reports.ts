@@ -86,7 +86,10 @@ export function reportBounds(range: ReportRange) {
   return {from: start.toISOString(), until: until.toISOString()};
 }
 
-export function summarizeScores(entries: ReportEntry[]): ScoreReport {
+export function summarizeScores(
+  entries: ReportEntry[],
+  metrics: readonly ScoreMetricDefinition[] = SCORE_METRICS,
+): ScoreReport {
   const report: ScoreReport = {
     entries,
     count: entries.length,
@@ -99,7 +102,7 @@ export function summarizeScores(entries: ReportEntry[]): ScoreReport {
     return report;
   }
   report.average = Object.fromEntries(
-    SCORE_METRICS.map(({key}) => [
+    metrics.map(({key}) => [
       key,
       entries.reduce((sum, entry) => sum + entry.scores[key], 0) /
         entries.length,

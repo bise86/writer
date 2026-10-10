@@ -3,6 +3,7 @@ import {
   ReportEntry,
   ReportRange,
   reportBounds,
+  scoreMetricsFor,
   summarizeScores,
 } from '../services/reports';
 import {getWritingProfile, normalizeWritingType} from '../services/writing';
@@ -54,7 +55,7 @@ export async function readScoreReport(
         },
       });
     }
-    return summarizeScores(entries);
+    return summarizeScores(entries, scoreMetricsFor(dimensions));
   }
   // One result set is the source of both totals and charts. Choose the last
   // successful score *within the period*, so a later regrade does not erase a

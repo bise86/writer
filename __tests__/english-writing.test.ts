@@ -4,6 +4,7 @@ jest.mock('../src/services/openai', () => ({}));
 import {scoreInstructions} from '../src/services/scoring';
 import {validateScore} from '../src/services/score-validation';
 import {getWritingRules} from '../src/services/writing';
+import {scoreMetricsFor, summarizeScores} from '../src/services/reports';
 
 const feedback = {
   strengths: ['原文有明确信息'],
@@ -78,4 +79,33 @@ test('英语评分校验使用英语五项权重且标题不计入正文段落',
   expect(result.score).toBe(80);
   expect(result.bandName).toBe('满分质量基准');
   expect(result.paragraphReviews).toHaveLength(1);
+});
+
+test('英文报表按英文分项动态汇总，而不是套用中文分项', () => {
+  const report = summarizeScores(
+    [
+      {
+        id: 'score-1',
+        essayId: 'english-1',
+        title: 'My Day',
+        scoredAt: '2026-10-10T00:00:00.000Z',
+        estimatedTime: false,
+        scores: {
+          total: 80,
+          task: 17,
+          content: 16,
+          organization: 12,
+          language: 27,
+          format: 8,
+        },
+      },
+    ],
+    scoreMetricsFor(getWritingRules('english').dimensions),
+  );
+  expect(report.average).toMatchObject({
+    total: 80,
+    task: 17,
+    organization: 12,
+    language: 27,
+  });
 });
