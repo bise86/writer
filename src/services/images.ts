@@ -10,7 +10,8 @@ function pathFromUri(uri: string) {
 
 function extension(uri: string) {
   const match = uri.split('?')[0].match(/\.([a-z0-9]+)$/i);
-  return match?.[1]?.toLowerCase() === 'png' ? 'png' : 'jpg';
+  const format = match?.[1]?.toLowerCase();
+  return format === 'png' || format === 'webp' ? format : 'jpg';
 }
 
 async function persistentDirectory() {
@@ -44,6 +45,7 @@ export async function persistImage(uri: string, asset?: Asset) {
     }
     return `file://${target}`;
   } catch (error) {
+    await RNFS.unlink(target).catch(() => undefined);
     // A temporary picker grant is not durable storage. Keep the editor open
     // so the user can retry instead of saving an essay with a broken image.
     throw new Error(

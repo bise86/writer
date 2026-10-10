@@ -219,11 +219,18 @@ function ManageEssays({
           text: '删除',
           style: 'destructive',
           onPress: async () => {
-            for (const id of selectedIds) {
-              await onDelete(id);
+            try {
+              for (const id of selectedIds) {
+                await onDelete(id);
+              }
+              setSelectedIds([]);
+              await onRefresh();
+            } catch (error) {
+              Alert.alert(
+                '删除失败',
+                error instanceof Error ? error.message : String(error),
+              );
             }
-            setSelectedIds([]);
-            await onRefresh();
           },
         },
       ],
@@ -239,9 +246,16 @@ function ManageEssays({
           text: '确认清理',
           style: 'destructive',
           onPress: async () => {
-            await onClearBefore(new Date(Date.now() - days * 86400000));
-            setSelectedIds([]);
-            await onRefresh();
+            try {
+              await onClearBefore(new Date(Date.now() - days * 86400000));
+              setSelectedIds([]);
+              await onRefresh();
+            } catch (error) {
+              Alert.alert(
+                '清理失败',
+                error instanceof Error ? error.message : String(error),
+              );
+            }
           },
         },
       ],
@@ -359,6 +373,7 @@ function Settings({
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType={keyboardType}
+        secureTextEntry={key === 'apiKey'}
         value={String(settings[key])}
         onChangeText={text => setSettings({...settings, [key]: text})}
         style={styles.input}
@@ -511,6 +526,11 @@ function Settings({
                     try {
                       await onClear();
                       Alert.alert('已完成', '应用日志和临时缓存已清理。');
+                    } catch (error) {
+                      Alert.alert(
+                        '清理失败',
+                        error instanceof Error ? error.message : String(error),
+                      );
                     } finally {
                       setClearing(false);
                     }
@@ -549,12 +569,28 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   >('home');
 
   const refresh = async () => setEssays(await listEssays());
+  const reloadEssay = async (id: string) => {
+    try {
+      const latest = await getEssay(id);
+      if (latest) {
+        setSelected(latest);
+      }
+      await refresh();
+    } catch (error) {
+      Alert.alert(
+        '无法刷新作文',
+        error instanceof Error ? error.message : String(error),
+      );
+    }
+  };
   useEffect(() => {
     if (screen !== 'detail' || !selectedId) {
       return;
     }
     const timer = setInterval(() => {
-      getEssay(selectedId).then(value => value && setSelected(value));
+      getEssay(selectedId)
+        .then(value => value && setSelected(value))
+        .catch(() => undefined);
     }, 1200);
     return () => clearInterval(timer);
   }, [screen, selectedId]);
@@ -669,8 +705,11 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       setSelected(essay);
       setDetailOrigin('home');
       setScreen('detail');
+      // Start the saved essay even if the following list refresh fails.
+      runEssayPipeline(essay).then(refresh, refresh).catch(error =>
+        Alert.alert('无法刷新作文列表', error instanceof Error ? error.message : String(error)),
+      );
       await refresh();
-      runEssayPipeline(essay).then(refresh).catch(refresh);
     } catch (error) {
       Alert.alert(
         '无法获取图片',
@@ -769,23 +808,19 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
         essay={selected}
         onBack={() => {
           setScreen(detailOrigin);
-          refresh();
+          refresh().catch(() => undefined);
         }}
         onRecognize={() =>
-          runEssayPipeline(selected, undefined, 'vision_ocr')
-            .then(async () => {
-              setSelected(await getEssay(selected.id));
-              refresh();
-            })
-            .catch(async () => setSelected(await getEssay(selected.id)))
+          runEssayPipeline(selected, undefined, 'vision_ocr').then(
+            () => reloadEssay(selected.id),
+            () => reloadEssay(selected.id),
+          )
         }
         onRetry={() =>
-          retryEssay(selected.id)
-            .then(async () => {
-              setSelected(await getEssay(selected.id));
-              refresh();
-            })
-            .catch(async () => setSelected(await getEssay(selected.id)))
+          retryEssay(selected.id).then(
+            () => reloadEssay(selected.id),
+            () => reloadEssay(selected.id),
+          )
         }
       />
     );

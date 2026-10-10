@@ -32,6 +32,14 @@ test('没有明确标题时不把带句号的正文误当作文标题', () => {
   expect(recognizedTitle('【第 1 页】\n我站在窗前，看着雨慢慢落下。')).toBe('');
 });
 
+test('无标题英文首段的句点不能导致正文被当作标题或丢失编号', () => {
+  const text = 'I went home.\n\nI helped my mother.';
+  expect(recognizedTitle(text)).toBe('');
+  expect(essaySections(text).map(sectionLabel)).toEqual(['第 1 段', '第 2 段']);
+  expect(essayParagraphs(text)[0].text).toBe('I went home.');
+  expect(recognizedTitle('Title: Mr. Green\n\nHe is my teacher.')).toBe('Mr. Green');
+});
+
 test('段落索引保留原文位置，供评分批注定位', () => {
   const original = '第一段。\n\n第二段。';
   const result = essayParagraphs(original);
@@ -90,6 +98,29 @@ test('旧评分的标题评价和正文评价正确对应，不改写或丢弃�
   expect(
     normalizeSavedParagraphReviews(adapted, '春天\n第一段。\n第二段。'),
   ).toBe(adapted);
+});
+
+test('旧评分包含称呼时迁移称呼评价，新版编号不误删正文首段', () => {
+  const old: ScoreResult = {
+    ...savedScore,
+    paragraphReviews: [
+      {paragraphIndex: 1, strengths: ['称呼'], weaknesses: [], improvements: ['称呼建议']},
+      {paragraphIndex: 2, strengths: ['正文'], weaknesses: [], improvements: ['正文建议']},
+    ],
+  };
+  const migrated = normalizeSavedParagraphReviews(old, 'Dear Tom,\n\nI went home.');
+  expect(migrated.salutationFeedback?.strengths).toEqual(['称呼']);
+  expect(migrated.paragraphReviews?.[0].strengths).toEqual(['正文']);
+  const oldBody = normalizeSavedParagraphReviews({...old, paragraphIndexing: 'body-v1'}, 'Dear Tom,\n\nI went home.');
+  expect(oldBody.salutationFeedback?.strengths).toEqual(['称呼']);
+  expect(oldBody.paragraphReviews?.[0].paragraphIndex).toBe(1);
+  expect(normalizeSavedParagraphReviews(oldBody, 'Dear Tom,\n\nI went home.')).toBe(oldBody);
+  const alreadyBody = normalizeSavedParagraphReviews(
+    {...old, paragraphIndexing: 'body-v2', paragraphReviews: [{paragraphIndex: 1, strengths: ['正文'], weaknesses: [], improvements: ['正文建议']} ]},
+    'Dear Tom,\n\nI went home.',
+  );
+  expect(alreadyBody.paragraphReviews?.[0].strengths).toEqual(['正文']);
+  expect(alreadyBody.salutationFeedback).toBeUndefined();
 });
 
 test('没有标题的旧记录保持原有段落编号', () => {

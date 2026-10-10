@@ -1,6 +1,6 @@
 {
-  name: "example-name",
-  description: "example description",
+  name: "essaylens",
+  description: "EssayLens 作文批改",
   version: "1.0.0",
   modelVersion: "5.0.0",
   license: "ISC",

@@ -13,7 +13,9 @@ export const DEFAULT_SETTINGS: AppSettings = {
   retryCount: 1,
   roundtableSize: 0,
   apiBaseUrl: 'https://api.deepseek.com',
-  apiKey: 'sk-5bf8ed2e47414c9892d5776399f7c042',
+  // Credentials belong to the device owner and must never be shipped in the
+  // app bundle or source repository.
+  apiKey: '',
 };
 
 export function normalizeReasoningEffort(

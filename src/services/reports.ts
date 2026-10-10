@@ -28,6 +28,7 @@ export type ReportEntry = {
   scoredAt: string;
   estimatedTime: boolean;
   scores: Record<string, number>;
+  admissionAdjustment?: number;
 };
 export type ScoreReport = {
   entries: ReportEntry[];

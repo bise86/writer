@@ -24,6 +24,6 @@ const source = fs.readFileSync(`${spec}.ts`, 'utf8');
 fs.writeFileSync(
   `${spec}.ts`,
   source
-    .replace(/  headers\?: \{[\s\S]*?  \};\r?\n/, '')
+    .replace(/ {2}headers\?: \{[\s\S]*? {2}\};\r?\n/, '')
     .replace('expiration?: number', 'expiration?: Float'),
 );

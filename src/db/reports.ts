@@ -35,11 +35,34 @@ export async function readScoreReport(
     const entries: ReportEntry[] = [];
     for (let i = 0; i < result.rows.length; i += 1) {
       const row = result.rows.item(i);
-      let values: Record<string, number> = {};
+      let values: Record<string, number>;
       try {
-        values = JSON.parse(row.dimension_scores_json || '{}');
+        values = JSON.parse(row.dimension_scores_json);
+        if (
+          !values ||
+          typeof values !== 'object' ||
+          Array.isArray(values) ||
+          dimensions.some(item =>
+            !Number.isInteger(values[item.id]) || values[item.id] < 0 || values[item.id] > item.max,
+          )
+        ) {
+          throw new Error('无效分项');
+        }
       } catch (_) {
-        values = {};
+        throw new Error('英语评分记录的分项数据无效，请核对或重新评分');
+      }
+      const dimensionTotal = dimensions.reduce(
+        (sum, item) => sum + values[item.id],
+        0,
+      );
+      const admissionAdjustment = dimensionTotal - Number(row.total_score);
+      if (
+        !Number.isInteger(row.total_score) ||
+        !Number.isInteger(admissionAdjustment) ||
+        admissionAdjustment < 0 ||
+        admissionAdjustment > dimensionTotal
+      ) {
+        throw new Error('英语评分记录的总分或准入调整无效，请核对或重新评分');
       }
       entries.push({
         id: row.id,
@@ -47,10 +70,11 @@ export async function readScoreReport(
         title: row.title || '未命名英语作文',
         scoredAt: row.scored_at,
         estimatedTime: row.time_source !== 'scored_at',
+        admissionAdjustment,
         scores: {
           total: row.total_score,
           ...Object.fromEntries(
-            dimensions.map(item => [item.id, Number(values[item.id] || 0)]),
+            dimensions.map(item => [item.id, values[item.id]]),
           ),
         },
       });

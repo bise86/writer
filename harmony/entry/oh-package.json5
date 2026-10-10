@@ -2,7 +2,7 @@
   "license": "ISC",
   "devDependencies": {},
   "name": "entry",
-  "description": "example description",
+  "description": "EssayLens 入口模块",
   "version": "1.0.0",
   "dependencies": {
     "rnoh-image-editor": "file:../../node_modules/@react-native-oh-tpl/image-editor/harmony/image_editor.har",

@@ -85,16 +85,40 @@ export function validateScore(
       issues,
     );
   }
-  if (!Number.isInteger(value.score) || value.score !== total || total > 100) {
+  const adjusted = 'admissionPolicy' in rules.rules;
+  const adjustment = adjusted ? value.admissionAdjustment ?? 0 : 0;
+  if (
+    adjusted &&
+    (!Number.isInteger(adjustment) || adjustment < 0 || adjustment > total)
+  ) {
+    issues.push('admissionAdjustment 必须是 0..分项合计 的整数');
+  }
+  if (
+    adjusted &&
+    ((value.admissionReason !== undefined &&
+      (typeof value.admissionReason !== 'string' || !value.admissionReason.trim())) ||
+      (adjustment > 0 && value.admissionReason === undefined))
+  ) {
+    issues.push('admissionReason 必须说明准入封顶的具体门槛和原文证据');
+  }
+  if (
+    !Number.isInteger(value.score) ||
+    value.score < 0 ||
+    value.score > 100 ||
+    value.score !== total - adjustment ||
+    total > 100
+  ) {
     issues.push(
-      `score 必须等于五项分数之和 ${total}，收到 ${JSON.stringify(
+      `score 必须等于五项分数之和 ${total}${
+        adjusted ? ` 减去准入调整 ${adjustment}` : ''
+      }，收到 ${JSON.stringify(
         value.score,
       )}`,
     );
   }
   const band = rules.bands.find(item => item.id === value.bandId);
   if (value.bandId === 'unqualified') {
-    if (total >= rules.passingScore) {
+    if (value.score >= rules.passingScore) {
       issues.push('unqualified 只适用于总分低于 60');
     }
   } else if (!band) {
@@ -102,9 +126,9 @@ export function validateScore(
       'bandId 只能为 pass、good、high、excellent、model 或 unqualified',
     );
   } else {
-    if (total < band.min || total > band.max) {
+    if (value.score < band.min || value.score > band.max) {
       issues.push(
-        `bandId=${band.id} 要求总分 ${band.min}..${band.max}，当前 ${total}`,
+        `bandId=${band.id} 要求总分 ${band.min}..${band.max}，当前 ${value.score}`,
       );
     }
     for (const [key, minimum] of Object.entries(band.floor)) {
@@ -115,6 +139,14 @@ export function validateScore(
       }
     }
   }
+  if (
+    adjusted &&
+    adjustment > 0 &&
+    value.score !==
+      (value.bandId === 'unqualified' ? rules.passingScore - 1 : band?.max)
+  ) {
+    issues.push('有准入调整时，score 必须等于可入档上限，不得重复扣分');
+  }
 
   const sections = essaySections(originalText);
   const paragraphs = sections.filter(section => section.kind === 'paragraph');
@@ -124,6 +156,9 @@ export function validateScore(
       value.titleFeedback,
       issues,
     );
+  }
+  if (sections.some(section => section.kind === 'salutation')) {
+    validateFeedback('salutationFeedback（称呼评价，不计入正文段落）', value.salutationFeedback, issues);
   }
   if (!Array.isArray(value.paragraphReviews)) {
     issues.push(
@@ -232,6 +267,12 @@ export function validateScore(
   }
   return {
     score: value.score,
+    ...(adjusted
+      ? {
+          admissionAdjustment: adjustment,
+          admissionReason: value.admissionReason || '无准入调整',
+        }
+      : {}),
     bandId: value.bandId,
     dimensionScores: value.dimensionScores,
     dimensionFeedback: value.dimensionFeedback,
@@ -241,8 +282,11 @@ export function validateScore(
     improvements: value.improvements,
     suggestions: value.suggestions,
     titleFeedback: value.titleFeedback,
+    salutationFeedback: value.salutationFeedback,
     paragraphReviews: value.paragraphReviews,
-    paragraphIndexing: 'body-v1',
+    paragraphIndexing: sections.some(section => section.kind === 'salutation')
+      ? 'body-v2'
+      : 'body-v1',
     bandName: band?.name || '未达强化及格',
     annotations,
   };

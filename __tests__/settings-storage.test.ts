@@ -74,7 +74,9 @@ beforeEach(() => {
           stored[parameters[0]] = parameters[1];
         }
       } else if (sql.startsWith('INSERT OR REPLACE INTO settings')) {
-        stored[parameters[0]] = parameters[1];
+        for (let i = 0; i < parameters.length; i += 2) {
+          stored[parameters[i]] = parameters[i + 1];
+        }
       }
       return result([]);
     },

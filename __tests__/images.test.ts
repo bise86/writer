@@ -89,6 +89,14 @@ test('保存失败不能用可能失效的临时 URI 冒充持久化成功', asy
   await expect(persistImage('file:///selected.jpg')).rejects.toThrow(
     '磁盘已满',
   );
+  expect(RNFS.unlink).toHaveBeenCalledWith(
+    expect.stringContaining('/documents/essay-images/'),
+  );
+});
+
+test('保留 WebP 图片扩展名，让原图识别发送正确的 MIME 类型', async () => {
+  expect(await persistImage('file:///selected.webp')).toMatch(/\.webp$/);
+  expect(RNFS.copyFile).toHaveBeenCalledWith('/selected.webp', expect.stringMatching(/\.webp$/));
 });
 
 test('取消导入只删除自己保存的副本，不删除相册原件', async () => {

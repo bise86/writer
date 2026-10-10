@@ -75,6 +75,15 @@ async function initializeDatabase() {
         updated_at TEXT NOT NULL,
         PRIMARY KEY (essay_id, step)
       )`);
+  // Publish the essay and its pending stages as one SQLite statement. If any
+  // stage cannot be saved, the essay insert is rolled back as well.
+  await database.executeSql(`CREATE TRIGGER IF NOT EXISTS essays_initialize_steps
+    AFTER INSERT ON essays BEGIN
+      INSERT INTO pipeline_steps (essay_id, step, status, updated_at) VALUES
+        (NEW.id, 'vision_ocr', 'pending', NEW.created_at),
+        (NEW.id, 'reconcile', 'pending', NEW.created_at),
+        (NEW.id, 'scoring', 'pending', NEW.created_at);
+    END`);
   await database.executeSql(`
       CREATE TABLE IF NOT EXISTS settings (
         key TEXT PRIMARY KEY NOT NULL,
@@ -261,13 +270,24 @@ export async function createEssay(
       now,
     ],
   );
-  for (const step of ['vision_ocr', 'reconcile', 'scoring'] as StepId[]) {
-    await database.executeSql(
-      'INSERT INTO pipeline_steps (essay_id, step, status, updated_at) VALUES (?, ?, ?, ?)',
-      [id, step, 'pending', now],
-    );
-  }
-  return (await getEssay(id))!;
+  // No fallible read after committing: the caller must know that the saved
+  // images now belong to an essay, even if a later list refresh fails.
+  return {
+    id,
+    writingType: normalizeWritingType(writingType),
+    title: '',
+    imageUri,
+    imageUris,
+    localOcr: '',
+    visionOcr: '',
+    canonicalText: '',
+    corrections: '',
+    scoreJson: '',
+    status: 'queued',
+    error: '',
+    createdAt: now,
+    updatedAt: now,
+  };
 }
 
 export async function getEssay(id: string): Promise<Essay | undefined> {
@@ -465,17 +485,10 @@ export async function deleteEssay(essayId: string) {
     'SELECT image_uri, image_uris FROM essays WHERE id = ?',
     [essayId],
   );
-  await removeEssayImages(images);
-  await database.executeSql('DELETE FROM score_attempts WHERE essay_id = ?', [
-    essayId,
-  ]);
-  await database.executeSql('DELETE FROM pipeline_steps WHERE essay_id = ?', [
-    essayId,
-  ]);
-  await database.executeSql('DELETE FROM app_logs WHERE essay_id = ?', [
-    essayId,
-  ]);
+  // Delete triggers remove all child records atomically. Keep the original
+  // images intact if the database deletion fails.
   await database.executeSql('DELETE FROM essays WHERE id = ?', [essayId]);
+  await removeEssayImages(images);
   await removeEssayPdfCache([essayId]);
 }
 
@@ -491,23 +504,11 @@ export async function clearEssaysBefore(
     `SELECT id, image_uri, image_uris FROM essays WHERE created_at < ?${typeClause}`,
     [cutoff, ...typeParams],
   );
-  await removeEssayImages(images);
-  await database.executeSql(
-    `DELETE FROM score_attempts WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?${typeClause})`,
-    [cutoff, ...typeParams],
-  );
-  await database.executeSql(
-    `DELETE FROM pipeline_steps WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?${typeClause})`,
-    [cutoff, ...typeParams],
-  );
-  await database.executeSql(
-    `DELETE FROM app_logs WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?${typeClause})`,
-    [cutoff, ...typeParams],
-  );
   await database.executeSql(
     `DELETE FROM essays WHERE created_at < ?${typeClause}`,
     [cutoff, ...typeParams],
   );
+  await removeEssayImages(images);
   const ids: string[] = [];
   for (let i = 0; i < images.rows.length; i += 1) {
     ids.push(images.rows.item(i).id);
@@ -573,17 +574,13 @@ export async function getSettings(): Promise<AppSettings> {
 export async function saveSettings(settings: AppSettings) {
   const validated = validateSettings(settings);
   const database = await db();
-  for (const [key, value] of Object.entries(validated)) {
-    await database.executeSql(
-      'INSERT OR REPLACE INTO settings (key, value) VALUES (?, ?)',
-      [
-        key,
-        String(
-          key === 'reasoningEffort' ? normalizeReasoningEffort(value) : value,
-        ),
-      ],
-    );
-  }
+  const entries = Object.entries(validated);
+  await database.executeSql(
+    `INSERT OR REPLACE INTO settings (key, value) VALUES ${entries
+      .map(() => '(?, ?)')
+      .join(', ')}`,
+    entries.flatMap(([key, value]) => [key, String(value)]),
+  );
 }
 
 export async function initDatabase() {

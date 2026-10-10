@@ -6,7 +6,7 @@ import App from '../App';
 import ImageCropper from '../src/components/ImageCropper';
 import Reports from '../src/components/Reports';
 import Detail from '../src/components/EssayDetail';
-import {createEssay, getEssay} from '../src/db/database';
+import {createEssay, getEssay, listEssays} from '../src/db/database';
 import {
   cropImage,
   discardPreparedImages,
@@ -57,6 +57,7 @@ beforeEach(async () => {
   jest.clearAllMocks();
   jest.useFakeTimers();
   jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  (listEssays as jest.Mock).mockResolvedValue([]);
   jest
     .spyOn(PermissionsAndroid, 'request')
     .mockResolvedValue(PermissionsAndroid.RESULTS.GRANTED);
@@ -71,6 +72,17 @@ beforeEach(async () => {
   await act(async () => {
     view = create(<App />);
   });
+});
+
+test('入库后的列表刷新失败仍启动批改，不删除已归属作文的图片', async () => {
+  (launchImageLibrary as jest.Mock).mockResolvedValue({assets: [{uri: 'file:///one.jpg'}]});
+  (listEssays as jest.Mock).mockRejectedValueOnce(new Error('列表读取失败'));
+  press('选择图片（可多选）');
+  await settle();
+  await act(async () => view.root.findByType(ImageCropper).props.onSubmit({kind: 'original'}));
+  await settle();
+  expect(runEssayPipeline).toHaveBeenCalledWith(expect.objectContaining({id: 'essay'}));
+  expect(discardPreparedImages).not.toHaveBeenCalled();
 });
 afterEach(() => {
   act(() => view.unmount());

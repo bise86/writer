@@ -35,11 +35,17 @@ jobs:
       - name: Set up Node
         uses: actions/setup-node@v4
         with:
-          node-version: '20'
+          node-version: '22'
           cache: npm
 
       - name: Install JavaScript dependencies
         run: npm ci
+
+      - name: Check types, lint and tests
+        run: |
+          npm run typecheck
+          npm run lint -- --max-warnings=0
+          npm test -- --runInBand
 
       - name: Build release APK
         working-directory: android

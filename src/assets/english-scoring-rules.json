@@ -1,6 +1,6 @@
 {
   "id": "english-writing-enhanced-100-v1",
-  "version": 1,
+  "version": 2,
   "language": "en",
   "total": 100,
   "passingScore": 60,
@@ -86,6 +86,8 @@
     }
   ],
   "rules": {
+    "admissionPolicy": "五项实际得分之和为R；按分项底线和文字准入条件确定最高可入档及其上限C，未达第一档时C为59。最终总分S=min(R,C)，admissionAdjustment=R-S；调整必须有具体证据，不改动分项凑总分，不重复扣分。",
+    "materialPolicy": "缺少原始命题时，任务回应及总分标记待核题；评分请求没有原图时，书写可辨度标记待核原图，不凭缺失材料扣分。此时分数和档次仅是训练预评，不能确认第三档以上的考试满分质量或100分。",
     "thirdBand": "第三档不是基本切题档，必须达到考试满分作文的完整、准确、自然和有效交际质量；第四、第五档再从信息价值、读者意识、组织密度和表达辨识度上提高。",
     "techniquePolicy": "审题拆解、读者意识、要点核对、内容展开、因果、比较、图表取舍、时间顺序、过渡、指代、段落、收束、动词搭配、句式节奏、凝练校订等技法按实际功能评价，不按数量计分。",
     "languagePolicy": "简单句、并列句和复合句均可使用；正确清楚优先于生僻词、复杂句和模板。第三档不能用基础错误或仅能读懂来解释不足。",
@@ -110,7 +112,9 @@
     ]
   },
   "outputSchema": {
-    "score": "integer 0..100，必须等于五项分数之和",
+    "score": "integer 0..100，等于五项实际分数之和减去admissionAdjustment",
+    "admissionAdjustment": "integer 0..100，准入调整R-S；没有调整时为0",
+    "admissionReason": "string，有调整时说明触发门槛和原文证据，没有调整时为无准入调整",
     "bandId": "pass|good|high|excellent|model|unqualified",
     "dimensionScores": "object keyed by task/content/organization/language/format",
     "dimensionFeedback": "object keyed by each dimension; every value has strengths/weaknesses/improvements string[]",
@@ -120,7 +124,8 @@
     "improvements": "string[]",
     "suggestions": "string[]",
     "titleFeedback": "optional {strengths:string[],weaknesses:string[],improvements:string[]}",
-    "paragraphReviews": "array of {paragraphIndex:number,strengths:string[],weaknesses:string[],improvements:string[]}; title is not paragraph 1",
+    "salutationFeedback": "optional {strengths:string[],weaknesses:string[],improvements:string[]}; 书信称呼单独评价，不计为正文",
+    "paragraphReviews": "array of {paragraphIndex:number,strengths:string[],weaknesses:string[],improvements:string[]}; title and salutation are not paragraph 1",
     "annotations": "array of {quote,start,end,type,comment,suggestion}; quote must be a continuous original substring"
   },
   "techniques": [

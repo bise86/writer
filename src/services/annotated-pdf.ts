@@ -234,6 +234,8 @@ export async function buildAnnotatedPdf(
     const review =
       section.kind === 'title'
         ? feedback.titleFeedback
+        : section.kind === 'salutation'
+        ? feedback.salutationFeedback
         : feedback.paragraphReviews?.find(
             item => item.paragraphIndex === section.index,
           );

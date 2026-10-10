@@ -16,6 +16,14 @@ function contentLines(text: string) {
     });
 }
 
+const isSalutation = (text: string) => /^Dear[ \t]+[^!?;\r\n]{1,80}[,，:]$/i.test(text);
+const looksLikeUnmarkedChineseTitle = (text: string) =>
+  /^[\u3400-\u9fff《》、·“”‘’\s]{1,40}$/.test(text);
+
+function hasBlankLineAfter(text: string, line: {end: number}) {
+  return /^[ \t]*\r?\n[ \t]*(?:\r?\n|$)/.test(text.slice(line.end));
+}
+
 /** Only use a recognizable title line; never invent a title from the body. */
 function titleLine(text: string) {
   const lines = contentLines(text);
@@ -29,13 +37,17 @@ function titleLine(text: string) {
     return undefined;
   }
   const explicit = candidate.text.match(
-    /^(?:作文标题|标题|题目)[：:]\s*(.+)$/,
+    /^(?:作文标题|标题|题目|Title)[：:]\s*(.+)$/i,
   )?.[1];
   const title = (explicit || candidate.text).replace(/^《(.+)》$/, '$1').trim();
   if (
     !title ||
     title.length > 40 ||
-    (!explicit && /[，。！？；,!?;]/.test(title))
+    (!explicit &&
+      !/^《(.+)》$/.test(candidate.text) &&
+      !hasBlankLineAfter(text, candidate) &&
+      !looksLikeUnmarkedChineseTitle(candidate.text)) ||
+    (!explicit && (isSalutation(title) || /[，。！？；.,!?;]/.test(title)))
   ) {
     return undefined;
   }
@@ -49,13 +61,16 @@ export function recognizedTitle(text: string) {
 /** Title offsets are retained for annotations, but body numbering starts at 1. */
 export function essaySections(text: string) {
   const title = titleLine(text);
+  const lines = contentLines(text);
+  const firstBodyLine = lines.find(line => line.start !== title?.start);
   let bodyIndex = 0;
-  return contentLines(text).map(line => {
+  return lines.map(line => {
     const isTitle = line.start === title?.start;
+    const salutation = line === firstBodyLine && isSalutation(line.text);
     return {
       ...line,
-      kind: isTitle ? ('title' as const) : ('paragraph' as const),
-      index: isTitle ? 0 : ++bodyIndex,
+      kind: isTitle ? ('title' as const) : salutation ? ('salutation' as const) : ('paragraph' as const),
+      index: isTitle || salutation ? 0 : ++bodyIndex,
     };
   });
 }
@@ -67,7 +82,27 @@ export function essayParagraphs(text: string) {
 export function sectionLabel(
   section: ReturnType<typeof essaySections>[number],
 ) {
-  return section.kind === 'title' ? '标题' : `第 ${section.index} 段`;
+  return section.kind === 'title' ? '标题' : section.kind === 'salutation' ? '称呼' : `第 ${section.index} 段`;
+}
+
+function normalizeSalutationReviews(score: ScoreResult, text: string): ScoreResult {
+  const oldBody = essaySections(text).filter(section => section.kind !== 'title');
+  const salutationIndex = oldBody.findIndex(section => section.kind === 'salutation') + 1;
+  if (!salutationIndex || score.salutationFeedback) {
+    return score;
+  }
+  const reviews = score.paragraphReviews || [];
+  const salutation = reviews.find(item => item.paragraphIndex === salutationIndex);
+  return {
+    ...score,
+    salutationFeedback: salutation && {
+      strengths: salutation.strengths,
+      weaknesses: salutation.weaknesses,
+      improvements: salutation.improvements,
+    },
+    paragraphReviews: reviews.filter(item => item.paragraphIndex !== salutationIndex)
+      .map(item => ({...item, paragraphIndex: item.paragraphIndex > salutationIndex ? item.paragraphIndex - 1 : item.paragraphIndex})),
+  };
 }
 
 /** Old saved scores numbered the title as paragraph 1. Adapt without rescoring
@@ -76,19 +111,24 @@ export function normalizeSavedParagraphReviews(
   score: ScoreResult,
   text: string,
 ): ScoreResult {
-  if (score.paragraphIndexing === 'body-v1') {
+  if (score.paragraphIndexing === 'body-v2') {
     return score;
+  }
+  if (score.paragraphIndexing === 'body-v1') {
+    // v1 excluded titles but still counted a letter salutation as paragraph 1.
+    const adapted = normalizeSalutationReviews(score, text);
+    return adapted === score ? score : {...adapted, paragraphIndexing: 'body-v2'};
   }
   const sections = essaySections(text);
   const titlePosition = sections.findIndex(section => section.kind === 'title');
   if (titlePosition < 0) {
-    return {...score, paragraphIndexing: 'body-v1'};
+    return normalizeSalutationReviews({...score, paragraphIndexing: 'body-v1'}, text);
   }
   const reviews = score.paragraphReviews || [];
   const titleReview = reviews.find(
     item => item.paragraphIndex === titlePosition + 1,
   );
-  return {
+  return normalizeSalutationReviews({
     ...score,
     paragraphIndexing: 'body-v1',
     titleFeedback:
@@ -109,5 +149,5 @@ export function normalizeSavedParagraphReviews(
             ? item.paragraphIndex - 1
             : item.paragraphIndex,
       })),
-  };
+  }, text);
 }

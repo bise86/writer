@@ -309,7 +309,9 @@ export default function EssayDetail({
           {activeTab === 'result' && completed && score && (
             <>
               <View style={[styles.card, styles.summary]}>
-                <Text style={styles.heading}>总评</Text>
+                <Text style={styles.heading}>
+                  {profile.type === 'english' ? '总评 · 训练预评' : '总评'}
+                </Text>
                 <Text style={styles.score}>
                   {score.score}
                   <Text style={styles.scoreMax}> / 100</Text>
@@ -317,6 +319,17 @@ export default function EssayDetail({
                 <Text style={styles.band}>
                   {score.bandName || score.bandId}
                 </Text>
+                {profile.type === 'english' && (
+                  <Text style={styles.muted}>
+                    待核题、待核原图：当前评分依据复核文本，任务完成度和书写需另行核对。
+                  </Text>
+                )}
+                {!!score.admissionAdjustment && (
+                  <Text selectable style={styles.body}>
+                    分项合计 {score.score + score.admissionAdjustment} · 准入调整
+                    −{score.admissionAdjustment}：{score.admissionReason}
+                  </Text>
+                )}
                 <Text selectable style={styles.body}>
                   {score.summary}
                 </Text>

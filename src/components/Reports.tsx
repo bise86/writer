@@ -49,6 +49,7 @@ export default function Reports({
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const [metric, setMetric] = useState<ScoreMetric>('total');
+  const activeMetric = metrics.some(item => item.key === metric) ? metric : 'total';
   const [selectedId, setSelectedId] = useState<string>();
   useEffect(() => {
     const listener = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -229,16 +230,16 @@ export default function Reports({
                     <Pressable
                       key={item.key}
                       accessibilityRole="button"
-                      accessibilityState={{selected: metric === item.key}}
+                      accessibilityState={{selected: activeMetric === item.key}}
                       onPress={() => setMetric(item.key)}
                       style={[
                         styles.metric,
-                        metric === item.key && styles.metricSelected,
+                        activeMetric === item.key && styles.metricSelected,
                       ]}>
                       <Text
                         style={[
                           styles.metricText,
-                          metric === item.key && styles.metricSelectedText,
+                          activeMetric === item.key && styles.metricSelectedText,
                         ]}>
                         {item.label}
                       </Text>
@@ -247,7 +248,7 @@ export default function Reports({
                 </View>
                 <ScoreTrendChart
                   entries={report.entries}
-                  metric={metric}
+                  metric={activeMetric}
                   metrics={metrics}
                   selectedId={selected?.id}
                   onSelect={setSelectedId}
@@ -266,6 +267,12 @@ export default function Reports({
                         </Text>
                       ))}
                     </View>
+                    {!!selected.admissionAdjustment && (
+                      <Text style={styles.note}>
+                        分项合计 {selected.scores.total + selected.admissionAdjustment}
+                        {' · '}准入调整 −{selected.admissionAdjustment}
+                      </Text>
+                    )}
                     <Pressable
                       accessibilityRole="button"
                       onPress={() => onOpenEssay(selected.essayId)}

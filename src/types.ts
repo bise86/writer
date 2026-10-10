@@ -62,6 +62,9 @@ export interface Annotation {
 
 export interface ScoreResult {
   score: number;
+  /** English admission ceilings preserve the actual dimension scores. */
+  admissionAdjustment?: number;
+  admissionReason?: string;
   bandId: string;
   bandName?: string;
   dimensionScores: Record<string, number>;
@@ -73,8 +76,9 @@ export interface ScoreResult {
   annotations: Annotation[];
   dimensionFeedback?: Record<string, WritingFeedback>;
   titleFeedback?: WritingFeedback;
+  salutationFeedback?: WritingFeedback;
   /** Missing on older scores whose numbering included the title. */
-  paragraphIndexing?: 'body-v1';
+  paragraphIndexing?: 'body-v1' | 'body-v2';
   paragraphReviews?: (WritingFeedback & {paragraphIndex: number})[];
 }
 

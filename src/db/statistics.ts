@@ -104,12 +104,15 @@ export async function initializeStatistics(
     ${columns
       .map(
         column =>
-          `SUM(${column}) AS ${column}, SUM(CASE WHEN operation != 'count' AND ${column} IS NULL THEN 1 ELSE 0 END) AS ${column}_missing`,
+          `SUM(CASE WHEN operation != 'count' THEN ${column} END) AS ${column}, SUM(CASE WHEN operation != 'count' AND ${column} IS NULL THEN 1 ELSE 0 END) AS ${column}_missing`,
       )
       .join(', ')}`;
-  await database.executeSql(`CREATE VIEW IF NOT EXISTS model_usage_by_stage AS
+  // Replace older view definitions too; measured/count calls are not generation.
+  await database.executeSql('DROP VIEW IF EXISTS model_usage_by_stage');
+  await database.executeSql('DROP VIEW IF EXISTS model_usage_by_essay');
+  await database.executeSql(`CREATE VIEW model_usage_by_stage AS
     SELECT essay_id, stage, ${totals} FROM model_calls GROUP BY essay_id, stage`);
-  await database.executeSql(`CREATE VIEW IF NOT EXISTS model_usage_by_essay AS
+  await database.executeSql(`CREATE VIEW model_usage_by_essay AS
     SELECT essay_id, ${totals} FROM model_calls GROUP BY essay_id`);
   if (backfill) {
     const [rows] = await database.executeSql(
@@ -152,9 +155,14 @@ function validNumbers(
   writingType: WritingType = 'chinese',
 ) {
   const rules = getWritingProfile(writingType).rules;
+  const adjustment = writingType === 'english' ? score?.admissionAdjustment ?? 0 : 0;
   return (
     score &&
     Number.isInteger(score.score) &&
+    score.score >= 0 &&
+    score.score <= rules.total &&
+    Number.isInteger(adjustment) &&
+    adjustment >= 0 &&
     typeof score.bandId === 'string' &&
     rules.dimensions.every(
       item =>
@@ -165,7 +173,7 @@ function validNumbers(
     rules.dimensions.reduce(
       (sum, item) => sum + score.dimensionScores[item.id],
       0,
-    ) === score.score
+    ) - adjustment === score.score
   );
 }
 
