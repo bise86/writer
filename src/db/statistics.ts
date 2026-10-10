@@ -7,8 +7,10 @@ import {
   StepId,
   TokenUsage,
   UsageSummary,
+  WritingType,
 } from '../types';
 import {TOKEN_FIELDS} from '../services/usage';
+import {getWritingProfile, normalizeWritingType} from '../services/writing';
 
 const columns = Object.values(TOKEN_FIELDS);
 const dimensions = [
@@ -60,6 +62,18 @@ export async function initializeStatistics(
   await database.executeSql(
     'CREATE INDEX IF NOT EXISTS score_records_time ON score_records (scored_at)',
   );
+  // English has a 35-point language dimension, so its dimension values are
+  // stored as JSON instead of being forced into the Chinese fixed columns.
+  await database.executeSql(`CREATE TABLE IF NOT EXISTS writing_score_records (
+    id TEXT PRIMARY KEY NOT NULL, essay_id TEXT NOT NULL, writing_type TEXT NOT NULL,
+    run_id TEXT, model TEXT, roundtable_size INTEGER, rubric_version TEXT,
+    scored_at TEXT NOT NULL, time_source TEXT NOT NULL, is_current INTEGER NOT NULL DEFAULT 1,
+    total_score INTEGER NOT NULL CHECK (total_score BETWEEN 0 AND 100), band_id TEXT NOT NULL,
+    dimension_scores_json TEXT NOT NULL, score_json TEXT NOT NULL
+  )`);
+  await database.executeSql(
+    'CREATE INDEX IF NOT EXISTS writing_score_records_essay_time ON writing_score_records (essay_id, scored_at)',
+  );
   // One insert atomically saves all numeric scores and the completed essay.
   await database.executeSql(`CREATE TRIGGER IF NOT EXISTS score_records_publish AFTER INSERT ON score_records BEGIN
     UPDATE score_records SET is_current = 0 WHERE essay_id = NEW.essay_id AND id != NEW.id;
@@ -67,12 +81,21 @@ export async function initializeStatistics(
   END`);
   await database.executeSql(`CREATE TRIGGER IF NOT EXISTS score_records_invalidate AFTER UPDATE OF score_json ON essays
     WHEN NEW.score_json = '' BEGIN UPDATE score_records SET is_current = 0 WHERE essay_id = NEW.id; END`);
+  await database.executeSql(`CREATE TRIGGER IF NOT EXISTS writing_score_records_publish AFTER INSERT ON writing_score_records BEGIN
+    UPDATE writing_score_records SET is_current = 0 WHERE essay_id = NEW.essay_id AND id != NEW.id;
+    UPDATE essays SET score_json = NEW.score_json, status = 'completed', error = '', updated_at = NEW.scored_at WHERE id = NEW.essay_id;
+  END`);
+  await database.executeSql(`CREATE TRIGGER IF NOT EXISTS writing_score_records_invalidate AFTER UPDATE OF score_json ON essays
+    WHEN NEW.score_json = '' BEGIN UPDATE writing_score_records SET is_current = 0 WHERE essay_id = NEW.id; END`);
   await database.executeSql(`CREATE TRIGGER IF NOT EXISTS essay_statistics_delete AFTER DELETE ON essays BEGIN
     DELETE FROM model_calls WHERE essay_id = OLD.id;
     DELETE FROM score_records WHERE essay_id = OLD.id;
     DELETE FROM score_attempts WHERE essay_id = OLD.id;
     DELETE FROM pipeline_steps WHERE essay_id = OLD.id;
     DELETE FROM app_logs WHERE essay_id = OLD.id;
+  END`);
+  await database.executeSql(`CREATE TRIGGER IF NOT EXISTS essay_statistics_delete_writing AFTER DELETE ON essays BEGIN
+    DELETE FROM writing_score_records WHERE essay_id = OLD.id;
   END`);
   const totals = `COUNT(*) AS call_count,
     SUM(CASE WHEN status IN ('failed', 'incomplete', 'interrupted') THEN 1 ELSE 0 END) AS failed_count,
@@ -124,19 +147,25 @@ export async function initializeStatistics(
   );
 }
 
-function validNumbers(score: ScoreResult) {
+function validNumbers(
+  score: ScoreResult,
+  writingType: WritingType = 'chinese',
+) {
+  const rules = getWritingProfile(writingType).rules;
   return (
     score &&
     Number.isInteger(score.score) &&
     typeof score.bandId === 'string' &&
-    dimensions.every(
-      (key, i) =>
-        Number.isInteger(score.dimensionScores?.[key]) &&
-        score.dimensionScores[key] >= 0 &&
-        score.dimensionScores[key] <= [25, 25, 20, 20, 10][i],
+    rules.dimensions.every(
+      item =>
+        Number.isInteger(score.dimensionScores?.[item.id]) &&
+        score.dimensionScores[item.id] >= 0 &&
+        score.dimensionScores[item.id] <= item.max,
     ) &&
-    dimensions.reduce((sum, key) => sum + score.dimensionScores[key], 0) ===
-      score.score
+    rules.dimensions.reduce(
+      (sum, item) => sum + score.dimensionScores[item.id],
+      0,
+    ) === score.score
   );
 }
 
@@ -151,9 +180,36 @@ async function insertScore(
   model: string | null,
   roundtableSize: number | null,
   rubricVersion: string | null,
+  writingType: WritingType = 'chinese',
 ) {
-  if (!validNumbers(score)) {
+  const type = normalizeWritingType(writingType);
+  if (!validNumbers(score, type)) {
     throw new Error('评分数值无效，不能保存统计记录');
+  }
+  if (type !== 'chinese') {
+    await database.executeSql(
+      `INSERT OR IGNORE INTO writing_score_records
+      (id, essay_id, writing_type, run_id, model, roundtable_size, rubric_version, scored_at, time_source,
+       total_score, band_id, dimension_scores_json, score_json)
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM essays WHERE id = ?)`,
+      [
+        id,
+        essayId,
+        type,
+        runId,
+        model,
+        roundtableSize,
+        rubricVersion,
+        scoredAt,
+        timeSource,
+        score.score,
+        score.bandId,
+        JSON.stringify(score.dimensionScores),
+        JSON.stringify(score),
+        essayId,
+      ],
+    );
+    return;
   }
   await database.executeSql(
     `INSERT OR IGNORE INTO score_records
@@ -185,6 +241,7 @@ export async function storeScore(
   score: ScoreResult,
   settings: AppSettings,
   rubricVersion: string,
+  writingType: WritingType = 'chinese',
 ) {
   await insertScore(
     database,
@@ -197,6 +254,7 @@ export async function storeScore(
     settings.modelName,
     settings.roundtableSize,
     rubricVersion,
+    writingType,
   );
 }
 

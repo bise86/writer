@@ -7,6 +7,8 @@ export type EssayStatus =
   | 'completed'
   | 'failed';
 
+export type WritingType = 'chinese' | 'english';
+
 export type StepId = 'local_ocr' | 'vision_ocr' | 'reconcile' | 'scoring';
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed';
 
@@ -24,6 +26,8 @@ export interface AppSettings {
 
 export interface Essay {
   id: string;
+  /** Older in-memory/test records omit this and are treated as Chinese. */
+  writingType?: WritingType;
   title: string;
   imageUri: string;
   imageUris: string[];

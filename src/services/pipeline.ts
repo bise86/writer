@@ -13,6 +13,7 @@ import {RequestProgress} from './context';
 import {scoreEssay} from './scoring';
 import {recognizedTitle} from './essay-text';
 import {newRecordId} from './usage';
+import {normalizeWritingType} from './writing';
 
 export {scoreEssay} from './scoring';
 
@@ -60,6 +61,7 @@ export async function runEssayPipeline(
       saveModelCall(essay.id, runId, stage, call);
   try {
     const settings = await getSettings();
+    const writingType = normalizeWritingType(essay.writingType);
     let start = Math.max(0, STEPS.indexOf(startFrom));
     if (start > 0 && !essay.visionOcr.trim()) {
       start = 0;
@@ -87,6 +89,7 @@ export async function runEssayPipeline(
       await updateEssay(essay.id, {status: 'vision_ocr'});
       const vision = await step(essay.id, 'vision_ocr', onProgress, report =>
         cloudOcr(imageUris, settings, {
+          writingType,
           onProgress: report,
           onCall: usage('vision_ocr'),
           onPage: async text => {
@@ -111,6 +114,7 @@ export async function runEssayPipeline(
       await updateEssay(essay.id, {status: 'reconcile'});
       const reconciled = await step(essay.id, 'reconcile', onProgress, report =>
         reconcileOcr(imageUris, visionText, settings, {
+          writingType,
           onProgress: report,
           onCall: usage('reconcile'),
         }),
@@ -127,12 +131,13 @@ export async function runEssayPipeline(
     await updateEssay(essay.id, {status: 'scoring'});
     const score = await step(essay.id, 'scoring', onProgress, report =>
       scoreEssay(canonicalText, settings, {
+        writingType,
         onProgress: report,
         essayId: essay.id,
         onCall: usage('scoring'),
       }),
     );
-    await saveEssayScore(essay.id, runId, score, settings);
+    await saveEssayScore(essay.id, runId, score, settings, writingType);
     return score;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

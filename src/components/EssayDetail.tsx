@@ -16,18 +16,12 @@ import {essaySections, recognizedTitle} from '../services/essay-text';
 import CorrectionPdf from './CorrectionPdf';
 import UsageDetails from './UsageDetails';
 import ImageViewer from './ImageViewer';
+import {getWritingProfile, normalizeWritingType} from '../services/writing';
 
 const STAGES: [StepId, string][] = [
   ['vision_ocr', '逐页图片识别'],
   ['reconcile', '原图复核'],
   ['scoring', '评分与批注'],
-];
-const DIMENSIONS: [string, string, number][] = [
-  ['thesis', '审题与立意', 25],
-  ['content', '内容与选材', 25],
-  ['structure', '结构与技法', 20],
-  ['language', '语言与表达', 20],
-  ['format', '书写与规范', 10],
 ];
 type Tab = 'original' | 'stage' | 'result' | 'correction' | 'usage';
 function Card({children}: {children: React.ReactNode}) {
@@ -80,6 +74,8 @@ export default function EssayDetail({
   onRetry: () => void;
   onRecognize: () => void;
 }) {
+  const profile = getWritingProfile(normalizeWritingType(essay.writingType));
+  const dimensions = profile.rules.dimensions;
   const [steps, setSteps] = useState<PipelineStep[]>([]);
   const [stepError, setStepError] = useState('');
   const [photoIndex, setPhotoIndex] = useState<number>();
@@ -327,7 +323,7 @@ export default function EssayDetail({
               </View>
               <Card>
                 <Text style={styles.heading}>各项评分</Text>
-                {DIMENSIONS.map(([key, label, max]) => (
+                {dimensions.map(({id: key, name: label, max}) => (
                   <View key={key} style={styles.metric}>
                     <View style={styles.metricRow}>
                       <Text style={styles.body}>{label}</Text>
@@ -356,7 +352,7 @@ export default function EssayDetail({
               </Card>
               <Card>
                 <Text style={styles.heading}>各项优缺点与改进</Text>
-                {DIMENSIONS.map(([key, label]) => {
+                {dimensions.map(({id: key, name: label}) => {
                   const feedback = score.dimensionFeedback?.[key];
                   return feedback ? (
                     <View key={key} style={styles.dimension}>

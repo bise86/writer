@@ -1,6 +1,6 @@
-import rules from '../assets/scoring-rules.json';
 import {ScoreResult} from '../types';
 import {essaySections, sectionLabel} from './essay-text';
+import {getWritingRules} from './writing';
 
 function isObject(value: unknown): value is Record<string, any> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -40,6 +40,7 @@ function validateFeedback(field: string, value: unknown, issues: string[]) {
 export function validateScore(
   value: unknown,
   originalText: string,
+  rules = getWritingRules('chinese'),
 ): ScoreResult {
   const issues: string[] = [];
   if (!isObject(value)) {

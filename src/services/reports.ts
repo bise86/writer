@@ -6,7 +6,20 @@ export const SCORE_METRICS = [
   {key: 'language', label: '语言与表达', max: 20},
   {key: 'format', label: '书写与规范', max: 10},
 ] as const;
-export type ScoreMetric = (typeof SCORE_METRICS)[number]['key'];
+export type ScoreMetric = string;
+export type ScoreMetricDefinition = {key: string; label: string; max: number};
+export function scoreMetricsFor(
+  dimensions: readonly {id: string; name: string; max: number}[],
+): ScoreMetricDefinition[] {
+  return [
+    {key: 'total', label: '总分', max: 100},
+    ...dimensions.map(item => ({
+      key: item.id,
+      label: item.name,
+      max: item.max,
+    })),
+  ];
+}
 export type ReportRange = {start: string; end: string};
 export type ReportEntry = {
   id: string;
@@ -14,12 +27,12 @@ export type ReportEntry = {
   title: string;
   scoredAt: string;
   estimatedTime: boolean;
-  scores: Record<ScoreMetric, number>;
+  scores: Record<string, number>;
 };
 export type ScoreReport = {
   entries: ReportEntry[];
   count: number;
-  average: Record<ScoreMetric, number> | null;
+  average: Record<string, number> | null;
   highest: number | null;
   lowest: number | null;
   estimatedCount: number;

@@ -5,6 +5,7 @@ import {
   ReportEntry,
   SCORE_METRICS,
   ScoreMetric,
+  ScoreMetricDefinition,
 } from '../services/reports';
 
 const HEIGHT = 160;
@@ -17,13 +18,15 @@ export default function ScoreTrendChart({
   metric,
   selectedId,
   onSelect,
+  metrics = SCORE_METRICS,
 }: {
   entries: ReportEntry[];
   metric: ScoreMetric;
   selectedId?: string;
   onSelect: (id: string) => void;
+  metrics?: readonly ScoreMetricDefinition[];
 }) {
-  const descriptor = SCORE_METRICS.find(item => item.key === metric)!;
+  const descriptor = metrics.find(item => item.key === metric)!;
   return (
     <View style={styles.chart} accessibilityLabel={`${descriptor.label}趋势图`}>
       <View style={styles.axis}>

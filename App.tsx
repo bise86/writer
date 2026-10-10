@@ -26,7 +26,7 @@ import {
   listEssays,
   saveSettings,
 } from './src/db/database';
-import {AppSettings, Essay} from './src/types';
+import {AppSettings, Essay, WritingType} from './src/types';
 import Detail from './src/components/EssayDetail';
 import {retryEssay, runEssayPipeline} from './src/services/pipeline';
 import {
@@ -44,6 +44,8 @@ import ImageCropper from './src/components/ImageCropper';
 import Reports from './src/components/Reports';
 import {recentMonth} from './src/services/reports';
 import Startup, {StartupData} from './src/components/Startup';
+import WritingModeChooser from './src/components/WritingModeChooser';
+import {getWritingProfile, normalizeWritingType} from './src/services/writing';
 
 function Button({
   title,
@@ -79,28 +81,33 @@ function Card({children, style}: {children: React.ReactNode; style?: any}) {
 
 function Home({
   essays,
+  writingType,
   onCapture,
   onOpen,
+  onSelectType,
   onSettings,
   onManage,
   onReports,
   capturing,
 }: {
   essays: Essay[];
+  writingType: WritingType;
   onCapture: (camera: boolean) => void;
   onOpen: (id: string) => void;
+  onSelectType: (type: WritingType) => void;
   onSettings: () => void;
   onManage: () => void;
   onReports: () => void;
   capturing: boolean;
 }) {
+  const profile = getWritingProfile(writingType);
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
         <View style={styles.header}>
           <View>
             <Text style={styles.eyebrow}>ESSAY LENS</Text>
-            <Text style={styles.title}>作文批改</Text>
+            <Text style={styles.title}>{profile.title}</Text>
           </View>
           <View style={styles.headerActions}>
             <Pressable onPress={onManage} style={styles.headerAction}>
@@ -117,14 +124,11 @@ function Home({
             </Pressable>
           </View>
         </View>
-        <Text style={styles.subtitle}>
-          拍下作文，识别、评分，并把修改建议落到原文。
-        </Text>
+        <Text style={styles.subtitle}>{profile.subtitle}</Text>
+        <WritingModeChooser active={writingType} onSelect={onSelectType} />
         <Card style={styles.captureCard}>
           <Text style={styles.captureTitle}>开始一次批改</Text>
-          <Text style={styles.muted}>
-            可连续拍摄或多选作文页；每页可保留原图或裁剪后再识别。
-          </Text>
+          <Text style={styles.muted}>{profile.captureHint}</Text>
           <View style={styles.actionRow}>
             <Button
               title="拍照"
@@ -139,10 +143,10 @@ function Home({
             />
           </View>
         </Card>
-        <Text style={styles.sectionTitle}>最近作文</Text>
+        <Text style={styles.sectionTitle}>最近{profile.shortTitle}</Text>
         {essays.length === 0 ? (
           <Card>
-            <Text style={styles.muted}>还没有作文，拍一张开始吧。</Text>
+            <Text style={styles.muted}>{profile.emptyText}</Text>
           </Card>
         ) : (
           essays.map(essay => (
@@ -181,17 +185,20 @@ function Home({
 
 function ManageEssays({
   essays,
+  writingType,
   onBack,
   onRefresh,
   onDelete,
   onClearBefore,
 }: {
   essays: Essay[];
+  writingType: WritingType;
   onBack: () => void;
   onRefresh: () => Promise<void>;
   onDelete: (id: string) => Promise<void>;
   onClearBefore: (before: Date) => Promise<void>;
 }) {
+  const profile = getWritingProfile(writingType);
   const [selectedIds, setSelectedIds] = useState<string[]>([]);
   const toggle = (id: string) =>
     setSelectedIds(current =>
@@ -204,7 +211,7 @@ function ManageEssays({
       return;
     }
     Alert.alert(
-      '删除作文',
+      `删除${profile.shortTitle}`,
       `确定删除选中的 ${selectedIds.length} 条作文及其图片吗？`,
       [
         {text: '取消', style: 'cancel'},
@@ -225,7 +232,7 @@ function ManageEssays({
   const clearBefore = (days: number) =>
     Alert.alert(
       '按时间清理',
-      `确定删除 ${days} 天前创建的作文、图片和批改记录吗？`,
+      `确定删除 ${days} 天前创建的${profile.shortTitle}、图片和批改记录吗？`,
       [
         {text: '取消', style: 'cancel'},
         {
@@ -246,12 +253,12 @@ function ManageEssays({
           <Pressable onPress={onBack}>
             <Text style={styles.back}>‹ 返回</Text>
           </Pressable>
-          <Text style={styles.headerTitle}>作文管理</Text>
+          <Text style={styles.headerTitle}>{profile.shortTitle}管理</Text>
         </View>
         <Card>
           <Text style={styles.cardTitle}>批量操作</Text>
           <Text style={styles.muted}>
-            点选作文后可批量删除；按时间清理只影响作文记录，不会修改系统设置。
+            点选记录后可批量删除；按时间清理只影响当前类型的记录，不会修改系统设置。
           </Text>
           <View style={styles.actionRow}>
             <Button
@@ -279,7 +286,7 @@ function ManageEssays({
         </Card>
         {essays.length === 0 ? (
           <Card>
-            <Text style={styles.muted}>暂无作文记录。</Text>
+            <Text style={styles.muted}>暂无{profile.shortTitle}记录。</Text>
           </Card>
         ) : (
           essays.map(essay => {
@@ -524,6 +531,7 @@ export default function App() {
 
 function ReadyApp({initialData}: {initialData: StartupData}) {
   const [essays, setEssays] = useState(initialData.essays);
+  const [writingType, setWritingType] = useState<WritingType>('chinese');
   const [selected, setSelected] = useState<Essay>();
   const selectedId = selected?.id;
   const [settings, setSettings] = useState(initialData.settings);
@@ -653,7 +661,10 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       if (!imageUris.length) {
         return;
       }
-      const essay = await createEssay(imageUris);
+      const essay =
+        writingType === 'chinese'
+          ? await createEssay(imageUris)
+          : await createEssay(imageUris, writingType);
       committed = true;
       setSelected(essay);
       setDetailOrigin('home');
@@ -714,17 +725,21 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   if (screen === 'manage') {
     return (
       <ManageEssays
-        essays={essays}
+        writingType={writingType}
+        essays={essays.filter(
+          item => normalizeWritingType(item.writingType) === writingType,
+        )}
         onBack={() => setScreen('home')}
         onRefresh={refresh}
         onDelete={deleteEssay}
-        onClearBefore={clearEssaysBefore}
+        onClearBefore={before => clearEssaysBefore(before, writingType)}
       />
     );
   }
   if (screen === 'reports') {
     return (
       <Reports
+        writingType={writingType}
         initialRange={reportRange}
         onRangeChange={setReportRange}
         onBack={() => setScreen('home')}
@@ -777,9 +792,16 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   }
   return (
     <Home
-      essays={essays}
+      writingType={writingType}
+      essays={essays.filter(
+        item => normalizeWritingType(item.writingType) === writingType,
+      )}
       capturing={capturing}
       onCapture={capture}
+      onSelectType={type => {
+        setWritingType(type);
+        setScreen('home');
+      }}
       onOpen={async id => {
         setSelected(await getEssay(id));
         setDetailOrigin('home');

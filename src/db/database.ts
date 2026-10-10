@@ -9,6 +9,7 @@ import {
   StepStatus,
   ModelCall,
   ScoreResult,
+  WritingType,
 } from '../types';
 import {
   initializeStatistics,
@@ -16,7 +17,6 @@ import {
   storeModelCall,
   storeScore,
 } from './statistics';
-import rules from '../assets/scoring-rules.json';
 import {readScoreReport} from './reports';
 import {ReportRange} from '../services/reports';
 import {recognizedTitle} from '../services/essay-text';
@@ -27,6 +27,7 @@ import {
   ROUNDTABLE_OPTIONS,
   validateSettings,
 } from '../settings';
+import {getWritingProfile, normalizeWritingType} from '../services/writing';
 
 SQLite.enablePromise(true);
 
@@ -50,6 +51,7 @@ async function initializeDatabase() {
   await database.executeSql(`
       CREATE TABLE IF NOT EXISTS essays (
         id TEXT PRIMARY KEY NOT NULL,
+        writing_type TEXT NOT NULL DEFAULT 'chinese',
         title TEXT NOT NULL DEFAULT '',
         image_uri TEXT NOT NULL,
         image_uris TEXT NOT NULL DEFAULT '[]',
@@ -175,6 +177,24 @@ async function initializeDatabase() {
   if (version.rows.item(0).user_version < 6) {
     await database.executeSql('PRAGMA user_version = 6');
   }
+  // The writing type column is migrated by inspecting the live table instead
+  // of bumping the historical schema version, so older clients that expect
+  // version 6 remain compatible while the operation stays idempotent.
+  {
+    const [columns] = await database.executeSql('PRAGMA table_info(essays)');
+    let hasWritingType = false;
+    for (let i = 0; i < columns.rows.length; i += 1) {
+      hasWritingType ||= columns.rows.item(i).name === 'writing_type';
+    }
+    if (!hasWritingType) {
+      await database.executeSql(
+        "ALTER TABLE essays ADD COLUMN writing_type TEXT NOT NULL DEFAULT 'chinese'",
+      );
+    }
+    await database.executeSql(
+      "UPDATE essays SET writing_type = 'chinese' WHERE writing_type IS NULL OR writing_type = ''",
+    );
+  }
   // Initialization runs once before the app starts any pipeline. Native process
   // termination leaves stored progress behind, but no request is still running.
   // Preserve OCR and model outputs so the normal retry path can resume them.
@@ -217,6 +237,7 @@ function row<T>(result: ResultSet, index = 0): T | undefined {
 
 export async function createEssay(
   imageInput: string | string[],
+  writingType: WritingType = 'chinese',
 ): Promise<Essay> {
   const database = await db();
   const imageUris = (
@@ -229,8 +250,16 @@ export async function createEssay(
   const now = new Date().toISOString();
   const id = `essay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await database.executeSql(
-    'INSERT INTO essays (id, image_uri, image_uris, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?)',
-    [id, imageUri, JSON.stringify(imageUris), 'queued', now, now],
+    'INSERT INTO essays (id, writing_type, image_uri, image_uris, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    [
+      id,
+      normalizeWritingType(writingType),
+      imageUri,
+      JSON.stringify(imageUris),
+      'queued',
+      now,
+      now,
+    ],
   );
   for (const step of ['vision_ocr', 'reconcile', 'scoring'] as StepId[]) {
     await database.executeSql(
@@ -253,6 +282,7 @@ export async function getEssay(id: string): Promise<Essay | undefined> {
   }
   return {
     id: value.id,
+    writingType: normalizeWritingType(value.writing_type),
     title:
       value.canonical_text || value.vision_ocr
         ? recognizedTitle(value.canonical_text || value.vision_ocr)
@@ -281,6 +311,7 @@ export async function listEssays(): Promise<Essay[]> {
     const value = result.rows.item(i);
     values.push({
       id: value.id,
+      writingType: normalizeWritingType(value.writing_type),
       title:
         value.canonical_text || value.vision_ocr
           ? recognizedTitle(value.canonical_text || value.vision_ocr)
@@ -448,29 +479,35 @@ export async function deleteEssay(essayId: string) {
   await removeEssayPdfCache([essayId]);
 }
 
-export async function clearEssaysBefore(before: Date) {
+export async function clearEssaysBefore(
+  before: Date,
+  writingType?: WritingType,
+) {
   const database = await db();
   const cutoff = before.toISOString();
+  const typeClause = writingType ? ' AND writing_type = ?' : '';
+  const typeParams = writingType ? [normalizeWritingType(writingType)] : [];
   const [images] = await database.executeSql(
-    'SELECT id, image_uri, image_uris FROM essays WHERE created_at < ?',
-    [cutoff],
+    `SELECT id, image_uri, image_uris FROM essays WHERE created_at < ?${typeClause}`,
+    [cutoff, ...typeParams],
   );
   await removeEssayImages(images);
   await database.executeSql(
-    'DELETE FROM score_attempts WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
-    [cutoff],
+    `DELETE FROM score_attempts WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?${typeClause})`,
+    [cutoff, ...typeParams],
   );
   await database.executeSql(
-    'DELETE FROM pipeline_steps WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
-    [cutoff],
+    `DELETE FROM pipeline_steps WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?${typeClause})`,
+    [cutoff, ...typeParams],
   );
   await database.executeSql(
-    'DELETE FROM app_logs WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?)',
-    [cutoff],
+    `DELETE FROM app_logs WHERE essay_id IN (SELECT id FROM essays WHERE created_at < ?${typeClause})`,
+    [cutoff, ...typeParams],
   );
-  await database.executeSql('DELETE FROM essays WHERE created_at < ?', [
-    cutoff,
-  ]);
+  await database.executeSql(
+    `DELETE FROM essays WHERE created_at < ?${typeClause}`,
+    [cutoff, ...typeParams],
+  );
   const ids: string[] = [];
   for (let i = 0; i < images.rows.length; i += 1) {
     ids.push(images.rows.item(i).id);
@@ -566,8 +603,11 @@ export async function getEssayUsage(essayId: string) {
   return readEssayUsage(await db(), essayId);
 }
 
-export async function getScoreReport(range: ReportRange) {
-  return readScoreReport(await db(), range);
+export async function getScoreReport(
+  range: ReportRange,
+  writingType?: WritingType,
+) {
+  return readScoreReport(await db(), range, writingType);
 }
 
 export async function saveEssayScore(
@@ -575,6 +615,7 @@ export async function saveEssayScore(
   runId: string,
   score: ScoreResult,
   settings: AppSettings,
+  writingType: WritingType = 'chinese',
 ) {
   await storeScore(
     await db(),
@@ -582,7 +623,10 @@ export async function saveEssayScore(
     runId,
     score,
     settings,
-    `${rules.id}:${rules.version}`,
+    `${getWritingProfile(writingType).rules.id}:${
+      getWritingProfile(writingType).rules.version
+    }`,
+    normalizeWritingType(writingType),
   );
 }
 

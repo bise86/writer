@@ -15,24 +15,31 @@ import {
   recentMonth,
   reportBounds,
   ReportRange,
-  SCORE_METRICS,
   ScoreMetric,
   ScoreReport,
 } from '../services/reports';
 import ReportDatePicker from './ReportDatePicker';
 import ScoreTrendChart from './ScoreTrendChart';
+import {WritingType} from '../types';
+import {getWritingProfile, normalizeWritingType} from '../services/writing';
+import {scoreMetricsFor} from '../services/reports';
 
 export default function Reports({
   onBack,
   onOpenEssay,
   initialRange,
   onRangeChange,
+  writingType,
 }: {
   onBack: () => void;
   onOpenEssay: (id: string) => void;
   initialRange?: ReportRange;
   onRangeChange?: (range: ReportRange) => void;
+  writingType?: WritingType;
 }) {
+  const type = normalizeWritingType(writingType);
+  const profile = getWritingProfile(type);
+  const metrics = scoreMetricsFor(profile.rules.dimensions);
   const [range, setRange] = useState(() => initialRange || recentMonth());
   const [draft, setDraft] = useState(range);
   const [picker, setPicker] = useState<keyof ReportRange>();
@@ -64,7 +71,10 @@ export default function Reports({
     setError('');
     setReport(undefined);
     setSelectedId(undefined);
-    getScoreReport(range)
+    (type === 'english'
+      ? getScoreReport(range, 'english')
+      : getScoreReport(range)
+    )
       .then(value => {
         if (active) {
           setReport(value);
@@ -84,7 +94,7 @@ export default function Reports({
     return () => {
       active = false;
     };
-  }, [range, revision]);
+  }, [range, revision, type]);
   const apply = (next: ReportRange) => {
     try {
       reportBounds(next);
@@ -156,7 +166,8 @@ export default function Reports({
             </Text>
           )}
           <Text style={styles.note}>
-            按评分时间统计，包含起止日期当天；每篇作文取时段内最后一次成功评分。
+            按评分时间统计，包含起止日期当天；每篇{profile.shortTitle}
+            取时段内最后一次成功评分。
           </Text>
         </View>
         <Text style={styles.period}>
@@ -183,7 +194,7 @@ export default function Reports({
           <View style={styles.card}>
             <Text style={styles.heading}>这段时间还没有评分记录</Text>
             <Text style={styles.muted}>
-              可以调整日期范围，或先完成一篇作文的批改。
+              可以调整日期范围，或先完成一篇{profile.shortTitle}的批改。
             </Text>
           </View>
         ) : (
@@ -192,7 +203,7 @@ export default function Reports({
             <>
               <View style={styles.summary}>
                 {[
-                  ['作文篇数', String(report.count)],
+                  [`${profile.shortTitle}篇数`, String(report.count)],
                   ['平均总分', report.average.total.toFixed(1)],
                   ['最高总分', String(report.highest)],
                 ].map(([label, value]) => (
@@ -214,7 +225,7 @@ export default function Reports({
                   按评分时间排列 · 左右滑动查看更多 · 点击柱形查看作文
                 </Text>
                 <View style={styles.metrics}>
-                  {SCORE_METRICS.map(item => (
+                  {metrics.map(item => (
                     <Pressable
                       key={item.key}
                       accessibilityRole="button"
@@ -237,6 +248,7 @@ export default function Reports({
                 <ScoreTrendChart
                   entries={report.entries}
                   metric={metric}
+                  metrics={metrics}
                   selectedId={selected?.id}
                   onSelect={setSelectedId}
                 />
@@ -248,7 +260,7 @@ export default function Reports({
                       {selected.estimatedTime ? ' · 旧版保存时间' : ''}
                     </Text>
                     <View style={styles.scoreGrid}>
-                      {SCORE_METRICS.map(item => (
+                      {metrics.map(item => (
                         <Text key={item.key} style={styles.scoreText}>
                           {item.label} {selected.scores[item.key]}/{item.max}
                         </Text>
@@ -266,7 +278,7 @@ export default function Reports({
               <View style={styles.card} accessibilityLabel="各项平均评分图表">
                 <Text style={styles.heading}>各项平均评分</Text>
                 <Text style={styles.muted}>条形长度按该项满分比例显示</Text>
-                {SCORE_METRICS.slice(1).map(item => {
+                {metrics.slice(1).map(item => {
                   const average = report.average![item.key];
                   return (
                     <View

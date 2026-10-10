@@ -1,0 +1,174 @@
+{
+  "id": "english-writing-enhanced-100-v1",
+  "version": 1,
+  "language": "en",
+  "total": 100,
+  "passingScore": 60,
+  "thirdBandIsExamFullQuality": true,
+  "description": "初中英语书面表达的强化训练标准。第三档对应考试满分作文应有的完成度，但第四、第五档继续提高，本规则的满分是第五档100分。",
+  "dimensions": [
+    {"id": "task", "name": "任务回应与交际效果", "max": 20},
+    {"id": "content", "name": "内容展开与思考", "max": 20},
+    {"id": "organization", "name": "结构组织与衔接", "max": 15},
+    {"id": "language", "name": "语言准确与表现力", "max": 35},
+    {"id": "format", "name": "书写与表达规范", "max": 10}
+  ],
+  "bands": [
+    {
+      "id": "pass",
+      "name": "强化及格",
+      "min": 60,
+      "max": 69,
+      "floor": {
+        "task": 12,
+        "content": 12,
+        "organization": 9,
+        "language": 21,
+        "format": 6
+      },
+      "quality": "全部明确要求得到回应，有具体展开，成篇完整，主要语言关系稳定；低于60分未达强化标准。"
+    },
+    {
+      "id": "good",
+      "name": "强化良好",
+      "min": 70,
+      "max": 79,
+      "floor": {
+        "task": 14,
+        "content": 14,
+        "organization": 10,
+        "language": 25,
+        "format": 7
+      },
+      "quality": "要点与支撑配合，逻辑顺畅，语气符合对象，主要段落已有具体和有效的表达。"
+    },
+    {
+      "id": "high",
+      "name": "满分质量基准",
+      "min": 80,
+      "max": 89,
+      "floor": {
+        "task": 17,
+        "content": 16,
+        "organization": 12,
+        "language": 27,
+        "format": 8
+      },
+      "quality": "对应考试满分作文应有的完成度：任务精准、内容充分、组织自然、语言准确流畅具体得体并有持续表现力，不存在需纠正的实质性语言或规范错误。"
+    },
+    {
+      "id": "excellent",
+      "name": "深化卓越",
+      "min": 90,
+      "max": 96,
+      "floor": {
+        "task": 18,
+        "content": 18,
+        "organization": 14,
+        "language": 31,
+        "format": 9
+      },
+      "quality": "在第三档基础上，信息取舍、读者意识、思考层次、组织和语言分寸更精细，表达经济而自然。"
+    },
+    {
+      "id": "model",
+      "name": "示范满分",
+      "min": 97,
+      "max": 100,
+      "floor": {
+        "task": 20,
+        "content": 19,
+        "organization": 14,
+        "language": 34,
+        "format": 10
+      },
+      "quality": "在第四档基础上达到示范性；100分须五项全部满分，不能存在有证据支持的实质扣分点。"
+    }
+  ],
+  "rules": {
+    "thirdBand": "第三档不是基本切题档，必须达到考试满分作文的完整、准确、自然和有效交际质量；第四、第五档再从信息价值、读者意识、组织密度和表达辨识度上提高。",
+    "techniquePolicy": "审题拆解、读者意识、要点核对、内容展开、因果、比较、图表取舍、时间顺序、过渡、指代、段落、收束、动词搭配、句式节奏、凝练校订等技法按实际功能评价，不按数量计分。",
+    "languagePolicy": "简单句、并列句和复合句均可使用；正确清楚优先于生僻词、复杂句和模板。第三档不能用基础错误或仅能读懂来解释不足。",
+    "ceiling": [
+      {
+        "max": 59,
+        "when": "漏掉明确必写要求、严重偏题、关键材料相反、主干多处无法理解、错误反复或违反题目硬性要求。"
+      },
+      {
+        "max": 69,
+        "when": "要点完成但缺少具体展开、主动组织或主要段落的有效表现力。"
+      },
+      {
+        "max": 79,
+        "when": "仍需纠正语言或规范错误，或内容、组织和语言尚未达到第三档的满分质量。"
+      },
+      {
+        "max": 89,
+        "when": "已达到第三档，但信息取舍、思考层次、读者意识或语言精细程度尚未达到第四档。"
+      },
+      {"max": 96, "when": "已达到第四档，但仍有不符合示范满分要求的精修空间。"}
+    ]
+  },
+  "outputSchema": {
+    "score": "integer 0..100，必须等于五项分数之和",
+    "bandId": "pass|good|high|excellent|model|unqualified",
+    "dimensionScores": "object keyed by task/content/organization/language/format",
+    "dimensionFeedback": "object keyed by each dimension; every value has strengths/weaknesses/improvements string[]",
+    "summary": "string",
+    "strengths": "string[]",
+    "weaknesses": "string[]",
+    "improvements": "string[]",
+    "suggestions": "string[]",
+    "titleFeedback": "optional {strengths:string[],weaknesses:string[],improvements:string[]}",
+    "paragraphReviews": "array of {paragraphIndex:number,strengths:string[],weaknesses:string[],improvements:string[]}; title is not paragraph 1",
+    "annotations": "array of {quote,start,end,type,comment,suggestion}; quote must be a continuous original substring"
+  },
+  "techniques": [
+    "审题拆解",
+    "要点核对",
+    "读者意识",
+    "文体与语气",
+    "中心统摄",
+    "给定材料整合",
+    "词数预算",
+    "提纲分工",
+    "直接入题",
+    "主题句",
+    "细节展开",
+    "观点与依据",
+    "解释意义",
+    "具体举例",
+    "因果展开",
+    "建议与实施",
+    "条件与后果",
+    "比较与对照",
+    "图表取舍",
+    "审慎推断",
+    "时间顺序",
+    "空间或步骤顺序",
+    "重点与详略",
+    "过渡与连接",
+    "指代衔接",
+    "关键词与词汇衔接",
+    "段落划分",
+    "照应与收束",
+    "动作描写",
+    "场景与感官",
+    "对话或转述",
+    "变化与反思",
+    "比喻与适度修辞",
+    "具体动词与搭配",
+    "完整简单句",
+    "并列关系",
+    "状语从句",
+    "宾语与定语从句",
+    "时态与体",
+    "人称一致与指代",
+    "名词冠词与限定",
+    "语态情态与礼貌",
+    "句式与节奏",
+    "凝练与删改",
+    "拼写标点与格式",
+    "全文校订"
+  ]
+}
