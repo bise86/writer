@@ -40,6 +40,31 @@ test('无标题英文首段的句点不能导致正文被当作标题或丢失�
   expect(recognizedTitle('Title: Mr. Green\n\nHe is my teacher.')).toBe('Mr. Green');
 });
 
+test('旧版单换行英文标题保持标题和正文评价对应', () => {
+  const text = 'My Day\nI went home.';
+  expect(recognizedTitle(text)).toBe('My Day');
+  expect(essaySections(text).map(sectionLabel)).toEqual(['标题', '第 1 段']);
+  const saved = {...savedScore, paragraphIndexing: 'body-v1' as const,
+    titleFeedback: {strengths: ['标题评价'], weaknesses: [], improvements: ['保留标题']},
+    paragraphReviews: [{paragraphIndex: 1, strengths: ['正文评价'], weaknesses: [], improvements: ['补充动作']}],
+  };
+  const normalized = normalizeSavedParagraphReviews(saved, text);
+  expect(normalized.titleFeedback?.strengths).toEqual(['标题评价']);
+  expect(normalized.paragraphReviews?.[0].strengths).toEqual(['正文评价']);
+});
+
+test('旧称呼评价缺失时迁移只能发生一次，不会在第二次规范化时吞掉正文', () => {
+  const text = 'Dear Tom,\n\nI went home.';
+  const saved = {...savedScore, paragraphReviews: [
+    {paragraphIndex: 2, strengths: ['正文评价'], weaknesses: [], improvements: ['补充动作']},
+  ]};
+  const first = normalizeSavedParagraphReviews(saved, text);
+  const second = normalizeSavedParagraphReviews(first, text);
+  expect(second).toBe(first);
+  expect(second.paragraphReviews?.[0]).toMatchObject({paragraphIndex: 1, strengths: ['正文评价']});
+  expect(second.salutationFeedback).toBeUndefined();
+});
+
 test('段落索引保留原文位置，供评分批注定位', () => {
   const original = '第一段。\n\n第二段。';
   const result = essayParagraphs(original);

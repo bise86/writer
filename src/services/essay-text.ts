@@ -19,6 +19,9 @@ function contentLines(text: string) {
 const isSalutation = (text: string) => /^Dear[ \t]+[^!?;\r\n]{1,80}[,，:]$/i.test(text);
 const looksLikeUnmarkedChineseTitle = (text: string) =>
   /^[\u3400-\u9fff《》、·“”‘’\s]{1,40}$/.test(text);
+const looksLikeLegacyEnglishTitle = (text: string) =>
+  /^[A-Z][A-Za-z0-9 &'’:-]{0,39}$/.test(text) &&
+  !/^(?:I|We|You|He|She|They|It|There)\b/i.test(text);
 
 function hasBlankLineAfter(text: string, line: {end: number}) {
   return /^[ \t]*\r?\n[ \t]*(?:\r?\n|$)/.test(text.slice(line.end));
@@ -46,7 +49,8 @@ function titleLine(text: string) {
     (!explicit &&
       !/^《(.+)》$/.test(candidate.text) &&
       !hasBlankLineAfter(text, candidate) &&
-      !looksLikeUnmarkedChineseTitle(candidate.text)) ||
+      !looksLikeUnmarkedChineseTitle(candidate.text) &&
+      !looksLikeLegacyEnglishTitle(candidate.text)) ||
     (!explicit && (isSalutation(title) || /[，。！？；.,!?;]/.test(title)))
   ) {
     return undefined;
@@ -122,13 +126,15 @@ export function normalizeSavedParagraphReviews(
   const sections = essaySections(text);
   const titlePosition = sections.findIndex(section => section.kind === 'title');
   if (titlePosition < 0) {
-    return normalizeSalutationReviews({...score, paragraphIndexing: 'body-v1'}, text);
+    const base = {...score, paragraphIndexing: 'body-v1' as const};
+    const adapted = normalizeSalutationReviews(base, text);
+    return adapted === base ? base : {...adapted, paragraphIndexing: 'body-v2'};
   }
   const reviews = score.paragraphReviews || [];
   const titleReview = reviews.find(
     item => item.paragraphIndex === titlePosition + 1,
   );
-  return normalizeSalutationReviews({
+  const adapted = normalizeSalutationReviews({
     ...score,
     paragraphIndexing: 'body-v1',
     titleFeedback:
@@ -150,4 +156,5 @@ export function normalizeSavedParagraphReviews(
             : item.paragraphIndex,
       })),
   }, text);
+  return adapted === score ? adapted : {...adapted, paragraphIndexing: 'body-v2'};
 }

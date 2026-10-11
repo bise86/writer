@@ -12,7 +12,7 @@ import {
   discardPreparedImages,
   persistImage,
 } from '../src/services/images';
-import {runEssayPipeline} from '../src/services/pipeline';
+import {retryEssay, runEssayPipeline} from '../src/services/pipeline';
 
 jest.mock('../src/components/Startup', () => ({
   __esModule: true,
@@ -41,6 +41,7 @@ jest.mock('../src/services/images', () => ({
 }));
 jest.mock('../src/services/pipeline', () => ({
   runEssayPipeline: jest.fn(async () => undefined),
+  retryEssay: jest.fn(async () => undefined),
 }));
 let view: ReactTestRenderer;
 const press = (label: string) =>
@@ -57,6 +58,9 @@ beforeEach(async () => {
   jest.clearAllMocks();
   jest.useFakeTimers();
   jest.spyOn(Alert, 'alert').mockImplementation(() => undefined);
+  (getEssay as jest.Mock).mockReset();
+  (runEssayPipeline as jest.Mock).mockResolvedValue(undefined);
+  (retryEssay as jest.Mock).mockResolvedValue(undefined);
   (listEssays as jest.Mock).mockResolvedValue([]);
   jest
     .spyOn(PermissionsAndroid, 'request')
@@ -221,4 +225,74 @@ test('数据库保存失败时清理尚未关联的图片副本', async () => {
   expect(discardPreparedImages).toHaveBeenCalledWith(['file:///one.jpg.saved']);
   expect(runEssayPipeline).not.toHaveBeenCalled();
   expect(Alert.alert).toHaveBeenCalledWith('无法获取图片', '数据库不可写');
+});
+
+function pending<T>() {
+  let resolve!: (value: T) => void;
+  const promise = new Promise<T>(done => { resolve = done; });
+  return {promise, resolve};
+}
+
+async function openReportedEssay(id: string) {
+  (getEssay as jest.Mock).mockResolvedValueOnce({id, status: 'completed'});
+  await act(async () => view.root.findByType(Reports).props.onOpenEssay(id));
+}
+
+test('切换到另一篇作文后，旧详情轮询的迟到结果不能覆盖当前记录', async () => {
+  press('报表');
+  await openReportedEssay('first');
+  const oldRead = pending<object>();
+  (getEssay as jest.Mock).mockImplementationOnce(() => oldRead.promise);
+  await act(async () => jest.advanceTimersByTime(1200));
+  await act(async () => view.root.findByType(Detail).props.onBack());
+  await openReportedEssay('second');
+  await act(async () => oldRead.resolve({id: 'first', status: 'completed'}));
+  expect(view.root.findByType(Detail).props.essay.id).toBe('second');
+});
+
+test('数据库读取缓慢时详情轮询不会叠加请求', async () => {
+  press('报表');
+  await openReportedEssay('first');
+  const slowRead = pending<object>();
+  (getEssay as jest.Mock).mockReturnValue(slowRead.promise);
+  (getEssay as jest.Mock).mockClear();
+  await act(async () => jest.advanceTimersByTime(4800));
+  expect(getEssay).toHaveBeenCalledTimes(1);
+  await act(async () => slowRead.resolve({id: 'first', status: 'completed'}));
+});
+
+test.each(['onRetry', 'onRecognize'] as const)('%s 完成时只刷新原作文，不把另一篇详情替换回去', async action => {
+  press('报表');
+  await openReportedEssay('first');
+  const processing = pending<void>();
+  (action === 'onRetry' ? retryEssay as jest.Mock : runEssayPipeline as jest.Mock)
+    .mockReturnValueOnce(processing.promise);
+  act(() => { view.root.findByType(Detail).props[action](); });
+  await act(async () => view.root.findByType(Detail).props.onBack());
+  await openReportedEssay('second');
+  (getEssay as jest.Mock).mockResolvedValueOnce({id: 'first', status: 'completed'});
+  await act(async () => processing.resolve());
+  expect(view.root.findByType(Detail).props.essay.id).toBe('second');
+});
+
+test('连续打开两篇作文时以最后一次选择为准', async () => {
+  press('报表');
+  const firstRead = pending<object>();
+  (getEssay as jest.Mock).mockReturnValueOnce(firstRead.promise);
+  act(() => { view.root.findByType(Reports).props.onOpenEssay('first'); });
+  await openReportedEssay('second');
+  await act(async () => firstRead.resolve({id: 'first', status: 'completed'}));
+  expect(view.root.findByType(Detail).props.essay.id).toBe('second');
+});
+
+test('离开报表后，尚未完成的打开请求不能把用户拉回详情', async () => {
+  press('报表');
+  const firstRead = pending<object>();
+  (getEssay as jest.Mock).mockReturnValueOnce(firstRead.promise);
+  act(() => { view.root.findByType(Reports).props.onOpenEssay('first'); });
+  act(() => view.root.findByType(Reports).props.onBack());
+  press('⚙');
+  await act(async () => firstRead.resolve({id: 'first', status: 'completed'}));
+  expect(view.root.findAllByType(Detail)).toHaveLength(0);
+  expect(JSON.stringify(view.toJSON())).toContain('系统设置');
 });

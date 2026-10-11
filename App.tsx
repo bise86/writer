@@ -557,6 +557,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   const [settings, setSettings] = useState(initialData.settings);
   const [reportRange, setReportRange] = useState(recentMonth);
   const [detailOrigin, setDetailOrigin] = useState<'home' | 'reports'>('home');
+  const navigationRequest = useRef(0);
   const captureLock = useRef(false);
   const [capturing, setCapturing] = useState(false);
   const [cropTask, setCropTask] = useState<{
@@ -569,11 +570,23 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   >('home');
 
   const refresh = async () => setEssays(await listEssays());
-  const reloadEssay = async (id: string) => {
+  const reloadEssay = async (
+    id: string,
+    request = navigationRequest.current,
+  ) => {
+    if (request !== navigationRequest.current) {
+      return;
+    }
     try {
       const latest = await getEssay(id);
+      if (request !== navigationRequest.current) {
+        return;
+      }
       if (latest) {
         setSelected(latest);
+      }
+      if (request !== navigationRequest.current) {
+        return;
       }
       await refresh();
     } catch (error) {
@@ -587,12 +600,24 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     if (screen !== 'detail' || !selectedId) {
       return;
     }
+    let active = true;
+    let reading = false;
     const timer = setInterval(() => {
+      if (reading) {
+        return;
+      }
+      reading = true;
       getEssay(selectedId)
-        .then(value => value && setSelected(value))
-        .catch(() => undefined);
+        .then(value => active && value && setSelected(value))
+        .catch(() => undefined)
+        .finally(() => {
+          reading = false;
+        });
     }, 1200);
-    return () => clearInterval(timer);
+    return () => {
+      active = false;
+      clearInterval(timer);
+    };
   }, [screen, selectedId]);
   const prepareAsset = async (
     asset: Asset | undefined,
@@ -781,10 +806,17 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
         writingType={writingType}
         initialRange={reportRange}
         onRangeChange={setReportRange}
-        onBack={() => setScreen('home')}
+        onBack={() => {
+          navigationRequest.current += 1;
+          setScreen('home');
+        }}
         onOpenEssay={async id => {
+          const request = ++navigationRequest.current;
           try {
             const essay = await getEssay(id);
+            if (request !== navigationRequest.current) {
+              return;
+            }
             if (!essay) {
               Alert.alert('作文不存在', '这篇作文已删除，请刷新报表。');
               return;
@@ -793,6 +825,9 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
             setDetailOrigin('reports');
             setScreen('detail');
           } catch (error) {
+            if (request !== navigationRequest.current) {
+              return;
+            }
             Alert.alert(
               '无法打开作文',
               error instanceof Error ? error.message : String(error),
@@ -807,21 +842,24 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       <Detail
         essay={selected}
         onBack={() => {
+          navigationRequest.current += 1;
           setScreen(detailOrigin);
           refresh().catch(() => undefined);
         }}
-        onRecognize={() =>
-          runEssayPipeline(selected, undefined, 'vision_ocr').then(
-            () => reloadEssay(selected.id),
-            () => reloadEssay(selected.id),
-          )
-        }
-        onRetry={() =>
-          retryEssay(selected.id).then(
-            () => reloadEssay(selected.id),
-            () => reloadEssay(selected.id),
-          )
-        }
+        onRecognize={() => {
+          const request = ++navigationRequest.current;
+          return runEssayPipeline(selected, undefined, 'vision_ocr').then(
+            () => reloadEssay(selected.id, request),
+            () => reloadEssay(selected.id, request),
+          );
+        }}
+        onRetry={() => {
+          const request = ++navigationRequest.current;
+          return retryEssay(selected.id).then(
+            () => reloadEssay(selected.id, request),
+            () => reloadEssay(selected.id, request),
+          );
+        }}
       />
     );
   }

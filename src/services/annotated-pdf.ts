@@ -112,7 +112,7 @@ export function wrapPdfText(
 
 export function locateAnnotations(text: string, annotations: Annotation[]) {
   return annotations.map((annotation, index) => {
-    const start =
+    const hasValidStart =
       Number.isInteger(annotation.start) &&
       annotation.start! >= 0 &&
       text.slice(
@@ -120,7 +120,18 @@ export function locateAnnotations(text: string, annotations: Annotation[]) {
         annotation.start! + annotation.quote.length,
       ) === annotation.quote
         ? annotation.start!
-        : text.indexOf(annotation.quote);
+        : undefined;
+    const first = text.indexOf(annotation.quote);
+    if (
+      hasValidStart === undefined &&
+      first >= 0 &&
+      text.indexOf(annotation.quote, first + annotation.quote.length) >= 0
+    ) {
+      throw new Error(
+        `第 ${index + 1} 条批注引用在原文中出现多次，无法确定位置，请重新评分`,
+      );
+    }
+    const start = hasValidStart ?? first;
     if (!annotation.quote || start < 0) {
       throw new Error(`第 ${index + 1} 条批注无法定位到原文，请重新评分`);
     }

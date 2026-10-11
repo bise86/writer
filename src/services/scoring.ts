@@ -162,16 +162,13 @@ export async function scoreEssay(
       {...options, history},
     );
     lastOutput = response.text;
+    let result: ScoreResult;
     try {
-      const result = validateScore(
+      result = validateScore(
         parseJson<unknown>(response.text),
         text,
         rules,
       );
-      if (options.essayId) {
-        await saveScoreAttempt(options.essayId, text, response.text, '');
-      }
-      return result;
     } catch (error) {
       correction =
         error instanceof ScoreValidationError
@@ -195,7 +192,14 @@ export async function scoreEssay(
         );
       }
       await options.onProgress?.(correction);
+      continue;
     }
+    // Persistence errors are local failures. They must not be treated as a
+    // malformed model response and must not trigger another billable request.
+    if (options.essayId) {
+      await saveScoreAttempt(options.essayId, text, response.text, '');
+    }
+    return result;
   }
   throw new Error(
     `评分结果连续校验未通过，已保留模型输出上下文；请点击重试。\n${correction}\n最后输出：${lastOutput.slice(

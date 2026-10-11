@@ -76,6 +76,11 @@ test('重复句子采用评分指定位置，失效批注不会贴到无关句�
   ).toThrow('无法定位');
 });
 
+test.each([undefined, -1, 999])('重复引用的旧批注没有有效位置 %s 时不得擅自贴在第一处', start => {
+  expect(() => locateAnnotations('雨声。\n雨声。', [{...score.annotations[0], start}]))
+    .toThrow('出现多次');
+});
+
 test('交叠批注按问题优先着色，每个原文字只绘制一次', () => {
   const text = '风吹过树梢，我记下颜色与声音。';
   const runs = coloredPdfRuns({text, start: 10, end: 10 + text.length}, [

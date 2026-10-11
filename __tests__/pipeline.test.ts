@@ -312,6 +312,17 @@ test('评分格式错误会把上一轮答案和字段错误追加到下一轮�
   expect(essay.status).toBe('completed');
 });
 
+test('有效评分的本地保存失败不触发模型格式纠正或额外收费请求', async () => {
+  const database = require('../src/db/database');
+  database.saveScoreAttempt.mockRejectedValueOnce(new Error('本机存储失败'));
+  await expect(runEssayPipeline({...essay})).rejects.toThrow('本机存储失败');
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(database.saveScoreAttempt).toHaveBeenCalledTimes(1);
+  expect(database.saveEssayScore).not.toHaveBeenCalled();
+  expect(essay.status).toBe('failed');
+  expect(essay.canonicalText).toBe(text);
+});
+
 test('模型输出截断后不会保存部分评分', async () => {
   create.mockResolvedValue({
     status: 'incomplete',
