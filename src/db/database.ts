@@ -692,44 +692,6 @@ export async function getScoreAttempts(
   return attempts;
 }
 
-export async function getLatestEssayScore(
-  essayId: string,
-  educationLevel: EducationLevel,
-): Promise<ScoreResult | undefined> {
-  const database = await db();
-  const level = normalizeEducationLevel(educationLevel);
-  const [fixed] = await database.executeSql(
-    'SELECT score_json, scored_at, rowid FROM score_records WHERE essay_id = ? AND education_level = ? ORDER BY scored_at DESC, rowid DESC LIMIT 1',
-    [essayId, level],
-  );
-  const [flexible] = await database.executeSql(
-    'SELECT score_json, scored_at, rowid FROM writing_score_records WHERE essay_id = ? AND education_level = ? ORDER BY scored_at DESC, rowid DESC LIMIT 1',
-    [essayId, level],
-  );
-  const candidates: {scoreJson: string; scoredAt: string; rowid: number}[] = [];
-  if (fixed.rows.length) {
-    candidates.push(fixed.rows.item(0));
-  }
-  if (flexible.rows.length) {
-    candidates.push(flexible.rows.item(0));
-  }
-  candidates.sort((a, b) =>
-    a.scoredAt === b.scoredAt
-      ? b.rowid - a.rowid
-      : a.scoredAt < b.scoredAt
-      ? 1
-      : -1,
-  );
-  if (!candidates.length) {
-    return undefined;
-  }
-  try {
-    return JSON.parse(candidates[0].scoreJson) as ScoreResult;
-  } catch (_) {
-    return undefined;
-  }
-}
-
 export async function saveScoreAttempt(
   essayId: string,
   sourceText: string,

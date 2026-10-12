@@ -80,6 +80,7 @@ test('高中英语提示读取高中规则，并明确读后续写和高中材�
   expect(instructions).toContain('高中/高考强化标准');
   expect(instructions).toContain('待核题、待核材料、待核原图，训练预评');
   expect(instructions).toContain('admissionAdjustment');
+  expect(instructions).toContain('不是把初中结果机械上调或换算');
 });
 
 test('英语评分细则是完整的模型可读 JSON，并保留第三档定位', () => {

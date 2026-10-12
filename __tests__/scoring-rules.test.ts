@@ -25,6 +25,7 @@ test('高中中文和英语规则独立、总分完整且第三档对应高中�
     expect(rubric.thirdBandIsExamFullQuality).toBe(true);
     expect(rubric.rules.admissionPolicy).toBeTruthy();
     expect(rubric.rules.materialPolicy).toBeTruthy();
+    expect(rubric.rules.crossLevelPolicy).toContain('因切换学段而提高');
   }
   expect(highRules.id).not.toBe(rules.id);
   expect(highEnglishRules.id).not.toBe('english-writing-enhanced-100-v1');

@@ -19,6 +19,7 @@ export interface ScoringRules {
     admissionPolicy?: string;
     materialPolicy?: string;
     languagePolicy?: string;
+    crossLevelPolicy?: string;
   };
   outputSchema: Record<string, string>;
 }
