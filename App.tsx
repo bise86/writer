@@ -796,7 +796,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   if (screen === 'landing') {
     return (
       <SafeAreaView style={styles.safe}>
-        <View style={styles.landing}>
+        <ScrollView contentContainerStyle={styles.landing}>
           <WritingModeChooser
             onSelect={type => {
               navigationRequest.current += 1;
@@ -804,7 +804,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
               setScreen('home');
             }}
           />
-        </View>
+        </ScrollView>
       </SafeAreaView>
     );
   }
@@ -928,7 +928,14 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
 
 const styles = StyleSheet.create({
   safe: {flex: 1, backgroundColor: '#f7f8fc'},
-  landing: {flex: 1, justifyContent: 'center', padding: 24},
+  landing: {
+    flexGrow: 1,
+    justifyContent: 'flex-start',
+    alignItems: 'center',
+    paddingHorizontal: 20,
+    paddingTop: 24,
+    paddingBottom: 32,
+  },
   container: {padding: 20, paddingBottom: 48},
   header: {
     flexDirection: 'row',
