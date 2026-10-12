@@ -20,7 +20,7 @@ import {
 } from '../services/reports';
 import ReportDatePicker from './ReportDatePicker';
 import ScoreTrendChart from './ScoreTrendChart';
-import {WritingType} from '../types';
+import {EducationLevel, WritingType} from '../types';
 import {getWritingProfile, normalizeWritingType} from '../services/writing';
 import {scoreMetricsFor} from '../services/reports';
 
@@ -30,15 +30,17 @@ export default function Reports({
   initialRange,
   onRangeChange,
   writingType,
+  educationLevel,
 }: {
   onBack: () => void;
   onOpenEssay: (id: string) => void;
   initialRange?: ReportRange;
   onRangeChange?: (range: ReportRange) => void;
   writingType?: WritingType;
+  educationLevel?: EducationLevel;
 }) {
   const type = normalizeWritingType(writingType);
-  const profile = getWritingProfile(type);
+  const profile = getWritingProfile(type, educationLevel);
   const metrics = scoreMetricsFor(profile.rules.dimensions);
   const [range, setRange] = useState(() => initialRange || recentMonth());
   const [draft, setDraft] = useState(range);
@@ -72,10 +74,11 @@ export default function Reports({
     setError('');
     setReport(undefined);
     setSelectedId(undefined);
-    (type === 'english'
-      ? getScoreReport(range, 'english')
-      : getScoreReport(range)
-    )
+    (educationLevel === undefined
+      ? type === 'english'
+        ? getScoreReport(range, 'english')
+        : getScoreReport(range)
+      : getScoreReport(range, type, educationLevel))
       .then(value => {
         if (active) {
           setReport(value);
@@ -95,7 +98,7 @@ export default function Reports({
     return () => {
       active = false;
     };
-  }, [range, revision, type]);
+  }, [range, revision, type, educationLevel]);
   const apply = (next: ReportRange) => {
     try {
       reportBounds(next);

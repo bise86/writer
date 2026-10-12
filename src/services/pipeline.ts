@@ -14,6 +14,7 @@ import {scoreEssay} from './scoring';
 import {recognizedTitle} from './essay-text';
 import {newRecordId} from './usage';
 import {normalizeWritingType} from './writing';
+import {normalizeEducationLevel} from '../settings';
 
 export {scoreEssay} from './scoring';
 
@@ -62,6 +63,7 @@ export async function runEssayPipeline(
   try {
     const settings = await getSettings();
     const writingType = normalizeWritingType(essay.writingType);
+    const educationLevel = normalizeEducationLevel(settings.educationLevel);
     let start = Math.max(0, STEPS.indexOf(startFrom));
     if (start > 0 && !essay.visionOcr.trim()) {
       start = 0;
@@ -75,6 +77,7 @@ export async function runEssayPipeline(
     }
     await updateEssay(essay.id, {
       status: STEPS[start],
+      educationLevel,
       error: '',
       scoreJson: '',
       ...(start <= 1 ? {canonicalText: '', corrections: ''} : {}),
@@ -132,12 +135,20 @@ export async function runEssayPipeline(
     const score = await step(essay.id, 'scoring', onProgress, report =>
       scoreEssay(canonicalText, settings, {
         writingType,
+        educationLevel,
         onProgress: report,
         essayId: essay.id,
         onCall: usage('scoring'),
       }),
     );
-    await saveEssayScore(essay.id, runId, score, settings, writingType);
+    await saveEssayScore(
+      essay.id,
+      runId,
+      score,
+      settings,
+      writingType,
+      educationLevel,
+    );
     return score;
   } catch (error) {
     const message = error instanceof Error ? error.message : String(error);

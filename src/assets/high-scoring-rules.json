@@ -1,0 +1,155 @@
+{
+  "id": "essay-lens-high-school-enhanced-100-v1",
+  "version": 1,
+  "total": 100,
+  "passingScore": 60,
+  "dimensions": [
+    {
+      "id": "thesis",
+      "name": "审题、立意与思辨",
+      "max": 25
+    },
+    {
+      "id": "content",
+      "name": "内容、材料与论证",
+      "max": 25
+    },
+    {
+      "id": "structure",
+      "name": "结构、逻辑与技法",
+      "max": 20
+    },
+    {
+      "id": "language",
+      "name": "语言、文体与表达",
+      "max": 20
+    },
+    {
+      "id": "format",
+      "name": "书写与规范",
+      "max": 10
+    }
+  ],
+  "bands": [
+    {
+      "id": "pass",
+      "name": "强化及格",
+      "min": 60,
+      "max": 69,
+      "floor": {
+        "thesis": 15,
+        "content": 15,
+        "structure": 12,
+        "language": 15,
+        "format": 6
+      },
+      "quality": "任务基本完整，能够围绕材料形成明确判断；有可核验的事实或分析，结构成篇，语言基本准确，但思考深度和表达控制仍有限。"
+    },
+    {
+      "id": "good",
+      "name": "强化良好",
+      "min": 70,
+      "max": 79,
+      "floor": {
+        "thesis": 18,
+        "content": 17,
+        "structure": 14,
+        "language": 16,
+        "format": 7
+      },
+      "quality": "观点明确且有展开，材料与观点相互支撑，结构有主动安排，语言稳定；仍可在思辨层次、论证密度或表达精度上提升。"
+    },
+    {
+      "id": "high",
+      "name": "高中高考满分基准",
+      "min": 80,
+      "max": 89,
+      "floor": {
+        "thesis": 20,
+        "content": 20,
+        "structure": 16,
+        "language": 18,
+        "format": 8
+      },
+      "quality": "对应高中作文和高考作文应有的高位满分质量：精准回应任务，观点有层次，材料具体有效，分析关系成立，结构严密自然，语言准确、凝练、得体并有持续表现力。"
+    },
+    {
+      "id": "excellent",
+      "name": "深化卓越",
+      "min": 90,
+      "max": 96,
+      "floor": {
+        "thesis": 22,
+        "content": 22,
+        "structure": 18,
+        "language": 19,
+        "format": 9
+      },
+      "quality": "在第三档基础上形成独立而有分寸的判断，能处理复杂关系与材料边界，结构和语言均有成熟控制，几乎没有可确认的实质疏漏。"
+    },
+    {
+      "id": "model",
+      "name": "示范满分",
+      "min": 97,
+      "max": 100,
+      "floor": {
+        "thesis": 24,
+        "content": 24,
+        "structure": 19,
+        "language": 20,
+        "format": 10
+      },
+      "quality": "观点、材料、结构和语言高度统一，具有示范性；100分须五项满分，全文没有有证据支持的实质扣分点。"
+    }
+  ],
+  "rules": {
+    "admissionPolicy": "五项实际得分之和为R；从第五档向第一档核对文字准入条件和分项底线，确定最高可入档上限C，未达第一档时C为59。最终总分S=min(R,C)，admissionAdjustment=R-S；保留真实分项，不因封顶重复扣分。",
+    "materialPolicy": "评分请求只含识别后的作文文字，没有原始命题时，任务回应、审题和格式只能作训练预评；不能臆造命题要求、文体限制、字数或卷面证据，summary必须说明待核材料。",
+    "themeDeepening": "主题必须由材料和分析自然推出，体现从现象到关系、从经验到判断、从判断到边界或行动的推进；结尾口号不能替代思考。",
+    "argumentPolicy": "议论文须区分观点、事实、理由、分析和结论；记叙或材料作文也须让细节推动认识变化。不得用名言、排比或宏大词汇代替论证。",
+    "techniquePolicy": "审题拆解、概念界定、因果、比较、让步、反思、材料取舍、结构照应、叙议结合、语言节奏等技法按实际功能评价，不按数量计分。",
+    "languagePolicy": "高中高档要求语言准确、简洁、得体、有文体意识和个人表达；复杂句、生僻词、名言和修辞只有在准确并改善表达时才有效。",
+    "ceiling": [
+      {
+        "max": 59,
+        "when": "严重偏题、价值判断错误、材料理解相反、主干多处无法理解、文体完全不符、篇幅严重不足或无法辨读。"
+      },
+      {
+        "max": 69,
+        "when": "有观点但论证空泛，材料不能支持判断，结构松散，语言错误反复或主要内容靠套话。"
+      },
+      {
+        "max": 79,
+        "when": "尚未达到高中/高考满分基准：思考停留在单一结论，材料分析不足，结构或语言仍有明确基础短板。"
+      },
+      {
+        "max": 89,
+        "when": "已达到高中/高考满分基准，但独立判断、关系处理、材料密度或语言控制尚未达到卓越档。"
+      },
+      {
+        "max": 96,
+        "when": "已达到卓越档，但仍存在不符合示范满分要求的精修空间。"
+      }
+    ]
+  },
+  "outputSchema": {
+    "score": "integer 0..100，等于五项实际分数之和减去admissionAdjustment",
+    "bandId": "pass|good|high|excellent|model|unqualified",
+    "dimensionScores": "object keyed by thesis/content/structure/language/format",
+    "dimensionFeedback": "object keyed by each dimension; each value has strengths/weaknesses/improvements string[]",
+    "summary": "string",
+    "strengths": "string[]",
+    "weaknesses": "string[]",
+    "improvements": "string[]",
+    "suggestions": "string[]",
+    "paragraphReviews": "array of {paragraphIndex:number,strengths:string[],weaknesses:string[],improvements:string[]}",
+    "annotations": "array of {quote,start,end,type,comment,suggestion}",
+    "admissionAdjustment": "integer 0..100，准入调整R-S；没有调整时为0",
+    "admissionReason": "string，有调整时说明触发门槛和原文证据，没有调整时为无准入调整",
+    "educationLevel": "high"
+  },
+  "educationLevel": "high",
+  "educationLabel": "高中/高考训练",
+  "description": "普通高中语文写作强化训练标准。第三档对应高中学业质量与高考作文高位满分质量基准，要求审题精准、思辨充分、材料有效、结构严密、语言成熟；第四、第五档继续提高独立判断、论证密度和表达控制。",
+  "thirdBandIsExamFullQuality": true
+}

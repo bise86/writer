@@ -3,6 +3,7 @@ import {
   DEFAULT_SETTINGS,
   legacyDefaultChanges,
   normalizeReasoningEffort,
+  normalizeEducationLevel,
   OUTPUT_TOKEN_OPTIONS,
 } from '../src/settings';
 import {runResponse, visionResponse} from '../src/services/openai';
@@ -55,6 +56,12 @@ test('迁移保留自定义配置，包括关闭思考', () => {
   expect(normalizeReasoningEffort('none')).toBe('none');
   expect(normalizeReasoningEffort('medium')).toBe('high');
   expect(normalizeReasoningEffort(undefined)).toBe('high');
+});
+
+test('学段默认初中，保存值只接受初中或高中', () => {
+  expect(DEFAULT_SETTINGS.educationLevel).toBe('middle');
+  expect(normalizeEducationLevel('high')).toBe('high');
+  expect(normalizeEducationLevel('anything-else')).toBe('middle');
 });
 
 test('新默认设置用于实际 SDK 请求', async () => {

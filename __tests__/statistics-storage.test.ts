@@ -449,3 +449,29 @@ test('英语历史分项损坏时明确报错，不伪造为零分统计', async
   await mockExecute('UPDATE writing_score_records SET dimension_scores_json = ?', ['null']);
   await expect(db.getScoreReport({start: '2000-01-01', end: '2099-12-31'}, 'english')).rejects.toThrow('分项数据无效');
 }, 30000);
+
+test('高中中文使用独立准入规则和历史表，不触发初中固定分项约束', async () => {
+  const essay = await db.createEssay('file:///high.jpg', 'chinese', 'high');
+  const highScore: ScoreResult = {
+    ...score,
+    score: 79,
+    bandId: 'good',
+    admissionAdjustment: 11,
+    admissionReason: '材料分析仍不足以进入高中高考满分基准。',
+    dimensionScores: {thesis: 22, content: 22, structure: 18, language: 19, format: 9},
+  };
+  await db.saveEssayScore(essay.id, 'high-chinese', highScore, settings, 'chinese', 'high');
+  const report = await db.getScoreReport(
+    {start: '2000-01-01', end: '2099-12-31'},
+    'chinese',
+    'high',
+  );
+  expect(report.entries[0]).toMatchObject({
+    essayId: essay.id,
+    scores: {total: 79, thesis: 22, language: 19},
+    admissionAdjustment: 11,
+  });
+  expect(await rows('SELECT education_level FROM writing_score_records')).toEqual([
+    {education_level: 'high'},
+  ]);
+});

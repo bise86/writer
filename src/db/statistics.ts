@@ -7,10 +7,12 @@ import {
   StepId,
   TokenUsage,
   UsageSummary,
+  EducationLevel,
   WritingType,
 } from '../types';
 import {TOKEN_FIELDS} from '../services/usage';
 import {getWritingProfile, normalizeWritingType} from '../services/writing';
+import {normalizeEducationLevel} from '../settings';
 
 const columns = Object.values(TOKEN_FIELDS);
 const dimensions = [
@@ -44,7 +46,7 @@ export async function initializeStatistics(
     'CREATE INDEX IF NOT EXISTS model_calls_time_model ON model_calls (started_at, model)',
   );
   await database.executeSql(`CREATE TABLE IF NOT EXISTS score_records (
-    id TEXT PRIMARY KEY NOT NULL, essay_id TEXT NOT NULL, run_id TEXT, model TEXT,
+    id TEXT PRIMARY KEY NOT NULL, essay_id TEXT NOT NULL, education_level TEXT NOT NULL DEFAULT 'middle', run_id TEXT, model TEXT,
     roundtable_size INTEGER, rubric_version TEXT, scored_at TEXT NOT NULL,
     time_source TEXT NOT NULL, is_current INTEGER NOT NULL DEFAULT 1,
     total_score INTEGER NOT NULL CHECK (total_score BETWEEN 0 AND 100), band_id TEXT NOT NULL,
@@ -62,28 +64,50 @@ export async function initializeStatistics(
   await database.executeSql(
     'CREATE INDEX IF NOT EXISTS score_records_time ON score_records (scored_at)',
   );
-  // English has a 35-point language dimension, so its dimension values are
-  // stored as JSON instead of being forced into the Chinese fixed columns.
+  // English and high-school Chinese preserve dimensions independently of
+  // admission adjustments; the old Chinese table requires an unadjusted sum.
   await database.executeSql(`CREATE TABLE IF NOT EXISTS writing_score_records (
-    id TEXT PRIMARY KEY NOT NULL, essay_id TEXT NOT NULL, writing_type TEXT NOT NULL,
+    id TEXT PRIMARY KEY NOT NULL, essay_id TEXT NOT NULL, writing_type TEXT NOT NULL, education_level TEXT NOT NULL DEFAULT 'middle',
     run_id TEXT, model TEXT, roundtable_size INTEGER, rubric_version TEXT,
     scored_at TEXT NOT NULL, time_source TEXT NOT NULL, is_current INTEGER NOT NULL DEFAULT 1,
     total_score INTEGER NOT NULL CHECK (total_score BETWEEN 0 AND 100), band_id TEXT NOT NULL,
     dimension_scores_json TEXT NOT NULL, score_json TEXT NOT NULL
   )`);
+  for (const [table, column] of [
+    ['score_records', 'education_level'],
+    ['writing_score_records', 'education_level'],
+  ] as const) {
+    const [tableInfo] = await database.executeSql(`PRAGMA table_info(${table})`);
+    let present = false;
+    for (let i = 0; i < tableInfo.rows.length; i += 1) {
+      present ||= tableInfo.rows.item(i).name === column;
+    }
+    if (!present) {
+      await database.executeSql(
+        `ALTER TABLE ${table} ADD COLUMN ${column} TEXT NOT NULL DEFAULT 'middle'`,
+      );
+    }
+    await database.executeSql(
+      `UPDATE ${table} SET ${column} = 'middle' WHERE ${column} IS NULL OR ${column} = ''`,
+    );
+  }
   await database.executeSql(
     'CREATE INDEX IF NOT EXISTS writing_score_records_essay_time ON writing_score_records (essay_id, scored_at)',
   );
   // One insert atomically saves all numeric scores and the completed essay.
-  await database.executeSql(`CREATE TRIGGER IF NOT EXISTS score_records_publish AFTER INSERT ON score_records BEGIN
+  await database.executeSql('DROP TRIGGER IF EXISTS score_records_publish');
+  await database.executeSql('DROP TRIGGER IF EXISTS writing_score_records_publish');
+  await database.executeSql(`CREATE TRIGGER score_records_publish AFTER INSERT ON score_records BEGIN
     UPDATE score_records SET is_current = 0 WHERE essay_id = NEW.essay_id AND id != NEW.id;
-    UPDATE essays SET score_json = NEW.score_json, status = 'completed', error = '', updated_at = NEW.scored_at WHERE id = NEW.essay_id;
+    UPDATE writing_score_records SET is_current = 0 WHERE essay_id = NEW.essay_id;
+    UPDATE essays SET score_json = NEW.score_json, education_level = NEW.education_level, status = 'completed', error = '', updated_at = NEW.scored_at WHERE id = NEW.essay_id;
   END`);
   await database.executeSql(`CREATE TRIGGER IF NOT EXISTS score_records_invalidate AFTER UPDATE OF score_json ON essays
     WHEN NEW.score_json = '' BEGIN UPDATE score_records SET is_current = 0 WHERE essay_id = NEW.id; END`);
-  await database.executeSql(`CREATE TRIGGER IF NOT EXISTS writing_score_records_publish AFTER INSERT ON writing_score_records BEGIN
+  await database.executeSql(`CREATE TRIGGER writing_score_records_publish AFTER INSERT ON writing_score_records BEGIN
     UPDATE writing_score_records SET is_current = 0 WHERE essay_id = NEW.essay_id AND id != NEW.id;
-    UPDATE essays SET score_json = NEW.score_json, status = 'completed', error = '', updated_at = NEW.scored_at WHERE id = NEW.essay_id;
+    UPDATE score_records SET is_current = 0 WHERE essay_id = NEW.essay_id;
+    UPDATE essays SET score_json = NEW.score_json, education_level = NEW.education_level, status = 'completed', error = '', updated_at = NEW.scored_at WHERE id = NEW.essay_id;
   END`);
   await database.executeSql(`CREATE TRIGGER IF NOT EXISTS writing_score_records_invalidate AFTER UPDATE OF score_json ON essays
     WHEN NEW.score_json = '' BEGIN UPDATE writing_score_records SET is_current = 0 WHERE essay_id = NEW.id; END`);
@@ -126,7 +150,10 @@ export async function initializeStatistics(
       } catch {
         continue;
       }
-      if (!validNumbers(score)) {
+      // Existing installations predate the high-school selector; their saved
+      // scores are middle-school records unless a future migration says otherwise.
+      const level: EducationLevel = 'middle';
+      if (!validNumbers(score, 'chinese', level)) {
         continue;
       }
       // The original model and exact scoring time were not stored in old apps.
@@ -142,6 +169,8 @@ export async function initializeStatistics(
         null,
         null,
         null,
+        'chinese',
+        level,
       );
     }
   }
@@ -153,11 +182,15 @@ export async function initializeStatistics(
 function validNumbers(
   score: ScoreResult,
   writingType: WritingType = 'chinese',
+  educationLevel: EducationLevel = 'middle',
 ) {
-  const rules = getWritingProfile(writingType).rules;
-  const adjustment = writingType === 'english' ? score?.admissionAdjustment ?? 0 : 0;
+  const rules = getWritingProfile(writingType, educationLevel).rules;
+  const adjustment = 'admissionPolicy' in rules.rules
+    ? score?.admissionAdjustment ?? 0
+    : 0;
   return (
     score &&
+    (score.educationLevel === undefined || score.educationLevel === educationLevel) &&
     Number.isInteger(score.score) &&
     score.score >= 0 &&
     score.score <= rules.total &&
@@ -189,21 +222,27 @@ async function insertScore(
   roundtableSize: number | null,
   rubricVersion: string | null,
   writingType: WritingType = 'chinese',
+  educationLevel: EducationLevel = 'middle',
 ) {
   const type = normalizeWritingType(writingType);
-  if (!validNumbers(score, type)) {
+  const level = normalizeEducationLevel(educationLevel);
+  if (!validNumbers(score, type, level)) {
     throw new Error('评分数值无效，不能保存统计记录');
   }
-  if (type !== 'chinese') {
+  const rules = getWritingProfile(type, level).rules;
+  const flexibleRubric =
+    type === 'english' || 'admissionPolicy' in rules.rules;
+  if (flexibleRubric) {
     await database.executeSql(
       `INSERT OR IGNORE INTO writing_score_records
-      (id, essay_id, writing_type, run_id, model, roundtable_size, rubric_version, scored_at, time_source,
+      (id, essay_id, writing_type, education_level, run_id, model, roundtable_size, rubric_version, scored_at, time_source,
        total_score, band_id, dimension_scores_json, score_json)
-      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM essays WHERE id = ?)`,
+      SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM essays WHERE id = ?)`,
       [
         id,
         essayId,
         type,
+        level,
         runId,
         model,
         roundtableSize,
@@ -221,12 +260,13 @@ async function insertScore(
   }
   await database.executeSql(
     `INSERT OR IGNORE INTO score_records
-    (id, essay_id, run_id, model, roundtable_size, rubric_version, scored_at, time_source,
+    (id, essay_id, education_level, run_id, model, roundtable_size, rubric_version, scored_at, time_source,
      total_score, band_id, thesis_score, content_score, structure_score, language_score, format_score, score_json)
-    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM essays WHERE id = ?)`,
+    SELECT ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM essays WHERE id = ?)`,
     [
       id,
       essayId,
+      level,
       runId,
       model,
       roundtableSize,
@@ -250,6 +290,7 @@ export async function storeScore(
   settings: AppSettings,
   rubricVersion: string,
   writingType: WritingType = 'chinese',
+  educationLevel: EducationLevel = 'middle',
 ) {
   await insertScore(
     database,
@@ -263,6 +304,7 @@ export async function storeScore(
     settings.roundtableSize,
     rubricVersion,
     writingType,
+    educationLevel,
   );
 }
 

@@ -1,6 +1,8 @@
 {
   "id": "english-writing-enhanced-100-v1",
   "version": 2,
+  "educationLevel": "middle",
+  "educationLabel": "初中/中考英语",
   "language": "en",
   "total": 100,
   "passingScore": 60,

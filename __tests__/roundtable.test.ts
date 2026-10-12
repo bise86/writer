@@ -74,6 +74,8 @@ test.each([0, 3, 5] as const)(
       source,
       JSON.stringify(draft),
       '',
+      'middle',
+      'essay-lens-enhanced-100-v1:1',
     );
     const [input, instructions] = request.mock.calls[0];
     expect(input).toContain(source);

@@ -1,6 +1,7 @@
 import {ScoreResult} from '../types';
 import {essaySections, sectionLabel} from './essay-text';
 import {getWritingRules} from './writing';
+import {normalizeEducationLevel} from '../settings';
 
 function isObject(value: unknown): value is Record<string, any> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -267,6 +268,8 @@ export function validateScore(
   }
   return {
     score: value.score,
+    educationLevel: normalizeEducationLevel(rules.educationLevel),
+    rubricVersion: `${rules.id}:${rules.version}`,
     ...(adjusted
       ? {
           admissionAdjustment: adjustment,

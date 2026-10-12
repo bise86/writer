@@ -1,8 +1,11 @@
 {
   "id": "essay-lens-enhanced-100-v1",
   "version": 1,
+  "educationLevel": "middle",
+  "educationLabel": "初中/中考训练",
   "total": 100,
   "passingScore": 60,
+  "thirdBandIsExamFullQuality": true,
   "dimensions": [
     {"id": "thesis", "name": "审题与立意", "max": 25},
     {"id": "content", "name": "内容与选材", "max": 25},

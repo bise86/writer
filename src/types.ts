@@ -8,6 +8,7 @@ export type EssayStatus =
   | 'failed';
 
 export type WritingType = 'chinese' | 'english';
+export type EducationLevel = 'middle' | 'high';
 
 export type StepId = 'local_ocr' | 'vision_ocr' | 'reconcile' | 'scoring';
 export type StepStatus = 'pending' | 'running' | 'success' | 'failed';
@@ -20,6 +21,7 @@ export interface AppSettings {
   maxOutputTokens: number;
   retryCount: number;
   roundtableSize: 0 | 3 | 5;
+  educationLevel: EducationLevel;
   apiBaseUrl: string;
   apiKey: string;
 }
@@ -28,6 +30,8 @@ export interface Essay {
   id: string;
   /** Older in-memory/test records omit this and are treated as Chinese. */
   writingType?: WritingType;
+  /** The rubric used by the latest processing run; older rows are middle school. */
+  educationLevel?: EducationLevel;
   title: string;
   imageUri: string;
   imageUris: string[];
@@ -62,7 +66,10 @@ export interface Annotation {
 
 export interface ScoreResult {
   score: number;
-  /** English admission ceilings preserve the actual dimension scores. */
+  /** Assigned by the app from the rubric that validated this result. */
+  educationLevel?: EducationLevel;
+  rubricVersion?: string;
+  /** Admission ceilings preserve the actual dimension scores. */
   admissionAdjustment?: number;
   admissionReason?: string;
   bandId: string;
@@ -95,6 +102,8 @@ export interface ScoreAttempt {
   output: string;
   feedback: string;
   createdAt: string;
+  educationLevel?: EducationLevel;
+  rubricVersion?: string;
 }
 
 export interface TokenUsage {

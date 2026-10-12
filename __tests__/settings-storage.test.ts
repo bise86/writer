@@ -107,6 +107,12 @@ test.each([0, 3, 5] as const)(
   },
 );
 
+test('高中学段保存到 SQLite 并恢复，默认仍为初中', async () => {
+  expect((await database.getSettings()).educationLevel).toBe('middle');
+  await database.saveSettings({...DEFAULT_SETTINGS, educationLevel: 'high'});
+  expect((await database.getSettings()).educationLevel).toBe('high');
+});
+
 test('非法人数不覆盖已保存的圆桌设置', async () => {
   await database.saveSettings({...DEFAULT_SETTINGS, roundtableSize: 5});
   await expect(

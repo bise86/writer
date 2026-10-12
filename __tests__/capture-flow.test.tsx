@@ -147,7 +147,7 @@ test('相册多选逐张进入裁剪，混合原图与裁剪后按顺序入库',
   expect(createEssay).toHaveBeenCalledWith([
     'file:///one.jpg.saved',
     'file:///cropped.saved',
-  ]);
+  ], 'chinese', 'middle');
   expect(runEssayPipeline).toHaveBeenCalledTimes(1);
   expect(discardPreparedImages).not.toHaveBeenCalled();
 });
@@ -209,7 +209,7 @@ test('连续拍照每张进入裁剪，结束拍摄才提交，同一次导入�
   expect(createEssay).toHaveBeenCalledWith([
     'file:///camera1.jpg.saved',
     'file:///camera2.jpg.saved',
-  ]);
+  ], 'chinese', 'middle');
 });
 
 test('数据库保存失败时清理尚未关联的图片副本', async () => {

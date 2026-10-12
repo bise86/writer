@@ -6,6 +6,7 @@ import {validateScore} from '../src/services/score-validation';
 import {getWritingRules} from '../src/services/writing';
 import {scoreMetricsFor, summarizeScores} from '../src/services/reports';
 import {ScoreResult} from '../src/types';
+import highEnglishRules from '../src/assets/high-english-scoring-rules.json';
 
 const feedback = {
   strengths: ['原文有明确信息'],
@@ -69,7 +70,15 @@ test('英语圆桌按任务与交际规则审阅，并说明缺失命题和原�
   const instructions = scoreInstructions(3, 'english');
   expect(instructions).toContain('任务回应与交际效果');
   expect(instructions).toContain('不给通知或邀请函强加主题升华');
-  expect(instructions).toContain('待核题、待核原图，训练预评');
+  expect(instructions).toContain('待核题、待核材料、待核原图，训练预评');
+  expect(instructions).toContain('admissionAdjustment');
+});
+
+test('高中英语提示读取高中规则，并明确读后续写和高中材料限制', () => {
+  const instructions = scoreInstructions(0, 'english', 'high');
+  expect(instructions).toContain(highEnglishRules.id);
+  expect(instructions).toContain('高中/高考强化标准');
+  expect(instructions).toContain('待核题、待核材料、待核原图，训练预评');
   expect(instructions).toContain('admissionAdjustment');
 });
 

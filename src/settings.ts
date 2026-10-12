@@ -1,8 +1,9 @@
-import {AppSettings} from './types';
+import {AppSettings, EducationLevel} from './types';
 
 export const REASONING_LEVELS = ['none', 'low', 'high', 'max'] as const;
 export const OUTPUT_TOKEN_OPTIONS = [4000, 8000, 16000, 32000, 64000] as const;
 export const ROUNDTABLE_OPTIONS = [0, 3, 5] as const;
+export const EDUCATION_LEVELS = ['middle', 'high'] as const;
 
 export const DEFAULT_SETTINGS: AppSettings = {
   modelName: 'deepseek-flash',
@@ -12,6 +13,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   maxOutputTokens: 32000,
   retryCount: 1,
   roundtableSize: 0,
+  educationLevel: 'middle',
   apiBaseUrl: 'https://api.deepseek.com',
   // Credentials belong to the device owner and must never be shipped in the
   // app bundle or source repository.
@@ -25,6 +27,10 @@ export function normalizeReasoningEffort(
     REASONING_LEVELS.find(level => level === value) ??
     DEFAULT_SETTINGS.reasoningEffort
   );
+}
+
+export function normalizeEducationLevel(value: unknown): EducationLevel {
+  return value === 'high' ? 'high' : 'middle';
 }
 
 /** TextInput values can be strings at runtime. Validate before saving or calling
@@ -43,6 +49,12 @@ export function validateSettings(settings: AppSettings): AppSettings {
   const contextWindow = integer(settings.contextWindow, '上下文大小', 1024);
   const maxOutputTokens = integer(settings.maxOutputTokens, '输出长度', 1);
   const retryCount = integer(settings.retryCount, '重试次数', 0);
+  if (
+    settings.educationLevel !== undefined &&
+    !EDUCATION_LEVELS.some(level => level === settings.educationLevel)
+  ) {
+    throw new Error('评分学段只能为初中或高中');
+  }
   const roundtableSize = integer(
     settings.roundtableSize ?? 0,
     '圆桌评审人数',
@@ -86,6 +98,7 @@ export function validateSettings(settings: AppSettings): AppSettings {
     maxOutputTokens,
     retryCount,
     roundtableSize: roundtableSize as AppSettings['roundtableSize'],
+    educationLevel: normalizeEducationLevel(settings.educationLevel),
     compactionThreshold,
     reasoningEffort: normalizeReasoningEffort(settings.reasoningEffort),
   };

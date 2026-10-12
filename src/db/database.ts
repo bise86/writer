@@ -9,6 +9,7 @@ import {
   StepStatus,
   ModelCall,
   ScoreResult,
+  EducationLevel,
   WritingType,
 } from '../types';
 import {
@@ -23,6 +24,7 @@ import {recognizedTitle} from '../services/essay-text';
 import {
   DEFAULT_SETTINGS,
   legacyDefaultChanges,
+  normalizeEducationLevel,
   normalizeReasoningEffort,
   ROUNDTABLE_OPTIONS,
   validateSettings,
@@ -52,6 +54,7 @@ async function initializeDatabase() {
       CREATE TABLE IF NOT EXISTS essays (
         id TEXT PRIMARY KEY NOT NULL,
         writing_type TEXT NOT NULL DEFAULT 'chinese',
+        education_level TEXT NOT NULL DEFAULT 'middle',
         title TEXT NOT NULL DEFAULT '',
         image_uri TEXT NOT NULL,
         image_uris TEXT NOT NULL DEFAULT '[]',
@@ -162,8 +165,21 @@ async function initializeDatabase() {
     source_text TEXT NOT NULL,
     output TEXT NOT NULL,
     feedback TEXT NOT NULL,
+    education_level TEXT NOT NULL DEFAULT 'middle',
+    rubric_version TEXT NOT NULL DEFAULT '',
     created_at TEXT NOT NULL
   )`);
+  const [attemptColumns] = await database.executeSql('PRAGMA table_info(score_attempts)');
+  const existingAttemptColumns = new Set<string>();
+  for (let i = 0; i < attemptColumns.rows.length; i += 1) {
+    existingAttemptColumns.add(attemptColumns.rows.item(i).name);
+  }
+  if (!existingAttemptColumns.has('education_level')) {
+    await database.executeSql("ALTER TABLE score_attempts ADD COLUMN education_level TEXT NOT NULL DEFAULT 'middle'");
+  }
+  if (!existingAttemptColumns.has('rubric_version')) {
+    await database.executeSql("ALTER TABLE score_attempts ADD COLUMN rubric_version TEXT NOT NULL DEFAULT ''");
+  }
   // Per-role orchestration is replaced by one model-led grading request.
   // Only the obsolete intermediate cache is removed; essays and scores stay intact.
   await database.executeSql('DROP TABLE IF EXISTS roundtable_sessions');
@@ -182,10 +198,6 @@ async function initializeDatabase() {
       [key, String(value)],
     );
   }
-  await initializeStatistics(database, version.rows.item(0).user_version < 6);
-  if (version.rows.item(0).user_version < 6) {
-    await database.executeSql('PRAGMA user_version = 6');
-  }
   // The writing type column is migrated by inspecting the live table instead
   // of bumping the historical schema version, so older clients that expect
   // version 6 remain compatible while the operation stays idempotent.
@@ -203,6 +215,23 @@ async function initializeDatabase() {
     await database.executeSql(
       "UPDATE essays SET writing_type = 'chinese' WHERE writing_type IS NULL OR writing_type = ''",
     );
+    let hasEducationLevel = false;
+    for (let i = 0; i < columns.rows.length; i += 1) {
+      hasEducationLevel ||= columns.rows.item(i).name === 'education_level';
+    }
+    if (!hasEducationLevel) {
+      await database.executeSql(
+        "ALTER TABLE essays ADD COLUMN education_level TEXT NOT NULL DEFAULT 'middle'",
+      );
+    }
+    await database.executeSql(
+      "UPDATE essays SET education_level = 'middle' WHERE education_level IS NULL OR education_level = ''",
+    );
+  }
+  // Statistics publication writes the essay's level, so migrate that column first.
+  await initializeStatistics(database, version.rows.item(0).user_version < 6);
+  if (version.rows.item(0).user_version < 6) {
+    await database.executeSql('PRAGMA user_version = 6');
   }
   // Initialization runs once before the app starts any pipeline. Native process
   // termination leaves stored progress behind, but no request is still running.
@@ -247,6 +276,7 @@ function row<T>(result: ResultSet, index = 0): T | undefined {
 export async function createEssay(
   imageInput: string | string[],
   writingType: WritingType = 'chinese',
+  educationLevel: EducationLevel = 'middle',
 ): Promise<Essay> {
   const database = await db();
   const imageUris = (
@@ -259,10 +289,11 @@ export async function createEssay(
   const now = new Date().toISOString();
   const id = `essay_${Date.now()}_${Math.random().toString(36).slice(2, 8)}`;
   await database.executeSql(
-    'INSERT INTO essays (id, writing_type, image_uri, image_uris, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?)',
+    'INSERT INTO essays (id, writing_type, education_level, image_uri, image_uris, status, created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?)',
     [
       id,
       normalizeWritingType(writingType),
+      normalizeEducationLevel(educationLevel),
       imageUri,
       JSON.stringify(imageUris),
       'queued',
@@ -275,6 +306,7 @@ export async function createEssay(
   return {
     id,
     writingType: normalizeWritingType(writingType),
+    educationLevel: normalizeEducationLevel(educationLevel),
     title: '',
     imageUri,
     imageUris,
@@ -303,6 +335,7 @@ export async function getEssay(id: string): Promise<Essay | undefined> {
   return {
     id: value.id,
     writingType: normalizeWritingType(value.writing_type),
+    educationLevel: normalizeEducationLevel(value.education_level),
     title:
       value.canonical_text || value.vision_ocr
         ? recognizedTitle(value.canonical_text || value.vision_ocr)
@@ -332,6 +365,7 @@ export async function listEssays(): Promise<Essay[]> {
     values.push({
       id: value.id,
       writingType: normalizeWritingType(value.writing_type),
+      educationLevel: normalizeEducationLevel(value.education_level),
       title:
         value.canonical_text || value.vision_ocr
           ? recognizedTitle(value.canonical_text || value.vision_ocr)
@@ -360,6 +394,7 @@ export async function updateEssay(
   const columns: Record<string, string> = {
     title: 'title',
     imageUri: 'image_uri',
+    educationLevel: 'education_level',
     localOcr: 'local_ocr',
     visionOcr: 'vision_ocr',
     canonicalText: 'canonical_text',
@@ -566,6 +601,7 @@ export async function getSettings(): Promise<AppSettings> {
     roundtableSize:
       ROUNDTABLE_OPTIONS.find(size => size === Number(values.roundtableSize)) ??
       0,
+    educationLevel: normalizeEducationLevel(values.educationLevel),
     apiBaseUrl: values.apiBaseUrl || DEFAULT_SETTINGS.apiBaseUrl,
     apiKey: values.apiKey || '',
   };
@@ -603,8 +639,9 @@ export async function getEssayUsage(essayId: string) {
 export async function getScoreReport(
   range: ReportRange,
   writingType?: WritingType,
+  educationLevel?: EducationLevel,
 ) {
-  return readScoreReport(await db(), range, writingType);
+  return readScoreReport(await db(), range, writingType, educationLevel);
 }
 
 export async function saveEssayScore(
@@ -613,17 +650,20 @@ export async function saveEssayScore(
   score: ScoreResult,
   settings: AppSettings,
   writingType: WritingType = 'chinese',
+  educationLevel: EducationLevel = normalizeEducationLevel(settings.educationLevel),
 ) {
+  const level = normalizeEducationLevel(educationLevel);
   await storeScore(
     await db(),
     essayId,
     runId,
     score,
     settings,
-    `${getWritingProfile(writingType).rules.id}:${
-      getWritingProfile(writingType).rules.version
+    `${getWritingProfile(writingType, level).rules.id}:${
+      getWritingProfile(writingType, level).rules.version
     }`,
     normalizeWritingType(writingType),
+    level,
   );
 }
 
@@ -645,6 +685,8 @@ export async function getScoreAttempts(
       output: item.output,
       feedback: item.feedback,
       createdAt: item.created_at,
+      educationLevel: normalizeEducationLevel(item.education_level),
+      rubricVersion: item.rubric_version || '',
     });
   }
   return attempts;
@@ -655,10 +697,12 @@ export async function saveScoreAttempt(
   sourceText: string,
   output: string,
   feedback: string,
+  educationLevel: EducationLevel = 'middle',
+  rubricVersion = '',
 ) {
   const database = await db();
   await database.executeSql(
-    'INSERT INTO score_attempts (essay_id, source_text, output, feedback, created_at) SELECT ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM essays WHERE id = ?)',
-    [essayId, sourceText, output, feedback, new Date().toISOString(), essayId],
+    'INSERT INTO score_attempts (essay_id, source_text, output, feedback, created_at, education_level, rubric_version) SELECT ?, ?, ?, ?, ?, ?, ? WHERE EXISTS (SELECT 1 FROM essays WHERE id = ?)',
+    [essayId, sourceText, output, feedback, new Date().toISOString(), educationLevel, rubricVersion, essayId],
   );
 }

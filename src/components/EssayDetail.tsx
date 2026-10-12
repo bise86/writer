@@ -74,7 +74,10 @@ export default function EssayDetail({
   onRetry: () => void;
   onRecognize: () => void;
 }) {
-  const profile = getWritingProfile(normalizeWritingType(essay.writingType));
+  const profile = getWritingProfile(
+    normalizeWritingType(essay.writingType),
+    essay.educationLevel,
+  );
   const dimensions = profile.rules.dimensions;
   const [steps, setSteps] = useState<PipelineStep[]>([]);
   const [stepError, setStepError] = useState('');
@@ -319,9 +322,9 @@ export default function EssayDetail({
                 <Text style={styles.band}>
                   {score.bandName || score.bandId}
                 </Text>
-                {profile.type === 'english' && (
+                {profile.rules.rules.materialPolicy && (
                   <Text style={styles.muted}>
-                    待核题、待核原图：当前评分依据复核文本，任务完成度和书写需另行核对。
+                    待核题、待核材料、待核原图：当前评分依据复核文本，{profile.educationLabel}任务完成度和书写需另行核对。
                   </Text>
                 )}
                 {!!score.admissionAdjustment && (

@@ -33,6 +33,7 @@ import {
   OUTPUT_TOKEN_OPTIONS,
   REASONING_LEVELS,
   ROUNDTABLE_OPTIONS,
+  EDUCATION_LEVELS,
   validateSettings,
 } from './src/settings';
 import {
@@ -390,6 +391,22 @@ function Settings({
           </Pressable>
           <Text style={styles.headerTitle}>系统设置</Text>
         </View>
+        <View style={styles.field}>
+          <Text style={styles.fieldLabel}>评分学段</Text>
+          <Text style={styles.muted}>
+            默认初中。高中版会使用更高的思辨、材料分析、文体和语言控制要求；切换后新作文和重新评分使用所选版本。
+          </Text>
+          <View style={styles.actionRow}>
+            {EDUCATION_LEVELS.map(level => (
+              <Button
+                key={level}
+                title={level === 'middle' ? '初中' : '高中'}
+                secondary={settings.educationLevel !== level}
+                onPress={() => setSettings({...settings, educationLevel: level})}
+              />
+            ))}
+          </View>
+        </View>
         {field('apiBaseUrl', 'API 地址')}
         {field('apiKey', 'Token（API Key）')}
         {field('modelName', '模型名称')}
@@ -722,10 +739,11 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       if (!imageUris.length) {
         return;
       }
-      const essay =
-        writingType === 'chinese'
-          ? await createEssay(imageUris)
-          : await createEssay(imageUris, writingType);
+      const essay = await createEssay(
+        imageUris,
+        writingType,
+        settings.educationLevel,
+      );
       committed = true;
       setSelected(essay);
       setDetailOrigin('home');
@@ -804,6 +822,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     return (
       <Reports
         writingType={writingType}
+        educationLevel={settings.educationLevel}
         initialRange={reportRange}
         onRangeChange={setReportRange}
         onBack={() => {
