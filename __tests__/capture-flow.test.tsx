@@ -76,6 +76,7 @@ beforeEach(async () => {
   await act(async () => {
     view = create(<App />);
   });
+  press('作文批改');
 });
 
 test('入库后的列表刷新失败仍启动批改，不删除已归属作文的图片', async () => {

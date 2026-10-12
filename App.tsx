@@ -80,12 +80,12 @@ function Card({children, style}: {children: React.ReactNode; style?: any}) {
   return <View style={[styles.card, style]}>{children}</View>;
 }
 
-function Home({
+function WritingHome({
   essays,
   writingType,
   onCapture,
   onOpen,
-  onSelectType,
+  onBack,
   onSettings,
   onManage,
   onReports,
@@ -95,7 +95,7 @@ function Home({
   writingType: WritingType;
   onCapture: (camera: boolean) => void;
   onOpen: (id: string) => void;
-  onSelectType: (type: WritingType) => void;
+  onBack: () => void;
   onSettings: () => void;
   onManage: () => void;
   onReports: () => void;
@@ -105,6 +105,9 @@ function Home({
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
+        <Pressable onPress={onBack} accessibilityRole="button">
+          <Text style={styles.back}>‹ 返回首页</Text>
+        </Pressable>
         <View style={styles.header}>
           <View>
             <Text style={styles.eyebrow}>ESSAY LENS</Text>
@@ -126,7 +129,6 @@ function Home({
           </View>
         </View>
         <Text style={styles.subtitle}>{profile.subtitle}</Text>
-        <WritingModeChooser active={writingType} onSelect={onSelectType} />
         <Card style={styles.captureCard}>
           <Text style={styles.captureTitle}>开始一次批改</Text>
           <Text style={styles.muted}>{profile.captureHint}</Text>
@@ -374,7 +376,7 @@ function Settings({
         autoCapitalize="none"
         autoCorrect={false}
         keyboardType={keyboardType}
-        secureTextEntry={key === 'apiKey'}
+        secureTextEntry={false}
         value={String(settings[key])}
         onChangeText={text => setSettings({...settings, [key]: text})}
         style={styles.input}
@@ -583,8 +585,8 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     resolve: (uri?: string) => void;
   }>();
   const [screen, setScreen] = useState<
-    'home' | 'detail' | 'settings' | 'manage' | 'reports'
-  >('home');
+    'landing' | 'home' | 'detail' | 'settings' | 'manage' | 'reports'
+  >('landing');
 
   const refresh = async () => setEssays(await listEssays());
   const reloadEssay = async (
@@ -791,6 +793,21 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       />
     );
   }
+  if (screen === 'landing') {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <View style={styles.landing}>
+          <WritingModeChooser
+            onSelect={type => {
+              navigationRequest.current += 1;
+              setWritingType(type);
+              setScreen('home');
+            }}
+          />
+        </View>
+      </SafeAreaView>
+    );
+  }
   if (screen === 'settings') {
     return (
       <Settings
@@ -883,16 +900,16 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     );
   }
   return (
-    <Home
+    <WritingHome
       writingType={writingType}
       essays={essays.filter(
         item => normalizeWritingType(item.writingType) === writingType,
       )}
       capturing={capturing}
       onCapture={capture}
-      onSelectType={type => {
-        setWritingType(type);
-        setScreen('home');
+      onBack={() => {
+        navigationRequest.current += 1;
+        setScreen('landing');
       }}
       onOpen={async id => {
         setSelected(await getEssay(id));
@@ -911,6 +928,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
 
 const styles = StyleSheet.create({
   safe: {flex: 1, backgroundColor: '#f7f8fc'},
+  landing: {flex: 1, justifyContent: 'center', padding: 24},
   container: {padding: 20, paddingBottom: 48},
   header: {
     flexDirection: 'row',

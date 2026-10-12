@@ -2,12 +2,13 @@ import {
   getEssay,
   getSettings,
   getSteps,
+  getLatestEssayScore,
   updateEssay,
   updateStep,
   saveModelCall,
   saveEssayScore,
 } from '../db/database';
-import {Essay, StepId} from '../types';
+import {EducationLevel, Essay, ScoreResult, StepId, WritingType} from '../types';
 import {cloudOcr, reconcileOcr} from './ocr';
 import {RequestProgress} from './context';
 import {scoreEssay} from './scoring';
@@ -15,6 +16,7 @@ import {recognizedTitle} from './essay-text';
 import {newRecordId} from './usage';
 import {normalizeWritingType} from './writing';
 import {normalizeEducationLevel} from '../settings';
+import {getWritingProfile} from './writing';
 
 export {scoreEssay} from './scoring';
 
@@ -45,6 +47,60 @@ async function step<T>(
     onProgress?.(id, message);
     throw new Error(`${id}: ${message}`);
   }
+}
+
+export function capHighScoreToMiddle(
+  score: ScoreResult,
+  middleScore: number,
+  educationLevel: EducationLevel,
+  writingType: WritingType,
+) {
+  if (educationLevel !== 'high' || score.score <= middleScore) {
+    return score;
+  }
+  const rules = getWritingProfile(writingType, 'high').rules;
+  const total = rules.dimensions.reduce(
+    (sum, item) => sum + (score.dimensionScores[item.id] || 0),
+    0,
+  );
+  const candidates = rules.bands
+    .filter(band => middleScore >= band.min && middleScore <= band.max)
+    .filter(band =>
+      Object.entries(band.floor).every(
+        ([key, minimum]) => (score.dimensionScores[key] || 0) >= minimum,
+      ),
+    )
+    .sort((a, b) => b.min - a.min);
+  const band = candidates[0] ||
+    rules.bands
+      .filter(candidate => candidate.max <= middleScore)
+      .filter(candidate =>
+        Object.entries(candidate.floor).every(
+          ([key, minimum]) => (score.dimensionScores[key] || 0) >= minimum,
+        ),
+      )
+      .sort((a, b) => b.max - a.max)[0];
+  if (!band && middleScore < rules.passingScore) {
+    return {
+      ...score,
+      score: middleScore,
+      admissionAdjustment: total - middleScore,
+      admissionReason: '同一篇作文已有初中评分，高中复评不得高于初中结果；按高中规则封顶。',
+      bandId: 'unqualified',
+      bandName: '未达强化及格',
+    };
+  }
+  if (!band) {
+    return score;
+  }
+  return {
+    ...score,
+    score: middleScore,
+    admissionAdjustment: total - middleScore,
+    admissionReason: '同一篇作文已有初中评分，高中复评不得高于初中结果；按高中规则封顶。',
+    bandId: band.id,
+    bandName: band.name,
+  };
 }
 
 export async function runEssayPipeline(
@@ -132,7 +188,7 @@ export async function runEssayPipeline(
     }
 
     await updateEssay(essay.id, {status: 'scoring'});
-    const score = await step(essay.id, 'scoring', onProgress, report =>
+    let score = await step(essay.id, 'scoring', onProgress, report =>
       scoreEssay(canonicalText, settings, {
         writingType,
         educationLevel,
@@ -141,6 +197,17 @@ export async function runEssayPipeline(
         onCall: usage('scoring'),
       }),
     );
+    if (educationLevel === 'high') {
+      const middle = await getLatestEssayScore(essay.id, 'middle');
+      if (middle) {
+        score = capHighScoreToMiddle(
+          score,
+          middle.score,
+          educationLevel,
+          writingType,
+        );
+      }
+    }
     await saveEssayScore(
       essay.id,
       runId,

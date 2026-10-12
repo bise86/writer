@@ -8,6 +8,7 @@ import {
 } from '../src/db/database';
 import {cloudOcr, reconcileOcr} from '../src/services/ocr';
 import {
+  capHighScoreToMiddle,
   retryEssay,
   runEssayPipeline,
   scoreEssay,
@@ -28,6 +29,7 @@ jest.mock('../src/db/database', () => ({
   getEssay: jest.fn(),
   getSettings: jest.fn(),
   getSteps: jest.fn(),
+  getLatestEssayScore: jest.fn(),
   getScoreAttempts: jest.fn(),
   saveScoreAttempt: jest.fn(),
   saveModelCall: jest.fn(),
@@ -135,6 +137,7 @@ beforeEach(() => {
     ...DEFAULT_SETTINGS,
     apiKey: 'test-key',
   });
+  (require('../src/db/database').getLatestEssayScore as jest.Mock).mockResolvedValue(undefined);
   (getEssay as jest.Mock).mockImplementation(async () => ({...essay}));
   (getSteps as jest.Mock).mockImplementation(async () =>
     steps.map(item => ({...item})),
@@ -185,6 +188,27 @@ test('有效评分按原文定位批注并持久化', async () => {
     '雨中',
   );
   expect(steps.every(item => item.status === 'success')).toBe(true);
+});
+
+test('高中复评不得高于同一篇作文已有的初中结果，并保留高中真实分项', () => {
+  const high = {
+    ...validScore,
+    score: 82,
+    bandId: 'high',
+    dimensionScores: {
+      thesis: 20,
+      content: 20,
+      structure: 16,
+      language: 18,
+      format: 8,
+    },
+  };
+  const capped = capHighScoreToMiddle(high, 61, 'high', 'chinese');
+  expect(capped.score).toBe(61);
+  expect(capped.dimensionScores).toEqual(high.dimensionScores);
+  expect(capped.admissionAdjustment).toBe(21);
+  expect(capped.admissionReason).toContain('不得高于初中结果');
+  expect(capped.bandId).toBe('pass');
 });
 
 test('多页识别、网络重试、复核和评分纠错的实际调用都按阶段累计，重新评分不覆盖', async () => {
