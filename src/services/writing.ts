@@ -12,6 +12,13 @@ export interface ScoringRules {
   passingScore: number;
   dimensions: {id: string; name: string; max: number}[];
   bands: {id: string; name: string; min: number; max: number; floor: Record<string, number>}[];
+  highSchoolCapabilities?: {
+    id: string;
+    name: string;
+    dimension: string;
+    minimumBand: string;
+    evidence: string;
+  }[];
   rules: {
     techniquePolicy: string;
     ceiling: {max: number; when: string}[];
@@ -20,6 +27,7 @@ export interface ScoringRules {
     materialPolicy?: string;
     languagePolicy?: string;
     crossLevelPolicy?: string;
+    quantitativePolicy?: string;
   };
   outputSchema: Record<string, string>;
 }

@@ -21,10 +21,25 @@ export function scoreInstructions(
     profile.type === 'english'
       ? '全面审阅任务回应与交际效果、内容展开与思考、结构组织与衔接、语言准确与表现力、书写与表达规范；按实际功能检查读者意识、要点核对、理由与细节、指代、时态、搭配和校订等英语写作技法，不给通知或邀请函强加主题升华'
       : '全面审阅立意与主题深化、材料与细节、结构与照应、语言表现与规范，以及叙述、描写、修辞、抒情等常见写作技法的实际效果';
+  const capabilityReview =
+    profile.educationLevel === 'high' && rules.highSchoolCapabilities?.length
+      ? `高中新增能力方向（必须逐项寻找原文证据，不能用总体印象替代）：${rules.highSchoolCapabilities
+          .map(
+            capability =>
+              `${capability.name}（${capability.dimension}，${capability.minimumBand}档起：${capability.evidence}）`,
+          )
+          .join('；')}`
+      : '';
+  const quantitativeReview =
+    profile.educationLevel === 'high' && rules.rules.quantitativePolicy
+      ? `高中量化执行：${rules.rules.quantitativePolicy}`
+      : '';
   const levelReview =
     profile.educationLevel === 'high'
-      ? `本次按高中/高考强化标准评分，第三档对应高中或高考作文的高位满分质量，必须检查独立判断、复杂关系、材料分析、文体意识和表达控制。高中复评不是把初中结果机械上调或换算；只依据原文中可核验的高中层级证据评分。若原文没有足以支持高中档次的独立证据，应保持或降低相应水平，不能为了体现学段差异而加分，也不能用其他学段的分数替代本规则的判断。${
+      ? `本次只按高中/高考强化标准独立评分，第三档对应高中或高考作文的高位满分质量，必须检查独立判断、复杂关系、材料分析、文体意识、读者意识和表达控制。不能读取、换算或沿用其他学段的分数；每个分项都要以本篇原文的高中层级证据为依据。${
           rules.rules.crossLevelPolicy ? ` ${rules.rules.crossLevelPolicy}` : ''
+        }${capabilityReview ? ` ${capabilityReview}` : ''}${
+          quantitativeReview ? ` ${quantitativeReview}` : ''
         }`
       : '本次按初中/中考强化标准评分，第三档对应初中或中考作文的高位满分质量。';
   const review =

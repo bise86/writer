@@ -1,6 +1,6 @@
 {
-  "id": "essay-lens-high-school-enhanced-100-v1",
-  "version": 1,
+  "id": "essay-lens-high-school-enhanced-100-v2",
+  "version": 2,
   "total": 100,
   "passingScore": 60,
   "dimensions": [
@@ -51,13 +51,13 @@
       "min": 70,
       "max": 79,
       "floor": {
-        "thesis": 18,
-        "content": 17,
-        "structure": 14,
-        "language": 16,
-        "format": 7
+        "thesis": 19,
+        "content": 18,
+        "structure": 15,
+        "language": 17,
+        "format": 8
       },
-      "quality": "观点明确且有展开，材料与观点相互支撑，结构有主动安排，语言稳定；仍可在思辨层次、论证密度或表达精度上提升。"
+      "quality": "达到 70—79 分必须同时具备概念界定或关系处理、独立判断、材料分析、文体结构和语言控制的原文证据；只有观点明确、材料有一些展开或语言通顺，仍属于 60—69 分。"
     },
     {
       "id": "high",
@@ -65,13 +65,13 @@
       "min": 80,
       "max": 89,
       "floor": {
-        "thesis": 20,
-        "content": 20,
-        "structure": 16,
+        "thesis": 21,
+        "content": 21,
+        "structure": 17,
         "language": 18,
         "format": 8
       },
-      "quality": "对应高中作文和高考作文应有的高位满分质量：精准回应任务，观点有层次，材料具体有效，分析关系成立，结构严密自然，语言准确、凝练、得体并有持续表现力。"
+      "quality": "对应高中作文和高考作文应有的高位满分质量：精准回应任务，处理复杂关系，形成观点—依据—分析—结论链，材料具体有效，结构严密自然，语言准确、凝练、得体并有持续表现力。"
     },
     {
       "id": "excellent",
@@ -79,8 +79,8 @@
       "min": 90,
       "max": 96,
       "floor": {
-        "thesis": 22,
-        "content": 22,
+        "thesis": 23,
+        "content": 23,
         "structure": 18,
         "language": 19,
         "format": 9
@@ -102,8 +102,60 @@
       "quality": "观点、材料、结构和语言高度统一，具有示范性；100分须五项满分，全文没有有证据支持的实质扣分点。"
     }
   ],
+  "highSchoolCapabilities": [
+    {
+      "id": "concept_boundary",
+      "name": "概念界定与关系处理",
+      "dimension": "thesis",
+      "minimumBand": "good",
+      "evidence": "解释关键词的范围和限制，处理因果、转折、条件、比较或张力关系，不能只给单一口号。"
+    },
+    {
+      "id": "independent_judgment",
+      "name": "独立判断与价值分寸",
+      "dimension": "thesis",
+      "minimumBand": "good",
+      "evidence": "有由文本或材料推出的个人判断，能说明适用条件、边界或代价，不套用空泛正确话。"
+    },
+    {
+      "id": "material_analysis",
+      "name": "材料取舍与分析",
+      "dimension": "content",
+      "minimumBand": "good",
+      "evidence": "事实、细节或材料与观点形成证据链，材料之后有解释，能说明为何支持中心。"
+    },
+    {
+      "id": "argument_chain",
+      "name": "论证链与认识推进",
+      "dimension": "content",
+      "minimumBand": "high",
+      "evidence": "区分观点、依据、分析和结论，或让事件细节推动人物认识变化，不能靠名言、排比或叙述数量充当论证。"
+    },
+    {
+      "id": "genre_control",
+      "name": "文体意识与结构控制",
+      "dimension": "structure",
+      "minimumBand": "good",
+      "evidence": "段落功能、详略、叙议比例和收束服务于文体与中心，结构不能依赖模板拼接。"
+    },
+    {
+      "id": "boundary_reflection",
+      "name": "反思、边界与行动",
+      "dimension": "thesis",
+      "minimumBand": "excellent",
+      "evidence": "能从判断继续推进到条件、反思、边界或有依据的行动，结尾口号不能替代这一层推进。"
+    },
+    {
+      "id": "controlled_expression",
+      "name": "语言控制与个人表达",
+      "dimension": "language",
+      "minimumBand": "good",
+      "evidence": "语言准确、凝练、得体，句式节奏和修辞改善意义；复杂句、生僻词和名言用错时必须扣分。"
+    }
+  ],
   "rules": {
-    "crossLevelPolicy": "高中复评不是把初中结果机械上调或换算；只依据本篇文字中可核验的高中层级证据评分。若同一篇文字没有新增的独立判断、复杂关系、材料分析、文体意识和语言控制证据，不得因切换学段而提高档次或分数；证据不足时应保持或降低相应水平。不得读取其他学段分数替代本规则的判断。",
+    "crossLevelPolicy": "本规则独立评阅本篇文字，只依据高中层级的可核验证据；不读取、不换算或沿用其他学段的分数。高中档次由本规则的能力方向、分项底线、量化流程和准入条件共同决定。",
+    "quantitativePolicy": "先按五个分项分别给出整数，再求五项实际分数 R，最后依据文字准入条件确定 S；不能先凭整体印象定总分。60—69 只能表示基本完成且仍缺少高中能力；70—79 必须同时达到本档五项底线，并具备概念关系、独立判断、材料分析、文体控制和语言控制中的完整证据；80—89 还必须形成稳定的高中/高考高位质量；90 分以上必须处理复杂关系、边界和表达精修。任一关键高中能力缺失时，最高档次应按相应封顶条款下调。",
     "admissionPolicy": "五项实际得分之和为R；从第五档向第一档核对文字准入条件和分项底线，确定最高可入档上限C，未达第一档时C为59。最终总分S=min(R,C)，admissionAdjustment=R-S；保留真实分项，不因封顶重复扣分。",
     "materialPolicy": "评分请求只含识别后的作文文字，没有原始命题时，任务回应、审题和格式只能作训练预评；不能臆造命题要求、文体限制、字数或卷面证据，summary必须说明待核材料。",
     "themeDeepening": "主题必须由材料和分析自然推出，体现从现象到关系、从经验到判断、从判断到边界或行动的推进；结尾口号不能替代思考。",
@@ -117,7 +169,7 @@
       },
       {
         "max": 69,
-        "when": "有观点但论证空泛，材料不能支持判断，结构松散，语言错误反复或主要内容靠套话。"
+        "when": "只有初中式的完整、清楚、通顺和一般展开，缺少概念关系、独立判断、材料分析、文体控制或语言控制中的关键高中证据。"
       },
       {
         "max": 79,
