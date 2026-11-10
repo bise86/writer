@@ -404,7 +404,9 @@ function Settings({
                 key={level}
                 title={level === 'middle' ? '初中' : '高中'}
                 secondary={settings.educationLevel !== level}
-                onPress={() => setSettings({...settings, educationLevel: level})}
+                onPress={() =>
+                  setSettings({...settings, educationLevel: level})
+                }
               />
             ))}
           </View>
@@ -440,10 +442,9 @@ function Settings({
         </View>
         {field('retryCount', '失败重试次数（0 表示不重试）', 'numeric')}
         <View style={styles.field}>
-          <Text style={styles.fieldLabel}>评分与批注圆桌评审</Text>
+          <Text style={styles.fieldLabel}>圆桌评审角色数量</Text>
           <Text style={styles.muted}>
-            默认关闭。选择 3 或 5
-            后，提示模型按相应角色数量进行圆桌讨论和投票，统一生成最终评分与批注。角色分工、会议讨论和结果修订均由模型完成。
+            作文批改按所选人数讨论后生成评分与批注；挑战新卷由相同人数按规则评审，有问题自动修订并由全部角色重审，通过后才生成PDF。0关闭圆桌，挑战仍保留基础综合校核。
           </Text>
           <View style={styles.actionRow}>
             {ROUNDTABLE_OPTIONS.map(size => (
@@ -585,8 +586,18 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     resolve: (uri?: string) => void;
   }>();
   const [screen, setScreen] = useState<
-    'landing' | 'home' | 'detail' | 'settings' | 'manage' | 'reports'
+    | 'landing'
+    | 'home'
+    | 'detail'
+    | 'settings'
+    | 'manage'
+    | 'reports'
+    | 'challenge'
   >('landing');
+  const [settingsOrigin, setSettingsOrigin] = useState<'home' | 'challenge'>(
+    'home',
+  );
+  const [challengeId, setChallengeId] = useState<string>();
 
   const refresh = async () => setEssays(await listEssays());
   const reloadEssay = async (
@@ -751,9 +762,14 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       setDetailOrigin('home');
       setScreen('detail');
       // Start the saved essay even if the following list refresh fails.
-      runEssayPipeline(essay).then(refresh, refresh).catch(error =>
-        Alert.alert('无法刷新作文列表', error instanceof Error ? error.message : String(error)),
-      );
+      runEssayPipeline(essay)
+        .then(refresh, refresh)
+        .catch(error =>
+          Alert.alert(
+            '无法刷新作文列表',
+            error instanceof Error ? error.message : String(error),
+          ),
+        );
       await refresh();
     } catch (error) {
       Alert.alert(
@@ -798,6 +814,10 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       <SafeAreaView style={styles.safe}>
         <ScrollView contentContainerStyle={styles.landing}>
           <WritingModeChooser
+            onChallenge={() => {
+              navigationRequest.current += 1;
+              setScreen('challenge');
+            }}
             onSelect={type => {
               navigationRequest.current += 1;
               setWritingType(type);
@@ -806,6 +826,29 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
           />
         </ScrollView>
       </SafeAreaView>
+    );
+  }
+  if (screen === 'challenge') {
+    // Keep the existing writing startup independent of PDF and challenge modules.
+    const ChallengeScreen = require('./src/components/ChallengeScreen')
+      .default as React.ComponentType<{
+      settings: AppSettings;
+      onBack: () => void;
+      onSettings: () => void;
+      initialChallengeId?: string;
+      onSelectionChange?: (id?: string) => void;
+    }>;
+    return (
+      <ChallengeScreen
+        settings={settings}
+        initialChallengeId={challengeId}
+        onSelectionChange={setChallengeId}
+        onBack={() => setScreen('landing')}
+        onSettings={() => {
+          setSettingsOrigin('challenge');
+          setScreen('settings');
+        }}
+      />
     );
   }
   if (screen === 'settings') {
@@ -817,7 +860,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
           setSettings(value);
         }}
         onClear={clearLogsAndCache}
-        onBack={() => setScreen('home')}
+        onBack={() => setScreen(settingsOrigin)}
       />
     );
   }
@@ -916,7 +959,10 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
         setDetailOrigin('home');
         setScreen('detail');
       }}
-      onSettings={() => setScreen('settings')}
+      onSettings={() => {
+        setSettingsOrigin('home');
+        setScreen('settings');
+      }}
       onManage={() => setScreen('manage')}
       onReports={() => {
         setReportRange(recentMonth());

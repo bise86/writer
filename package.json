@@ -8,8 +8,12 @@
     "harmony": "node scripts/bundle-harmony.js",
     "lint": "eslint .",
     "start": "react-native start",
+    "pretest": "npm run check:challenge-rules",
     "test": "jest",
+    "pretypecheck": "npm run check:challenge-rules",
     "typecheck": "tsc --noEmit",
+    "sync:challenge-rules": "node scripts/sync-challenge-rules.js",
+    "check:challenge-rules": "node scripts/sync-challenge-rules.js --check",
     "postinstall": "node scripts/patch-harmony-pdf.js"
   },
   "dependencies": {

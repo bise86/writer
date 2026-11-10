@@ -1,0 +1,541 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "biology",
+    "label": "生物",
+    "summary": "围绕原结构功能、过程、实验与数据知识，提升因果解释和变量控制。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "增加一处结构、过程或数据联系",
+          "识别一个原实验范围内的变量控制要求",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "evidenceLinks",
+            "label": "结构、过程或数据的证据联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          },
+          {
+            "key": "variableControls",
+            "label": "需检验的变量或对照条件数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "experimental"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "整合两条证据解释过程或因果",
+          "比较原情境中的实验结果，排除相关等于因果的误判",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "evidenceLinks",
+            "label": "结构、过程或数据的证据联系数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          },
+          {
+            "key": "variableControls",
+            "label": "需检验的变量或对照条件数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "experimental"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "整合三条证据并检查两项变量或对照条件",
+          "评估原结论的适用边界，不引入新的机制知识",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "evidenceLinks",
+            "label": "结构、过程或数据的证据联系数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          },
+          {
+            "key": "variableControls",
+            "label": "需检验的变量或对照条件数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "experimental"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "biology_concept_level",
+        "name": "概念层次与对象范围",
+        "description": "区分原生物概念描述的是结构、功能、个体还是群体，解释从局部表象推到整体时缺少什么依据。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "biology_condition_reverse",
+        "name": "条件反推与功能限制",
+        "description": "从原功能或结果反查原结构、过程的必要条件，区分能发生、一定发生与只有一种机制；不新增机制。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "biology_alternative_interpretation",
+        "name": "替代解释与信息充分性",
+        "description": "对原事实在同一核心知识内给出可区分的候选解释，说明哪一原信息才能消除歧义；不是凭空增加实验要求。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "biology_causal_control",
+        "name": "因果与混杂控制",
+        "description": "围绕原变量区分处理效应与混杂，在原条件内选择必要对照，说明控制后才能作哪项判断。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "experimental"
+      },
+      {
+        "id": "biology_competing_explanations",
+        "name": "竞争机制与鉴别证据",
+        "description": "原结果能对应多个原知识内假说时，选择能区分它们的原观察或实验信息，而非复述现象。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025",
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "biology_mechanism_scale",
+        "name": "层级机制衔接",
+        "description": "仅连接原题同时涉及的层级来解释因果，避免用群体均值直接断言个体机制或跨层级跳步。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "biology_genetic_inverse",
+        "name": "遗传反演与充分性",
+        "description": "仅原题已有遗传图谱或交配模型时反推候选并判断哪个补充结果能排除歧义，不新增概率公式。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "biology_indicator_bias_boundary",
+        "name": "指标偏差与结论边界",
+        "description": "区分原数据指标、样本或时段的含义，判断哪些结果只支持相关、哪些足以支持主张，不添加显著性检验。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "evidence"
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "biology_variable_indicator",
+        "name": "变量对照与指标口径",
+        "knowledgeKeywords": [
+          "控制变量",
+          "对照实验",
+          "实验指标",
+          "数据分析",
+          "变量"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能混淆自变量/混杂，或用不同对象时期/分母比较指标。",
+        "diagnosticContrast": "比较同条件有效对照与表面有数据却口径不同的结果。",
+        "correctionTarget": "说明原处理、对照和指标意义，不把相关直接当因果。",
+        "transferTarget": "原表/实验范围内换比较顺序或指标表述，不添新机制。",
+        "selfCheckTarget": "核同对象、时段、基数和必要对照是否成立。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ],
+        "taskCondition": "experimental"
+      },
+      {
+        "id": "biology_photosynthesis_net",
+        "name": "原光合呼吸的净总量",
+        "knowledgeKeywords": [
+          "光合作用",
+          "呼吸作用",
+          "净量",
+          "总量",
+          "物质能量"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心已有时，可能混淆净量/总量、物质变化与能量变化。",
+        "diagnosticContrast": "比较同原过程和测量条件下每个量究竟表示什么。",
+        "correctionTarget": "按原过程、时段和测量口径推理，不因生物题引入全套代谢知识。",
+        "transferTarget": "在原过程条件内反推或改变测量时段。",
+        "selfCheckTarget": "核量的方向、时段与原过程对应，不能只看数值正负。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ],
+        "taskCondition": "scientific_conditions"
+      },
+      {
+        "id": "biology_genetic_inverse",
+        "name": "原遗传模型的候选与充分性",
+        "knowledgeKeywords": [
+          "遗传图谱",
+          "交配结果",
+          "基因型",
+          "表现型",
+          "遗传模型"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原模型确有时，可能表现型直接等同基因型、把一种候选当唯一。",
+        "diagnosticContrast": "比较满足部分与同时满足原全部观察的候选。",
+        "correctionTarget": "依原已考模型逐一筛选，不从遗传大类推伴性/连锁/工程知识。",
+        "transferTarget": "只用原图谱或交配关系换观察组织作同核反演。",
+        "selfCheckTarget": "将候选回全部原观察核验，保留未排除的多解。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "biology_regulation_level",
+        "name": "原调节机制的对象与层级",
+        "knowledgeKeywords": [
+          "调节机制",
+          "反馈调节",
+          "信息接收",
+          "作用对象"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能混同信息接收/作用对象、忽略反馈条件，或由个体平均推每细胞机制。",
+        "diagnosticContrast": "比较原机制中不同对象和层级可承担的因果。",
+        "correctionTarget": "只连接原已有机制和条件，不自动加入新调节途径。",
+        "transferTarget": "改变原机制的一个条件或观察层次，说明解释怎样受限。",
+        "selfCheckTarget": "核每条因果对象、反馈条件和层级是否一致。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ]
+      },
+      {
+        "id": "biology_membrane_osmosis_conditions",
+        "name": "原跨膜与渗透的对象和前提",
+        "knowledgeKeywords": [
+          "渗透作用",
+          "质壁分离",
+          "跨膜运输",
+          "选择透过性",
+          "物质运输"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原运输子核心已考时，可能把浓度差等同净水流向的全部前提、忽略膜通透或混同水与溶质变化。",
+        "diagnosticContrast": "按原实际膜/物质比较净移动与双向运动，或原运输方式所需条件；不把各运输机制全套绑定。",
+        "correctionTarget": "先确定原运输对象、膜性质和原已考驱动条件，不加入水势公式或未考蛋白机制。",
+        "transferTarget": "在原溶液、膜和已考条件内调整已有对照，解释不变原理与观察预期的变化。",
+        "selfCheckTarget": "核原对象、净量与膜条件是否一致；只对原题已有细胞/载体/能量子点核相应限制。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "sh_grade_biology_2025",
+          "bjeea_core_guidance_2023"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "biology_information_direction_template",
+        "name": "原遗传信息的方向、模板与产物",
+        "knowledgeKeywords": [
+          "DNA复制",
+          "转录",
+          "翻译",
+          "遗传信息传递",
+          "模板链"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原过程已考时，可能混同模板链与产物、复制和表达，或将一个方向的关系无条件倒推。",
+        "diagnosticContrast": "比较原已有过程的输入、模板与产物对应，指出互换过程为何改变结论。",
+        "correctionTarget": "依原实际已考过程解释方向和证据，不从遗传信息大类自动加入逆转录、基因编辑或新调控。",
+        "transferTarget": "在原链、序列信息或过程条件内改呈现和问法，说明关系不变处与推断限度。",
+        "selfCheckTarget": "核过程对象、模板对应和原证据能支持的方向；方向或序列细节只按原子核心使用。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "sh_grade_biology_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "biology_population_amount_rate",
+        "name": "原种群数量、增长量与增长率",
+        "knowledgeKeywords": [
+          "种群数量变化",
+          "种群增长率",
+          "种群增长量",
+          "种群增长曲线"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原数量变化核心已考时，可能把增长量峰值当增长率峰值，或忽略时间步长、基数和环境前提。",
+        "diagnosticContrast": "在原图表口径下比较同一数量变化的绝对量、相对率与原环境条件，不混用分母。",
+        "correctionTarget": "按原数量指标和时间尺度解释变化，原题未考容量或特定模型不加入其公式。",
+        "transferTarget": "仅调原图表观察区间、条件或指标表达，说明同核比较怎样重新对齐。",
+        "selfCheckTarget": "核原时间步长、基数与单位；只在原核心已涉及时检查密度限制或环境容量，不新增生态模型。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "sh_grade_biology_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "biology_ecosystem_flow_level",
+        "name": "原生态的物质能量与对象层级",
+        "knowledgeKeywords": [
+          "食物链关系",
+          "生态能量流动",
+          "物质循环",
+          "生态系统成分",
+          "生态关系"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原过程已考时，可能把物质循环等同能量循环，或混个体/种群/系统层级和食物关系方向。",
+        "diagnosticContrast": "比较符合原过程对象与方向的解释和把一层关系任意推广的解释。",
+        "correctionTarget": "按原实际物质/能量或食物子点说明，不因生态一词导入全部生态学。",
+        "transferTarget": "只在原食物关系或过程条件内调整已有因素，说明原方向和约束怎样传递。",
+        "selfCheckTarget": "核原对象层级、方向与原材料证据；传递效率或循环模型仅原已考时检查。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ]
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "原细胞结构、物质运输与过程条件",
+        "原光合呼吸等物质/能量及净总量",
+        "原遗传模型、图谱或遗传信息的具体子点",
+        "原调节的对象、层级与反馈",
+        "原生态数量、指标与关系",
+        "原实验变量、对照和结论证据"
+      ],
+      "misconceptionMechanisms": [
+        "相关直接推因果、无对照就归因",
+        "不同对象/时期/分母的指标直接比较",
+        "净量与总量、物质与能量混用",
+        "表现型当基因型或一组观察认唯一模型",
+        "模板/产物、层级/对象和信息方向混淆",
+        "总体变化或均值无条件推广个体机制"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "以一处原变量、概念或测量条件限定解释，说明可能错因",
+            "用原机制和事实推断，不把生物名词罗列当因果"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "用原证据区分两个候选机制或两个指标口径，说明对照/推理的作用",
+            "在原模型内迁移观察条件，不能由同章标题补入其他过程"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "原核心内处理多变量、候选非唯一或结论边界，追踪各条件实际约束",
+            "三类自检核原对象条件、机制推导与结果证据，不以假设替代实验事实"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "推理对应原过程、对象和层级，每条因果有原证据或原理",
+        "遗传规律、遗传信息和工程技术分别按原子核心择用",
+        "实验不编新结果，替代解释可明确未排除",
+        "数量/率/净总量的对象、时间和分母一致",
+        "五维是训练覆盖，不由原卷笔迹推学生缺陷"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "概念选择/判断",
+          "design": "原生命过程的适用前提与候选解释中制造实质辨析",
+          "answerEvidence": "指出具体对象/层级/条件差别，不默认新增实验任务"
+        },
+        {
+          "questionType": "图表/数据",
+          "design": "保原指标与设问类型，提升原数据之间的比较要求",
+          "answerEvidence": "核时段、样本、分母和结论强度，相关不自动因果"
+        },
+        {
+          "questionType": "遗传/机制推断",
+          "design": "仅原模型内调已有观察/条件，保候选范围",
+          "answerEvidence": "逐候选回原观察，区分必要/充分和不可判定"
+        },
+        {
+          "questionType": "实验探究",
+          "design": "原变量器材和原理内选择对照、指标或预期表述",
+          "answerEvidence": "明确自变量/混杂/对照与可证结论，预期与实测分清"
+        },
+        {
+          "questionType": "综合解释",
+          "design": "只衔接原题确实同时涉及的层级或过程",
+          "answerEvidence": "说明每一跨层连接依据，不能用个体均值断言每细胞机制"
+        }
+      ],
+      "scopeExclusions": [
+        "遗传大类不解锁伴性/连锁/工程，细胞大类不解锁跨膜全套",
+        "不加入显著性检验、新概率公式或大学机制",
+        "跨膜卡不因有细胞即启用，净总量不因有植物即启用",
+        "不能编造实验事实或把可能错因写成当前学生已犯错"
+      ]
+    }
+  }
+}

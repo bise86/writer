@@ -1,0 +1,585 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "physics",
+    "label": "物理",
+    "summary": "限定原物理概念、规律、公式和实验方法，通过模型选择、条件辨析与多步联系提高。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "增加一步原规律推理及一项适用条件检查",
+          "在不增加公式的前提下加入模型选择",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "reasoningStepsAdded",
+            "label": "较原题新增有效推理步骤",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning"
+          },
+          {
+            "key": "modelLinks",
+            "label": "原知识范围内的模型或表征联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "quantitative"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "联系原题两个条件或阶段，增加两步推理",
+          "区分必要条件与常见误用，实验题增加控制变量判断",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "reasoningStepsAdded",
+            "label": "较原题新增有效推理步骤",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning"
+          },
+          {
+            "key": "modelLinks",
+            "label": "原知识范围内的模型或表征联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "quantitative"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "增加三步推理，联系两个原卷已有模型或表征",
+          "检验极端、边界或反向条件，实验结论须有证据链",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "reasoningStepsAdded",
+            "label": "较原题新增有效推理步骤",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning"
+          },
+          {
+            "key": "modelLinks",
+            "label": "原知识范围内的模型或表征联系数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "quantitative"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "physics_concept_domain",
+        "name": "概念适用与对象辨析",
+        "description": "在原物理概念内判断研究对象、条件与描述范围，区分看似相同但物理含义不同的说法；不能靠新定律作区分。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2024",
+          "zj_selection_2025"
+        ]
+      },
+      {
+        "id": "physics_quantity_meaning",
+        "name": "量的物理意义与表征",
+        "description": "对原量的方向、单位、比值或图线含义作精确解释，说明同一数值为何不等于同一物理状态；不只增加单位换算次数。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2024",
+          "zj_selection_2025"
+        ]
+      },
+      {
+        "id": "physics_constraint_logic",
+        "name": "条件充分性与反向判断",
+        "description": "从原有条件反向审视结论是否可判、是否还存在候选状态，指出缺哪个原条件会误用规律；不以自造新条件超范围。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2024",
+          "zj_selection_2025"
+        ]
+      },
+      {
+        "id": "physics_model_domain",
+        "name": "模型建构与适用",
+        "description": "在原情境选择研究对象、理想化条件与原有规律，说明模型适用与失效的界限。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2024",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "quantitative"
+      },
+      {
+        "id": "physics_regime_boundary",
+        "name": "阶段转换与临界",
+        "description": "仅原任务可支持时确定接触、摩擦、运动阶段等状态转换判据及可行范围，不凭直觉直接套式。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2024"
+        ],
+        "taskCondition": "quantitative"
+      },
+      {
+        "id": "physics_inverse_identifiability",
+        "name": "反演与可辨识",
+        "description": "从原图线或观测反推参数候选，判断条件是否充分及是否多解，再以证据排除歧义。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "physics_cross_constraint",
+        "name": "多约束自洽",
+        "description": "只将原题已覆盖的力、运动、能量或电路约束联系，前一约束确定后一模型的可行域，不为综合加入新定律。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2024",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "quantitative"
+      },
+      {
+        "id": "physics_measurement_error",
+        "name": "误差与方案优选",
+        "description": "在原仪器和方法中比较接法、斜率截距或偏差方向，提出能改变结论可靠性的最小操作。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "experimental"
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "physics_motion_quantity",
+        "name": "运动对象、时段与量义",
+        "knowledgeKeywords": [
+          "平均速度",
+          "平均速率",
+          "位移",
+          "路程",
+          "运动图像"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把路程/位移、等时/等程混用，或误读斜率/面积对象与时段。",
+        "diagnosticContrast": "比较同一原过程按总位移/总时间与机械平均分段数值的不同口径。",
+        "correctionTarget": "先定原研究对象和时间段，再用已考运动关系解释。",
+        "transferTarget": "仅原运动核心内改变时段或原条件，不增新力学规律。",
+        "selfCheckTarget": "核总量口径、单位和方向符号，并与原过程对照。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ],
+        "taskCondition": "quantitative"
+      },
+      {
+        "id": "physics_force_object",
+        "name": "受力对象、摩擦与平衡",
+        "knowledgeKeywords": [
+          "受力分析",
+          "摩擦力",
+          "平衡力",
+          "相互作用力",
+          "临界状态"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "按原核心择用：可能混同受力对象；仅原题已涉及摩擦时辨运动与相对运动趋势，仅涉及相互作用和平衡时辨两者，不能三项全套。",
+        "diagnosticContrast": "按原实际子核心比较受力归属与原判定条件；仅原摩擦已考查时核相对运动趋势，不能把一般平衡任务扩成摩擦任务。",
+        "correctionTarget": "先定对象、接触与原已考规律，不自动引能量/动量。",
+        "transferTarget": "只调整原对象、受力条件或原问法；仅原任务确涉临界状态时才调整该临界，不另加新力学模型。",
+        "selfCheckTarget": "先核每力归属与原已考条件；仅接触/摩擦模型确有时核接触、正压力与相对运动趋势，不凭箭头外观添条件。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ]
+      },
+      {
+        "id": "physics_circuit_measurement",
+        "name": "原电路测量对象与图线",
+        "knowledgeKeywords": [
+          "电路",
+          "伏安测量",
+          "电表示数",
+          "灯泡电阻",
+          "电路图像"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把表读数和支路量混同，或把原非恒定电阻当常量。",
+        "diagnosticContrast": "比较原接法中仪表实际测到的量与欲求量。",
+        "correctionTarget": "依据原器件、接法和量关系解释，不能增加陌生测量法。",
+        "transferTarget": "只在原电路/器件内改变测点或条件，不引未考电学模块。",
+        "selfCheckTarget": "核原回路支路对应量、单位和合理极限；图线须与条件一致。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ],
+        "taskCondition": "scientific_conditions"
+      },
+      {
+        "id": "physics_experiment_error",
+        "name": "实验读数与系统偏差",
+        "knowledgeKeywords": [
+          "实验测量",
+          "测量误差",
+          "斜率",
+          "截距",
+          "实验图像"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把原读数当无偏真值、用错图线量义或只重复测量忽略系统条件。",
+        "diagnosticContrast": "比较随机读数变化与原接法/模型造成的固定偏差方向。",
+        "correctionTarget": "按原仪器和方法界定证据范围，不添新仪器原理。",
+        "transferTarget": "在原方案中调一个条件，解释偏差如何变而非只说更准确。",
+        "selfCheckTarget": "核量纲、读数对象和改变条件前后偏差方向。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ],
+        "taskCondition": "experimental"
+      },
+      {
+        "id": "physics_thermal_system",
+        "name": "原热学对象与系统条件",
+        "knowledgeKeywords": [
+          "气体状态",
+          "气体温度",
+          "定质量气体",
+          "热力学温度",
+          "气体状态变化"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心已涉及时，可能把开口过程当定质量状态或混用温标。",
+        "diagnosticContrast": "比较同一原系统边界下条件能否支持所用关系。",
+        "correctionTarget": "按原已考状态关系检查质量、温度与边界，不因写热学便调用全套状态方程。",
+        "transferTarget": "原系统条件微调后说明原关系何时可继续用。",
+        "selfCheckTarget": "核系统边界、量的定义和原适用前提，不增新热学定理。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_zhongkao_design_2025"
+        ],
+        "taskCondition": "scientific_conditions"
+      },
+      {
+        "id": "physics_work_energy_system",
+        "name": "原功与能任务的系统和过程",
+        "knowledgeKeywords": [
+          "动能定理",
+          "机械能守恒",
+          "功能关系",
+          "功和能",
+          "能量转化"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原对应定律已考时，可能混同单个物体与系统能量、漏非保守作用或把某力做功当合力做功。",
+        "diagnosticContrast": "比较同一原过程在明确系统边界下的功项与能量变化，定位漏项或重复计入。",
+        "correctionTarget": "先定原系统、过程和原定律适用条件，再写已考关系；不能因力学题自动引入所有能量定律。",
+        "transferTarget": "在原作用和过程范围内调整已有阶段或给定量，说明系统边界与记账项怎样保持一致。",
+        "selfCheckTarget": "核系统内外作用、始末状态和能量量纲/符号，只用原已考功与能关系。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "physics_momentum_system_direction",
+        "name": "原动量任务的系统、方向与守恒",
+        "knowledgeKeywords": [
+          "动量守恒",
+          "动量定理",
+          "冲量",
+          "碰撞动量"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心已含动量时，可能未定系统就称守恒，漏外冲量或把矢量动量的正负当速率。",
+        "diagnosticContrast": "比较原系统内作用抵消与系统外冲量影响，区分动量变化与机械能是否守恒。",
+        "correctionTarget": "按原时间过程、系统和方向说明原动量关系；原题未考能量不追加碰撞能量模型。",
+        "transferTarget": "只变原过程内已有速度、作用时段或系统观察，解释同一原定律适用与量的对应。",
+        "selfCheckTarget": "核系统边界、外冲量和方向分量及末态可行；不能用数值和为零替代矢量与条件检查。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "physics_induction_change_law",
+        "name": "原电磁变化的对象和定律条件",
+        "knowledgeKeywords": [
+          "电磁感应",
+          "法拉第电磁感应",
+          "楞次定律",
+          "磁通量变化",
+          "感应电流"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心已含相关定律时，可能把磁通量大当变化快，混同电动势与闭合回路电流，或方向规则对象不清。",
+        "diagnosticContrast": "按原实际子点比较量值与变化率、闭合条件或阻碍变化方向，不能一词命中便全套加入。",
+        "correctionTarget": "确定原回路、过程与实际已考定律的前提，不新增交流电、互感等相邻知识。",
+        "transferTarget": "在原场、回路和变化方式内微调已有条件，说明原关系和方向判断怎样调整。",
+        "selfCheckTarget": "核原变化对象、条件与符号；只对实际已考电流/方向任务核闭合与方向，不强制增加子点。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "physics_optical_image_conditions",
+        "name": "原光学成像的像与观察条件",
+        "knowledgeKeywords": [
+          "光的反射",
+          "平面镜成像",
+          "凸透镜成像",
+          "实像虚像",
+          "光路作图"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "按原光学子点择用：可能将像与屏上亮斑混同、把看到像等同能投屏，或反射/透镜规律互套。",
+        "diagnosticContrast": "比较满足原传播和成像条件的解释与仅凭图像外观或生活感觉的解释。",
+        "correctionTarget": "按原成像类型核光路与观察条件，未考透镜公式不引公式，反射任务不新加折射。",
+        "transferTarget": "只改原对象位置、观察条件或原问法，同步重建所需光图。",
+        "selfCheckTarget": "按原子点核光线方向、法线/镜面或透镜条件及像的可观察后果，不全套强制。",
+        "sourceIds": [
+          "zj_zhongkao_science_2025",
+          "zj_zhongkao_design_2025",
+          "sh_zhongkao_integrated_2025"
+        ]
+      },
+      {
+        "id": "physics_pressure_buoyancy_object",
+        "name": "原压强或浮力的对象与适用量",
+        "knowledgeKeywords": [
+          "压强计算",
+          "受力面积",
+          "液体压强",
+          "浮力",
+          "排开液体体积"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "按原实际子点择用：可能把物体体积当排液体积、力当压强或混淆受力对象与面积。",
+        "diagnosticContrast": "比较原定义中对象与量一致的关系和仅数值相近却对象错配的关系。",
+        "correctionTarget": "只用原压强/浮力已考关系，原仅压强不新加浮力，原仅浮力不强绑全部密度模型。",
+        "transferTarget": "在原介质与原浸入/受压条件内调整已有关系，解释适用量怎样变。",
+        "selfCheckTarget": "核原对象、单位与原模型边界；仅原相关时验浸入体积、接触面积或受力可行。",
+        "sourceIds": [
+          "zj_zhongkao_science_2025",
+          "zj_zhongkao_design_2025",
+          "sh_zhongkao_integrated_2025"
+        ]
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "原物理量的对象、单位与时段",
+        "原运动、受力、功与能的模型条件",
+        "原学段已考的磁/电磁现象；动量与高中电磁定律等专属子机制仅高中原题确有时启用",
+        "原电路、测量对象与图线",
+        "原密度/压强/浮力的定义与适用",
+        "原光路、热过程的条件与量义",
+        "原实验的控制、测量和误差"
+      ],
+      "misconceptionMechanisms": [
+        "混同路程位移、量值和变化率、读数对象",
+        "研究对象/系统未定就套规律",
+        "把运动方向当摩擦方向、作用反作用当平衡",
+        "动量守恒或能量不变无视原适用条件",
+        "图线斜率面积不核坐标和单位",
+        "光学外观、热感觉或公式形式替代物理过程"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "让一条原模型适用条件或量义辨析决定答案",
+            "在原对象和过程中改变已知关系，解析先定对象再选原定律"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "衔接原模型、约束与证据，区分两个不同误区或竞争解释",
+            "实验对照、读数与误差仅按原器材方法，定性题不强塞计算"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "原范围内审系统/阶段切换、可行状态或边界，避免多模型无依据拼接",
+            "条件、推理和结果三类自检核单位符号、模型前提与物理可行性"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "每个实际需用的公式对应原研究对象、过程、物理量和前提；定性任务可用准确因果及条件解释，不为验收强加公式、单位数值计算",
+        "定性推断给实际因果，不用列公式充当解释",
+        "图像与实验先核坐标、读数和原仪器，不能编造观测值",
+        "仅原任务相关时检查边界/极限，不强行制造临界最值",
+        "答案独立求解并保原得分上限，不以训练说明宣称学生理解"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "概念选择/判断",
+          "design": "原定律与情境中突出对象和条件差别，不默认加数值",
+          "answerEvidence": "解释正确与干扰各自条件，定性原理也可形成有效深度"
+        },
+        {
+          "questionType": "计算/图像",
+          "design": "保原所求与小问，微调已有阶段、约束或表征",
+          "answerEvidence": "完整列对象/过程/方向，图线量义与数值解相符"
+        },
+        {
+          "questionType": "实验/测量",
+          "design": "原器材、原原理内调整方法选择或数据理解",
+          "answerEvidence": "给变量、读数、误差和可证结论，不新增器材原理"
+        },
+        {
+          "questionType": "光路/作图",
+          "design": "只按原已考光学关系变条件并准确重建图",
+          "answerEvidence": "核法线、传播方向和原几何条件，图外观不当定律"
+        },
+        {
+          "questionType": "综合解答",
+          "design": "仅组合原题已经覆盖的定律和核心",
+          "answerEvidence": "说明各定律衔接输入和适用阶段，拒绝为综合新增章节"
+        }
+      ],
+      "scopeExclusions": [
+        "原运动题不自动引能量/动量，原电学不自动引电磁感应",
+        "不加入微积分、大学近似或陌生器材知识",
+        "纯概念题不强制实验变量和多步数值运算",
+        "图上学生箭头和辅助线不作原已知，真实数据不凭空补造"
+      ]
+    }
+  }
+}

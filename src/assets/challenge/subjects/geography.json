@@ -1,0 +1,531 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "geography",
+    "label": "地理",
+    "summary": "保持原区域、图表和地理原理范围，增加空间条件与资料整合。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "增加一处空间或条件联系及一次读图取数",
+          "辨析一个方向、尺度或单位误区",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "spatialConditionLinks",
+            "label": "空间、尺度或条件联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "spatial"
+          },
+          {
+            "key": "dataReadings",
+            "label": "需整合的图表或材料信息数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "联系两项空间条件，整合两项图表信息",
+          "在原区域范围内比较原因与结果",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "spatialConditionLinks",
+            "label": "空间、尺度或条件联系数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "spatial"
+          },
+          {
+            "key": "dataReadings",
+            "label": "需整合的图表或材料信息数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "综合三项空间条件与三项资料，分析边界或反向情境",
+          "兼顾尺度、时序和人地关系，不引入新区域知识",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "spatialConditionLinks",
+            "label": "空间、尺度或条件联系数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning",
+            "taskCondition": "spatial"
+          },
+          {
+            "key": "dataReadings",
+            "label": "需整合的图表或材料信息数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "geography_concept_conditions",
+        "name": "概念适用与条件变化",
+        "description": "在原地理概念内辨析条件、方向和对象，说明换掉哪个原条件会改变判断，不加入新区域事实。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2024",
+          "zj_selection_2025"
+        ]
+      },
+      {
+        "id": "geography_relation_reverse",
+        "name": "关系反推与缺环节",
+        "description": "从原结果反推要素关系和必要环节，区分有利条件与必然结果，不凭常识补出原材料没有的因素。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2024",
+          "zj_selection_2025"
+        ]
+      },
+      {
+        "id": "geography_scale_transfer",
+        "name": "时空尺度转换",
+        "description": "在原点位、区域和时序内区分局地到整体、瞬时到过程的结论能否推广，并说明限制。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2024",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "spatial"
+      },
+      {
+        "id": "geography_process_budget",
+        "name": "过程机制与收支",
+        "description": "串接原给要素的来源、迁移、储存和输出，定位有输入却无目标结果的缺环节。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2024"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "geography_location_constraints",
+        "name": "区位多约束",
+        "description": "只在原资源、交通、环境和产业事实中识别瓶颈，比较一个约束如何改变另一方案的可行性。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "spatial"
+      },
+      {
+        "id": "geography_graph_evidence",
+        "name": "多图配准与证据冲突",
+        "description": "先对齐原图表方向、尺度、单位与时段，再解释看似矛盾的信息，不能仅凭单图印象。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2024",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "geography_scenario_tradeoff",
+        "name": "反事实与人地权衡",
+        "description": "只改变原材料已有条件，推演不同尺度的影响与代价，说明不符一般直觉的方案何时合理。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "moe_gaokao_2026",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "comparison"
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "geography_time_position",
+        "name": "原地球运动的时间与位置条件",
+        "knowledgeKeywords": [
+          "地方时",
+          "区时",
+          "日期",
+          "地球运动",
+          "日出方位"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心已有时，可能混同地方时/区时/日期，漏半球季节前提。",
+        "diagnosticContrast": "比较同原经度时段下不同时间量或方位的适用条件。",
+        "correctionTarget": "按原已考时空关系解释，不从地图默认太阳高度算法。",
+        "transferTarget": "只改变原经度/时段/已有条件，保持地球运动核心。",
+        "selfCheckTarget": "核原时间口径、日界和半球季节条件，不添新算法。",
+        "sourceIds": [
+          "sh_grade_geography_2025",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "spatial"
+      },
+      {
+        "id": "geography_stock_flow",
+        "name": "原图过程的总量浓度与尺度",
+        "knowledgeKeywords": [
+          "流量",
+          "浓度",
+          "输沙",
+          "存量通量",
+          "时空尺度"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把浓度升高当总量升高，或混同地点/时段尺度。",
+        "diagnosticContrast": "比较原指标分子分母、时间尺度和对象一致时的含义。",
+        "correctionTarget": "以原单位、时序和收支说明过程，不用单图印象。",
+        "transferTarget": "在原区域或过程内换观察点/指标呈现。",
+        "selfCheckTarget": "核单位、时段对齐、总量与比率及收支方向。",
+        "sourceIds": [
+          "sh_grade_geography_2025",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "geography_location_constraint",
+        "name": "原区位的有利与主导限制",
+        "knowledgeKeywords": [
+          "区位条件",
+          "主导因素",
+          "区位选择",
+          "人地关系"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把一个有利条件当必然主导，或只看局部短期收益。",
+        "diagnosticContrast": "比较原事实中有利因素与真正卡住方案的限制。",
+        "correctionTarget": "每个因果箭头都由原材料和原理支持，不补新区域知识。",
+        "transferTarget": "原事实内改变限制强弱或原目标权衡。",
+        "selfCheckTarget": "核瓶颈、尺度和长期/整体代价，不能常识脑补。",
+        "sourceIds": [
+          "sh_grade_geography_2025",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "spatial"
+      },
+      {
+        "id": "geography_map_alignment",
+        "name": "原图表方向单位与证据对齐",
+        "knowledgeKeywords": [
+          "地图",
+          "图表信息",
+          "比例尺",
+          "地理图像",
+          "方向单位"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把不同方向、单位、时段或比例尺的信息直接比较。",
+        "diagnosticContrast": "比较对齐原图口径后能支持与表面矛盾的结论。",
+        "correctionTarget": "先核原图示标注与尺度，再解释关系，不凭外观猜。",
+        "transferTarget": "只重组原图信息或设问关注，不增新区域事实。",
+        "selfCheckTarget": "逐项核方向、单位、时段和尺度，说明未对齐会错在哪里。",
+        "sourceIds": [
+          "sh_grade_geography_2025",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "geography_weather_motion_point",
+        "name": "原天气系统的移动与点位观察",
+        "knowledgeKeywords": [
+          "天气系统移动",
+          "气旋位置",
+          "锋面过境",
+          "等压线风向"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原系统已考时，可能把系统移动方向当点位风向，或忽略半球/时段和相对位置。",
+        "diagnosticContrast": "比较同一原时刻点位关系与系统前后移动过程，不把两个方向量混为一谈。",
+        "correctionTarget": "依原已考系统和图示说明点位条件，未考风压关系或高阶天气模型不新加。",
+        "transferTarget": "只改原观察点/时段或设问，原图相应准确重建。",
+        "selfCheckTarget": "核原半球、时段、等压线或系统位置等实际子点，不把所有天气条件强绑。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025",
+          "sh_grade_geography_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "geography_water_budget_process",
+        "name": "原水分过程的输入输出与储量",
+        "knowledgeKeywords": [
+          "流域水量",
+          "水分收支",
+          "径流变化",
+          "水循环环节"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原过程已考时，可能漏输入/输出/储量，或局部环节变化直接推出全区同向变化。",
+        "diagnosticContrast": "比较同区同段可解释的过程链与遗漏已给环节的因果跳跃。",
+        "correctionTarget": "按原实际水分环节追踪，未考蒸散/地下水等子点不因水循环一词一并补入。",
+        "transferTarget": "只调整原过程已给环节或观察条件，说明其它已给约束怎样影响结果。",
+        "selfCheckTarget": "核区域、时段、单位与原收支方向；原无收支公式不用新公式。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025",
+          "sh_grade_geography_2025"
+        ]
+      },
+      {
+        "id": "geography_landform_sequence",
+        "name": "原地形地质证据与形成先后",
+        "knowledgeKeywords": [
+          "地质过程先后",
+          "地形形成过程",
+          "地层关系",
+          "地形改造"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原过程已考时，可能混形成/改造、内外力作用或用地形高低直接猜年代顺序。",
+        "diagnosticContrast": "比较原图示和原理可支持的顺序与仅凭地名/外观猜出的顺序。",
+        "correctionTarget": "只用原标注和原已考作用机制，未考地层年代或构造不加入。",
+        "transferTarget": "在原过程和证据核心内换设问或呈现，不伪造地质事实来补链。",
+        "selfCheckTarget": "核每一先后关系有原证据，形成和后期改造分别说明，不能由高度断年代。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025",
+          "sh_grade_geography_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "geography_contour_landform",
+        "name": "原等高线的高度、坡向与可见关系",
+        "knowledgeKeywords": [
+          "等高线判读",
+          "地形剖面",
+          "相对高度",
+          "地形部位"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把等高线疏密/闭合外观直接当海拔或坡向，忽略等高距、标注和剖面方向。",
+        "diagnosticContrast": "比较原高程与方向约束均成立的判断与只凭形状印象的判断。",
+        "correctionTarget": "依据原等高距、标注和已考地形关系解释，不从区域图默认全部地质/气候算法。",
+        "transferTarget": "在原地形核心内换观察点、剖面方向或问法，需要改图则准确重建。",
+        "selfCheckTarget": "核原高程范围、方向与尺度；视线或坡度关系仅原任务已涉及时检查。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "sh_grade_geography_2025"
+        ],
+        "taskCondition": "evidence"
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "原图表的方向、单位、比例尺与时段",
+        "原地形地质/天气气候的已考过程",
+        "原地球运动的具体时间位置关系",
+        "原水分/物质/人口等存量、通量和收支",
+        "原区位与人地方案的主导约束",
+        "原区域与空间尺度的证据适用"
+      ],
+      "misconceptionMechanisms": [
+        "点位/区域、瞬时/过程混同",
+        "浓度/比例升高直接当总量增加",
+        "移动方向当风向、图外观当空间事实",
+        "自然有利因素当必然主导或适宜当决定",
+        "因果链跳环节、局部收益推广长期整体",
+        "由熟悉地名常识补题外区域事实"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "让一处原图文条件、尺度或量义决定解释，不能只背区域结论",
+            "原点位、过程或约束内换设问，解析说明材料事实如何支撑"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "衔接两处原证据或过程环节，区分竞争解释和限制因素",
+            "对齐图文时空/单位后再比较，不靠多列因素凑分析"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "在原核心内处理尺度转换、收支缺环或人地权衡的条件边界",
+            "三类自检核材料条件、过程因果和目标结果，方案依实际限制而非绝对最优"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "每个结论有本题图文或原已考原理支持，不凭地名补背景",
+        "图示标注、时段、单位和空间位置对齐，纯图条件可用核实caption",
+        "过程箭头说明来源/作用/结果，未考环节不自动补齐",
+        "区位/方案给原约束下判据和代价，允许条件化合理答案",
+        "目录领域只导航，初高中与原具体过程是实际边界"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "选择/判断",
+          "design": "原图文内提高位置、尺度、指标或过程辨析",
+          "answerEvidence": "解析指出图上可证事实和推断桥梁，干扰应有具体错因"
+        },
+        {
+          "questionType": "地图/图表",
+          "design": "保原图关系与原考点，改变问法或同步重建合法变式",
+          "answerEvidence": "核方向、比例、单位、时段与关联证据，不从新图倒推原已知"
+        },
+        {
+          "questionType": "过程解释",
+          "design": "只连接原题已覆盖要素和过程",
+          "answerEvidence": "每因果箭头有原材料/原理，收支和阶段按实际原核心核"
+        },
+        {
+          "questionType": "区位/评价",
+          "design": "原资源、交通、环境等实际约束内调整判断焦点",
+          "answerEvidence": "说明主导限制、适用尺度和取舍，不能用套话或新增区域事实"
+        },
+        {
+          "questionType": "绘图/方案",
+          "design": "原作图/方案任务内提高约束落实与可验证性",
+          "answerEvidence": "图文一致、符号清楚、原条件可满足，评分点不增加分值"
+        }
+      ],
+      "scopeExclusions": [
+        "不因地图新增太阳高度算法、气旋模型或地质年代",
+        "不因区域题默认整套区域背诵事实或跨章节过程",
+        "无多图不强塞多图配准，无原收支知识不新增收支公式",
+        "不凭图形外观、学生标记或新造数据解释原题"
+      ]
+    }
+  }
+}

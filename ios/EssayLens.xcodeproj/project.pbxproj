@@ -7,6 +7,9 @@
 	objects = {
 
 /* Begin PBXBuildFile section */
+		CD0010010000000000000001 /* ChallengeDocuments.m in Sources */ = {isa = PBXBuildFile; fileRef = CD0010010000000000000002 /* ChallengeDocuments.m */; };
+		CD0010010000000000000003 /* PDFKit.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD0010010000000000000004 /* PDFKit.framework */; };
+		CD0010010000000000000005 /* UniformTypeIdentifiers.framework in Frameworks */ = {isa = PBXBuildFile; fileRef = CD0010010000000000000006 /* UniformTypeIdentifiers.framework */; };
 		0C80B921A6F3F58F76C31292 /* libPods-EssayLens.a in Frameworks */ = {isa = PBXBuildFile; fileRef = 5DCACB8F33CDC322A6C60F78 /* libPods-EssayLens.a */; };
 		13B07FBF1A68108700A75B9A /* Images.xcassets in Resources */ = {isa = PBXBuildFile; fileRef = 13B07FB51A68108700A75B9A /* Images.xcassets */; };
 		761780ED2CA45674006654EE /* AppDelegate.swift in Sources */ = {isa = PBXBuildFile; fileRef = 761780EC2CA45674006654EE /* AppDelegate.swift */; };
@@ -24,6 +27,9 @@
 /* End PBXContainerItemProxy section */
 
 /* Begin PBXFileReference section */
+		CD0010010000000000000002 /* ChallengeDocuments.m */ = {isa = PBXFileReference; lastKnownFileType = sourcecode.c.objc; name = ChallengeDocuments.m; path = EssayLens/ChallengeDocuments.m; sourceTree = "<group>"; };
+		CD0010010000000000000004 /* PDFKit.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = PDFKit.framework; path = System/Library/Frameworks/PDFKit.framework; sourceTree = SDKROOT; };
+		CD0010010000000000000006 /* UniformTypeIdentifiers.framework */ = {isa = PBXFileReference; lastKnownFileType = wrapper.framework; name = UniformTypeIdentifiers.framework; path = System/Library/Frameworks/UniformTypeIdentifiers.framework; sourceTree = SDKROOT; };
 		00E356F11AD99517003FC87E /* Info.plist */ = {isa = PBXFileReference; lastKnownFileType = text.plist.xml; path = Info.plist; sourceTree = "<group>"; };
 		13B07F961A680F5B00A75B9A /* EssayLens.app */ = {isa = PBXFileReference; explicitFileType = wrapper.application; includeInIndex = 0; path = EssayLens.app; sourceTree = BUILT_PRODUCTS_DIR; };
 		13B07FB51A68108700A75B9A /* Images.xcassets */ = {isa = PBXFileReference; lastKnownFileType = folder.assetcatalog; name = Images.xcassets; path = EssayLens/Images.xcassets; sourceTree = "<group>"; };
@@ -42,6 +48,8 @@
 			isa = PBXFrameworksBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CD0010010000000000000003 /* PDFKit.framework in Frameworks */,
+				CD0010010000000000000005 /* UniformTypeIdentifiers.framework in Frameworks */,
 				0C80B921A6F3F58F76C31292 /* libPods-EssayLens.a in Frameworks */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;
@@ -60,6 +68,7 @@
 		13B07FAE1A68108700A75B9A /* EssayLens */ = {
 			isa = PBXGroup;
 			children = (
+				CD0010010000000000000002 /* ChallengeDocuments.m */,
 				13B07FB51A68108700A75B9A /* Images.xcassets */,
 				761780EC2CA45674006654EE /* AppDelegate.swift */,
 				13B07FB61A68108700A75B9A /* Info.plist */,
@@ -72,6 +81,8 @@
 		2D16E6871FA4F8E400B85C8A /* Frameworks */ = {
 			isa = PBXGroup;
 			children = (
+				CD0010010000000000000004 /* PDFKit.framework */,
+				CD0010010000000000000006 /* UniformTypeIdentifiers.framework */,
 				ED297162215061F000B7C4FE /* JavaScriptCore.framework */,
 				5DCACB8F33CDC322A6C60F78 /* libPods-EssayLens.a */,
 			);
@@ -270,6 +281,7 @@
 			isa = PBXSourcesBuildPhase;
 			buildActionMask = 2147483647;
 			files = (
+				CD0010010000000000000001 /* ChallengeDocuments.m in Sources */,
 				761780ED2CA45674006654EE /* AppDelegate.swift in Sources */,
 			);
 			runOnlyForDeploymentPostprocessing = 0;

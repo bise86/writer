@@ -4,7 +4,7 @@ import {WritingType} from '../types';
 import {getWritingProfile} from '../services/writing';
 
 const modes: {
-  type: WritingType;
+  type: WritingType | 'challenge';
   glyph: string;
   caption: string;
   accent: string;
@@ -30,24 +30,42 @@ const modes: {
     border: '#D8EBE3',
     decoration: '#DCEFE6',
   },
+  {
+    type: 'challenge',
+    glyph: '阶',
+    caption: '同一知识范围，逐题升档',
+    accent: '#A55B17',
+    background: '#FFF7EB',
+    border: '#F1E1C9',
+    decoration: '#F9E8CC',
+  },
 ];
 
 export default function WritingModeChooser({
   onSelect,
+  onChallenge,
 }: {
   onSelect: (type: WritingType) => void;
+  onChallenge?: () => void;
 }) {
   return (
-    <View style={styles.root} accessibilityLabel="选择批改类型">
+    <View style={styles.root} accessibilityLabel="选择功能">
       <View style={styles.row}>
         {modes.map(mode => {
-          const profile = getWritingProfile(mode.type);
+          const title =
+            mode.type === 'challenge'
+              ? '挑战'
+              : getWritingProfile(mode.type).title;
           return (
             <View key={mode.type} style={styles.slot}>
               <Pressable
                 accessibilityRole="button"
-                accessibilityLabel={`进入${profile.title}`}
-                onPress={() => onSelect(mode.type)}
+                accessibilityLabel={`进入${title}`}
+                onPress={() =>
+                  mode.type === 'challenge'
+                    ? onChallenge?.()
+                    : onSelect(mode.type)
+                }
                 style={({pressed}) => [
                   styles.card,
                   pressed && styles.cardPressed,
@@ -90,7 +108,7 @@ export default function WritingModeChooser({
                     <View style={[styles.arrow, {borderColor: mode.accent}]} />
                   </View>
                   <View style={styles.copy}>
-                    <Text style={styles.title}>{profile.title}</Text>
+                    <Text style={styles.title}>{title}</Text>
                     <Text style={styles.caption}>{mode.caption}</Text>
                   </View>
                 </View>

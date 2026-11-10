@@ -1,0 +1,427 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "other",
+    "label": "其他学科",
+    "summary": "仅在原卷明确出现的概念、材料与方法中，提高信息联系、易错辨析及核查要求。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "增加一项原信息联系与一处易错判断",
+          "保持原题作答方式与技能边界",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "informationLinks",
+            "label": "需联系的原范围信息数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "verificationChecks",
+            "label": "需核查的条件或证据数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "整合两项原信息，核查两个条件或结论",
+          "通过比较或反向提问提高辨析",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "informationLinks",
+            "label": "需联系的原范围信息数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "verificationChecks",
+            "label": "需核查的条件或证据数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "整合三项原信息，核查三处条件或证据",
+          "要求可解释的多条件判断，不以新增知识代替升档",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "informationLinks",
+            "label": "需联系的原范围信息数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "verificationChecks",
+            "label": "需核查的条件或证据数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "other_concept_boundary",
+        "name": "原概念边界与辨析",
+        "description": "围绕原课程的概念、技能或规范比较适用与不适用情形，不由其他学科高考试题推定本题也覆盖那些知识。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "other_condition_reverse",
+        "name": "原条件反推与充分性",
+        "description": "由原任务目标反推必要条件，再区分具备条件与达到目标之间的差异，不能只改问法贴逆向标签。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "other_representation_relation",
+        "name": "信息重组与关系揭示",
+        "description": "在原信息、作品要素或表示方式中重新组织关系，说明重组怎样改变判断或解决真实障碍，不以排版变化计深度。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "other_evidence_alternative",
+        "name": "证据与替代解释",
+        "description": "用原有可核实信息比较候选解释或方案，并指出哪一证据能区分，不能凭空补专业事实。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "other_tradeoff_boundary",
+        "name": "方案取舍与边界",
+        "description": "在原任务指标和条件内比较取舍，说明一个选择如何限制另一个目标，以及结论的适用范围。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "argument"
+      },
+      {
+        "id": "other_writing_audience",
+        "name": "表达组织与对象效果",
+        "description": "仅原题有写作或表达任务时，在原文体、对象与目的内协调信息和表达，解释组织选择的实际作用，不强加别科作文模式。",
+        "appliesTo": "writing",
+        "sourceIds": [
+          "moe_gaokao_2026"
+        ]
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "other_algorithm_contract",
+        "name": "原算法输入条件与终止",
+        "knowledgeKeywords": [
+          "算法",
+          "循环",
+          "条件语句",
+          "输入输出"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心已有算法/程序时，可能忽略输入范围、分支边界或循环终止。",
+        "diagnosticContrast": "比较原输入约束下正确结果与边界输入暴露的问题。",
+        "correctionTarget": "按原程序结构和已考规则说明，不新增语言语法或算法知识。",
+        "transferTarget": "原输入/条件内换可核实边界，不增加算法类型。",
+        "selfCheckTarget": "核原输入、各分支与输出/终止是否一致。",
+        "sourceIds": [
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "other_design_constraints",
+        "name": "原设计任务的约束与验证",
+        "knowledgeKeywords": [
+          "技术设计",
+          "设计约束",
+          "方案评价",
+          "功能要求"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心已有设计任务时，可能把实现一个功能当满足全部原约束。",
+        "diagnosticContrast": "比较局部可用与原目标、材料、条件均可验证的方案。",
+        "correctionTarget": "按原任务具体指标分析，不加入未知专业规范。",
+        "transferTarget": "只调整原已有条件或评价焦点。",
+        "selfCheckTarget": "核每个原约束的可验证结果，不能凭外观/口号判断。",
+        "sourceIds": [
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "other_data_record_basis",
+        "name": "原信息技术的数据记录与统计口径",
+        "knowledgeKeywords": [
+          "数据字段",
+          "数据记录",
+          "数据筛选",
+          "数据统计处理"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅已确认为信息技术且原数据任务已有时，可能把记录数当对象数、漏重复/缺失或筛选条件边界。",
+        "diagnosticContrast": "比较按原字段和条件处理的结果与换对象/分母或漏记录的结果。",
+        "correctionTarget": "按原数据定义、操作和任务核处理，不新增数据库语法或统计方法。",
+        "transferTarget": "只调原筛选/分组条件或已有记录呈现，不引其它课程知识。",
+        "selfCheckTarget": "核原字段、对象、条件和输出口径，重复是否合并按原题要求。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025"
+        ]
+      },
+      {
+        "id": "other_system_function_boundary",
+        "name": "原信息系统的模块、数据流与措施作用",
+        "knowledgeKeywords": [
+          "信息系统组成",
+          "数据采集处理",
+          "系统功能",
+          "数据安全措施"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原信息系统子点已考时，可能混采集/处理/输出角色，或把某安全措施当能解决所有风险。",
+        "diagnosticContrast": "比较原流程中确有作用的模块/措施与目标正确但作用对象不符的方案。",
+        "correctionTarget": "依原数据流和已考技术说明作用与限度，不扩为网络协议或密码算法课。",
+        "transferTarget": "只改原流程需求/约束或问法，硬件与技术原理不擅加。",
+        "selfCheckTarget": "核输入输出、模块职责和原风险边界，不用技术名词或万能安全口号代机制。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025"
+        ]
+      },
+      {
+        "id": "other_projection_dimension",
+        "name": "原通用技术图样的投影与尺寸对应",
+        "knowledgeKeywords": [
+          "三视图对应",
+          "技术图样",
+          "尺寸标注",
+          "投影关系"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅已确认为通用技术且原图样任务已有时，可能视图外观相同就认结构相同，漏隐藏结构或尺寸对应。",
+        "diagnosticContrast": "比较同时满足原投影/尺寸约束的对象与只满足单视图外观的对象。",
+        "correctionTarget": "按原已考投影和图样规则推理，原题不含电路/工程规范就不新加。",
+        "transferTarget": "在原结构/尺寸关系内换观察或问法，合法新图须准确重建。",
+        "selfCheckTarget": "核各原视图对应、标注与可实现性，不采信学生手画辅助标记。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025"
+        ],
+        "taskCondition": "evidence"
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "已明确具体课程的信息技术数据与原算法",
+        "已明确具体课程的信息系统与原安全措施",
+        "已明确具体课程的通用技术约束/图样/系统",
+        "其它已识别课程的原题具体子核心（目录缺项仅据原题定制）"
+      ],
+      "misconceptionMechanisms": [
+        "未知科目被自动当other并套通用规则",
+        "输入范围、索引/分支边界或终止条件遗漏",
+        "实现单个功能被当满足所有原约束",
+        "数据口径或系统模块作用混淆",
+        "技术图样外观和口号替代可验证证据"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "先确认实际课程和原任务，再使一处核心条件成为有效判断",
+            "算法/设计等匹配分支各自按原知识说明错因，不跨分支借知识"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "原算法/系统/设计中关联不同约束或证据，说明中间结果的作用",
+            "仅原接口、器材或流程内迁移，不新教编程语法或技术标准"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "原范围内处理边界输入、约束冲突或替代方案，按原任务给可验证判据",
+            "综合自检原条件、推导/执行过程与结果，未知/不匹配课程停止而非兜底生成"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "other必须有明确实际课程证据，未知科目或相互冲突科目不能落入",
+        "目录算法/设计只是分支候选，原题未考就不用，缺项有原引文才定制",
+        "代码按原语言/结构独立验证，设计按原指标逐项验证",
+        "开放设计允许多方案，不能把一个例子当唯一答案",
+        "生成只表训练覆盖，不作学生技能或能力认证"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "信息技术选择/程序填空",
+          "design": "仅原数据/算法/系统核心内改条件和关系，保原响应形式",
+          "answerEvidence": "核输入、状态转移、原边界和输出，不额外要求新语言特性"
+        },
+        {
+          "questionType": "数据/系统分析",
+          "design": "原数据字段、流程和任务约束内深化解释",
+          "answerEvidence": "核口径、采集处理链和原安全措施作用，不引未考协议算法"
+        },
+        {
+          "questionType": "通用技术图样",
+          "design": "原投影/尺寸/连接约束内改设问或准确重建",
+          "answerEvidence": "据原印刷图核对应和尺寸，不能因外观相同认结构相同"
+        },
+        {
+          "questionType": "设计/方案",
+          "design": "原材料、功能与资源限制内提高约束取舍",
+          "answerEvidence": "原约束逐项可测，论证可行性与代价，允许多种满足方案"
+        },
+        {
+          "questionType": "其它已识别课程",
+          "design": "没有匹配专科条目时只据原题和原核心定制，不从本目录借规则",
+          "answerEvidence": "给真实源引文和范围理由；不能可靠识别或独立验证则停止"
+        }
+      ],
+      "scopeExclusions": [
+        "未知科目、英语材料或跨科冲突不能自动归other",
+        "信息技术不能默认所有数据结构/语言/网络知识，通用技术不默认电工/工程全模块",
+        "不移用体育竞赛规则、艺术理论或专业规范作其它科目的常识核心",
+        "不凭other标签忽略原学段、原响应任务或事实来源"
+      ]
+    }
+  }
+}

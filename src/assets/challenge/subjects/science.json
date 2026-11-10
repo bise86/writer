@@ -1,0 +1,523 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "science",
+    "label": "科学",
+    "summary": "保留原科学概念、实验与证据范围，增强探究方法和因果解释。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "增加一项探究方法检查和一条因果联系",
+          "辨析观察事实与推测结论",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "methodChecks",
+            "label": "控制变量、测量或证据方法检查数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "experimental"
+          },
+          {
+            "key": "causalLinks",
+            "label": "原知识范围内的因果联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "增加两项方法或证据检查，联系两个原条件",
+          "比较原实验方案或解释不同结果",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "methodChecks",
+            "label": "控制变量、测量或证据方法检查数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "experimental"
+          },
+          {
+            "key": "causalLinks",
+            "label": "原知识范围内的因果联系数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "增加三项方法检查并构建三条因果联系",
+          "分析原方案限制、反向条件或边界结果",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "methodChecks",
+            "label": "控制变量、测量或证据方法检查数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning",
+            "taskCondition": "experimental"
+          },
+          {
+            "key": "causalLinks",
+            "label": "原知识范围内的因果联系数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "science_concept_domain",
+        "name": "概念对象与适用范围",
+        "description": "在原科学概念内区分对象、条件和结论范围，说明相似表象为何不保证同一解释。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_zhongkao_science_2025"
+        ]
+      },
+      {
+        "id": "science_condition_reverse",
+        "name": "结果反推与条件核验",
+        "description": "由原结果反查必要条件，并核验这些条件能否单独或共同支持结果，不用新的高中模型解释。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_zhongkao_science_2025"
+        ]
+      },
+      {
+        "id": "science_representation_choice",
+        "name": "表示方式与信息意义",
+        "description": "在原文字、量、符号或图表中选择能揭示关系的表示，指出表示转换怎样排除混淆；不能只重排图片。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_zhongkao_science_2025"
+        ]
+      },
+      {
+        "id": "science_phenomenon_model",
+        "name": "现象到模型选择",
+        "description": "用原概念解释现象，比较不同原模型在哪些观测下可区分。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_zhongkao_science_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "science_identifying_experiment",
+        "name": "可鉴别的探究",
+        "description": "在原器材与变量中用必要对照排除替代解释，明确改变和保持什么以及它们为何必要。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_zhongkao_science_2025"
+        ],
+        "taskCondition": "experimental"
+      },
+      {
+        "id": "science_anomaly_revision",
+        "name": "反常结果与条件修正",
+        "description": "由原数据中不符直觉的结果寻找遗漏条件，修正解释并作原范围可检验预测。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_zhongkao_science_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "science_quantity_relation",
+        "name": "量的关系与指标",
+        "description": "从原量、图线和单位区分总量、速率、比例及过程，说明同数不同义怎样影响推断。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_zhongkao_science_2025"
+        ],
+        "taskCondition": "quantitative"
+      },
+      {
+        "id": "science_feasibility_optimization",
+        "name": "方案优化与可行边界",
+        "description": "在原器材、知识和限制内比较方案，解释改善一个指标为何可能损害另一指标及成立条件。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_zhongkao_science_2025"
+        ],
+        "taskCondition": "experimental"
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "science_lamp_measurement",
+        "name": "原小灯泡测量的对象与条件",
+        "knowledgeKeywords": [
+          "小灯泡",
+          "伏安测量",
+          "电阻测量"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原任务已有时，可能误把灯泡电阻当常数或混淆表读数。",
+        "diagnosticContrast": "比较原接法实测量和欲求量、不同原测量条件。",
+        "correctionTarget": "用原仪器与量关系解释，不添加高中电路公式。",
+        "transferTarget": "原器件/接法范围内改变测点或条件。",
+        "selfCheckTarget": "核原电路读数对象、单位和图线条件。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "zj_zhongkao_science_2025"
+        ],
+        "taskCondition": "experimental"
+      },
+      {
+        "id": "science_gas_preparation",
+        "name": "原制气干燥检验的条件链",
+        "knowledgeKeywords": [
+          "二氧化碳制取",
+          "气体干燥",
+          "气体检验",
+          "制气装置"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原任务已有时，可能把制取/干燥/检验目的混同或忽略原干扰。",
+        "diagnosticContrast": "比较原试剂装置实现的功能及证据是否足够。",
+        "correctionTarget": "只用原原理与试剂，不能把科学大类当全部化学许可。",
+        "transferTarget": "原装置条件内换操作顺序或原干扰情况。",
+        "selfCheckTarget": "核每步功能、原反应条件和检验证据，不编结果。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "zj_zhongkao_science_2025"
+        ],
+        "taskCondition": "experimental"
+      },
+      {
+        "id": "science_conservation_object",
+        "name": "原守恒的对象与系统",
+        "knowledgeKeywords": [
+          "质量守恒",
+          "原子守恒",
+          "封闭系统"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把原守恒对象扩大到所有数量，或漏系统开放造成的表观变化。",
+        "diagnosticContrast": "比较原实验内真正守恒量与可变化的测量量。",
+        "correctionTarget": "按原概念和系统边界说明，不扩展至新守恒模型。",
+        "transferTarget": "原实验过程或边界条件内迁移。",
+        "selfCheckTarget": "核原对象、系统边界和测量口径。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "zj_zhongkao_science_2025"
+        ],
+        "taskCondition": "scientific_conditions"
+      },
+      {
+        "id": "science_plant_control",
+        "name": "原植物实验的变量与指标",
+        "knowledgeKeywords": [
+          "植物实验",
+          "光合作用",
+          "对照变量",
+          "植物探究"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原实验已有时，可能混杂条件、误读净量或用无效对照。",
+        "diagnosticContrast": "比较原条件一致的证据和混杂导致的假解释。",
+        "correctionTarget": "明确原变量与测量指标，不新增生物机制。",
+        "transferTarget": "原器材/过程内换对照或呈现顺序。",
+        "selfCheckTarget": "核原对象、时段、基数和必要对照。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "zj_zhongkao_science_2025"
+        ],
+        "taskCondition": "experimental"
+      },
+      {
+        "id": "science_lever_arm_conditions",
+        "name": "原杠杆的支点、力臂与平衡",
+        "knowledgeKeywords": [
+          "杠杆平衡",
+          "力臂",
+          "杠杆作图",
+          "支点"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把力臂当作用点到支点距离，或只看力大小忽略方向和原平衡条件。",
+        "diagnosticContrast": "比较符合原垂直距离和转动作用的关系与视觉线段/距离猜测。",
+        "correctionTarget": "按原杠杆支点、力的作用线和已考平衡关系推理，未考机械功不加入功。",
+        "transferTarget": "在原作用点/方向或已有载荷内调条件，图文同步准确。",
+        "selfCheckTarget": "核原力臂、方向和平衡可行；只按原任务相关部分验接触或约束。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "zj_zhongkao_science_2025",
+          "sh_zhongkao_integrated_2025"
+        ]
+      },
+      {
+        "id": "science_motion_reference",
+        "name": "原运动参照与量的对象",
+        "knowledgeKeywords": [
+          "参照物判断",
+          "相对运动",
+          "运动状态判断",
+          "动能影响因素"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原子点已考时，可能换参照仍沿用原运动判断，或把不同对象的原量直接比较。",
+        "diagnosticContrast": "比较在原参照与对象下成立的描述和忽略对象/相对条件的描述。",
+        "correctionTarget": "先确定原参照、对象和实际已考量，参照题不一并加入动能因素。",
+        "transferTarget": "只改原相对条件或问法，不因高铁等材料新增动量或高中模型。",
+        "selfCheckTarget": "核描述对象、参照和原量条件；动能因素仅原核心实际涉及才检查。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "zj_zhongkao_science_2025",
+          "sh_zhongkao_integrated_2025"
+        ]
+      },
+      {
+        "id": "science_buoyancy_pressure_quantity",
+        "name": "原浮力或压强的对象与测量量",
+        "knowledgeKeywords": [
+          "科学浮力",
+          "浮力计算",
+          "排液体积",
+          "科学压强",
+          "受压面积"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "按原子点择用：可能混物体/排液体积、力/压强或测量对象，只验某一局部数量。",
+        "diagnosticContrast": "比较原定义中的对象、量与边界一致的解释和表面数值正确的错配。",
+        "correctionTarget": "原仅浮力不捆所有密度压强模型，原仅压强不新增浮力知识。",
+        "transferTarget": "原介质与原模型内调已有浸入/受压条件，说明实际变化的量。",
+        "selfCheckTarget": "核原单位、对象和相关边界，未考复合状态不添加。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "zj_zhongkao_science_2025",
+          "sh_zhongkao_integrated_2025"
+        ]
+      },
+      {
+        "id": "science_ecology_sampling",
+        "name": "原生态调查的样本与环境关联",
+        "knowledgeKeywords": [
+          "生态调查",
+          "采样比较",
+          "环境关联",
+          "生物分布调查"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原调查任务已有时，可能混观察/推断、不同区域时段样本，或将相关当已证机制。",
+        "diagnosticContrast": "比较同口径样本支持的结论与未排除混杂的扩大解释。",
+        "correctionTarget": "依原样本与环境资料说明可证范围，不新增生物机制或调查技术。",
+        "transferTarget": "只在原采样资料内换比较顺序、关注点或已有条件，原事实不编改。",
+        "selfCheckTarget": "核区域、时段、样本口径和替代解释；证据不足应承认不能唯一归因。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "zj_zhongkao_science_2025",
+          "sh_zhongkao_integrated_2025"
+        ],
+        "taskCondition": "evidence"
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "明确科学课程/经证据确认的完整理综中的本题原物理、化学、生物或地球科学子核心",
+        "原现象、量与模型的对应",
+        "原测量、装置、变量与指标",
+        "原守恒、过程与条件边界",
+        "原科学图表/解释/探究任务",
+        "仅原题已覆盖多个核心间的合法联系"
+      ],
+      "misconceptionMechanisms": [
+        "科学科名当理化生全部知识许可",
+        "观察现象直接等同唯一机制",
+        "变量、读数与指标基准混同",
+        "对象或系统不明就套守恒/公式",
+        "把图线外观当真实关系、预期当实测",
+        "为跨域综合加入原题没有的高中公式"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "原现象中识别一条模型或条件差别，纠正具体可发生混淆",
+            "在原器材、概念和任务内做同核微调，不为综合拼新章节"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "连接原证据与模型/变量，比较同原现象的竞争解释",
+            "原定性任务仍可定性深化，原实验才用控制/误差要求"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "在原范围内处理反常结果、边界或方案约束，联系须原题已覆盖",
+            "三类自检核对象条件、证据推导与可观察结果，结论承认无法唯一确定时的限度"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "确认明确科学课程或标题/分节/题号/目标共同证实的完整理综并标integrated；结构不明跨科拼卷不得归本模块",
+        "逐原核心能回印刷题干/图表和独立解法，跨域只连原已覆盖核心",
+        "探究说明区分改变/保持变量、预期/实测和相关/因果",
+        "纯概念不强实验，多学科目录卡按原子点裁剪",
+        "训练覆盖不等同学生掌握，也不以学生笔迹补科学证据"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "概念/现象选择",
+          "design": "原模型前提与可观察后果中设置有效干扰",
+          "answerEvidence": "解释为何原条件支持或排除模型，不新添定律"
+        },
+        {
+          "questionType": "计算/图表",
+          "design": "原量关系内改条件或信息组织，保所求和题型",
+          "answerEvidence": "核量义、单位、对象和结果，图线与原过程相符"
+        },
+        {
+          "questionType": "实验探究",
+          "design": "原器材原理内提高对照、指标或结果解释",
+          "answerEvidence": "明确可鉴别证据及结论边界，不编数据或新器材原理"
+        },
+        {
+          "questionType": "过程解释",
+          "design": "仅原已考环节内构成因果/守恒链",
+          "answerEvidence": "每个环节有原依据，未考光合/电路等兄弟模块不带入"
+        },
+        {
+          "questionType": "综合任务",
+          "design": "只在原任务本来覆盖的多个核心间增强衔接",
+          "answerEvidence": "说明各核心结论怎样相互约束，不能用科学标签扩纲"
+        }
+      ],
+      "scopeExclusions": [
+        "science仅用于已识别科学课程或证据确认的完整理综，不是数学/英语等无关混科或无法判断科目的兜底",
+        "不因科学一科开放所有高中理化生知识",
+        "无原实验不强制探究，无原跨域不强行综合",
+        "不引陌生试剂、大学机制或未考公式凑难"
+      ]
+    }
+  }
+}

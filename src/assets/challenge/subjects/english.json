@@ -1,0 +1,598 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "english",
+    "label": "英语",
+    "summary": "听力题、选项和材料原样保留；其余题在原语言点内增加语境辨析，写作提高交际与语篇控制。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "加入一项必须联系上下文的判断，设置一个易混用法",
+          "写作实质加强或新增一项与原交际目的相关的明确要求",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "contextDependencies",
+            "label": "完成作答须整合的语境线索数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "writingConstraints",
+            "label": "相对原题加强或新增的写作要求数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "writing"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "加入两项关联语境，排除两个看似合理的干扰",
+          "写作实质加强或新增两项读者、信息取舍或衔接要求",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "contextDependencies",
+            "label": "完成作答须整合的语境线索数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "writingConstraints",
+            "label": "相对原题加强或新增的写作要求数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "writing"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "综合三项原语言点语境线索，干扰项均有可解释的迷惑性",
+          "写作实质加强或新增三项需协调落实的任务与语言控制要求",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "contextDependencies",
+            "label": "完成作答须整合的语境线索数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "writingConstraints",
+            "label": "相对原题加强或新增的写作要求数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "writing"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "en_context_pragmatics",
+        "name": "语境语用与对象意图",
+        "description": "在原语言点内改变可见交际目的、对象或隐含限制，解释为什么本语境决定选词、语气或表达；听力不参与。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "neea_en_adapt_2024",
+          "sh_gaokao_en_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_inference_bounds",
+        "name": "证据推断与过度推断排除",
+        "description": "从原有线索推出未直说但有依据的含义，排除虽合理却没有材料支持的理解；不能凭常识补材料外事实。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "neea_en_adapt_2024",
+          "sh_gaokao_en_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_discourse_function",
+        "name": "篇章功能与逻辑衔接",
+        "description": "判明原句、连接或指代在语篇推进中的作用，区分转折、承接、条件等关系，而非只认同义词或多放连接词。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "neea_en_adapt_2024",
+          "sh_gaokao_en_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_form_meaning_choice",
+        "name": "形式意义与替代表达辨析",
+        "description": "在原语法和词义范围内比较两种看似可用表达怎样改变时态、语气、焦点或意义，据具体语境排除干扰；不新增语法点。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "neea_en_adapt_2024",
+          "sh_gaokao_en_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_read_write_transfer",
+        "name": "读写衔接与线索兑现",
+        "description": "仅在原有阅读写作或续写任务中，让人物动机、事实或段首线索限制后续展开，说明前一线索怎样支持后一情节与收束。",
+        "appliesTo": "writing",
+        "sourceIds": [
+          "neea_en_adapt_2024",
+          "sh_gaokao_en_2025",
+          "sh_zhongkao_en_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "en_writing_tradeoff",
+        "name": "写作取舍与交际效果",
+        "description": "在原文体、目的和字数内协调信息优先级、语气及读者行动，使表达选择有实际后果；通知、邀请不强制哲理升华。",
+        "appliesTo": "writing",
+        "sourceIds": [
+          "neea_en_adapt_2024",
+          "sh_gaokao_en_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_writing_coherence",
+        "name": "写作组织与持续控制",
+        "description": "让句段职责、指代和信息焦点共同实现原任务，并说明某项组织选择怎样避免歧义、重复或目的失效；不能以复杂句数量计深度。",
+        "appliesTo": "writing",
+        "sourceIds": [
+          "neea_en_adapt_2024",
+          "sh_gaokao_en_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "en_form_meaning",
+        "name": "原语法形式与事件关系",
+        "knowledgeKeywords": [
+          "时态",
+          "语态",
+          "非谓语",
+          "从句",
+          "句法"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能见时间词或搭配就套形式，忽略原叙述时点、逻辑主语或句法职责。",
+        "diagnosticContrast": "比较局部形式相似但事件关系/主客关系不同的候选。",
+        "correctionTarget": "用原已考语法解释句法角色与时间/主客关系，不能新增时态或句式许可。",
+        "transferTarget": "仅换原时点或同核心语境，说明原规则不变而形式为何调整。",
+        "selfCheckTarget": "核时间锚点、句法角色和句意是否一致，不只查表面搭配。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_reference_scope",
+        "name": "指代、否定与数量范围",
+        "knowledgeKeywords": [
+          "指代",
+          "代词",
+          "否定",
+          "比较",
+          "数量范围"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能只找最近名词或同词，把限定范围、否定关系或比较对象看错。",
+        "diagnosticContrast": "比较局部字面可通与前后指代/限定链一致的理解。",
+        "correctionTarget": "沿原上下文核对象和范围，说明每个限定词的约束。",
+        "transferTarget": "改变原线索呈现或同核干扰措辞，不补文章外事实。",
+        "selfCheckTarget": "逐项核指代对象、否定和比较口径是否贯通。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_evidence_strength",
+        "name": "阅读事实、推断与立场边界",
+        "knowledgeKeywords": [
+          "阅读推断",
+          "阅读理解",
+          "作者态度",
+          "证据",
+          "概括",
+          "主旨大意",
+          "标题选择",
+          "例证层级"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把常识或可能性当文本结论，把may改must或局部改全部。",
+        "diagnosticContrast": "对比原文本能支持与只是看似合理的结论。",
+        "correctionTarget": "定位原线索和限定，区分事实、作者立场、合理推断与过度推断。",
+        "transferTarget": "在原阅读核心内换信息组织或选项表述，结论仍须原证据支持。",
+        "selfCheckTarget": "核每项推断的原文依据及限度，域外常识不能补证。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "sh_zhongkao_en_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "en_global_coherence",
+        "name": "跨句与全篇逻辑一致",
+        "knowledgeKeywords": [
+          "完形填空",
+          "七选五",
+          "篇章衔接",
+          "语篇逻辑",
+          "完形语境",
+          "人物态度",
+          "情感色彩"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能选择局部搭配通顺却与转折、因果或段落功能冲突的词句。",
+        "diagnosticContrast": "比较单句通顺与全篇推理链同时成立。",
+        "correctionTarget": "以原句法和原段落职责共同解释选择，不只抓关键词。",
+        "transferTarget": "只调整原线索的组织或同核语境，保持原篇章知识。",
+        "selfCheckTarget": "核前后逻辑、段落作用与照应是否同时一致。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "sh_zhongkao_en_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "en_pragmatic_register",
+        "name": "应用文语气与对象目的",
+        "knowledgeKeywords": [
+          "邀请邮件",
+          "交际目的",
+          "应用文",
+          "语气",
+          "词义辨析"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能表面近义替换却忽略搭配、礼貌、对象或使读者产生错误行动。",
+        "diagnosticContrast": "比较同原目的下表达得体与语法正确但交际后果不当的写法。",
+        "correctionTarget": "按原词义/文体与对象目的选择语域，不塞新语言点或哲理。",
+        "transferTarget": "同原文体内换读者/限制，说明表达为何作相应取舍。",
+        "selfCheckTarget": "核对象、礼貌、信息准确和行动目的，复杂表达不自动更好。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_writing_task_delivery",
+        "name": "写作任务与可执行信息兑现",
+        "knowledgeKeywords": [
+          "邀请邮件",
+          "交际目的",
+          "书面表达",
+          "写作任务",
+          "应用文",
+          "通知写作",
+          "建议信",
+          "报道写作"
+        ],
+        "appliesTo": "writing",
+        "misconception": "可能堆模板或高级词却漏原必需信息、参与方式或写作目的。",
+        "diagnosticContrast": "对照华丽但目的失效与准确落实原任务的表达。",
+        "correctionTarget": "逐项兑现原对象、必要信息与行动，保留原文体和字数。",
+        "transferTarget": "同一原任务核心换情境，解释必须保持和应调整的信息。",
+        "selfCheckTarget": "按原任务清单核信息完整、组织有效和读者能否行动，不强制学习反思。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_discourse_reference",
+        "name": "写作信息组织与指代",
+        "knowledgeKeywords": [
+          "邀请邮件",
+          "交际目的",
+          "书面表达",
+          "段落组织",
+          "指代衔接"
+        ],
+        "appliesTo": "writing",
+        "misconception": "可能句子各自正确，却因信息先后或指代不清让读者误解原目的。",
+        "diagnosticContrast": "比较局部正确与全文信息职责、衔接都清楚的组织。",
+        "correctionTarget": "以原对象和信息关系解释段落次序、指代与重点。",
+        "transferTarget": "同文体内调整原信息呈现，保持目的并解释组织改变的作用。",
+        "selfCheckTarget": "核指代可定位、每段推进任务、关键行动信息不被埋没。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "sh_zhongkao_en_2025"
+        ]
+      },
+      {
+        "id": "en_continuation_constraints",
+        "name": "续写事实、动机与段首约束",
+        "knowledgeKeywords": [
+          "读后续写",
+          "人物动机",
+          "段首句",
+          "续写线索"
+        ],
+        "appliesTo": "writing",
+        "misconception": "可能凭空反转、改变原人物动机或用口号升华代替因果。",
+        "diagnosticContrast": "比较看似精彩但脱离原文与受原事实/线索约束的展开。",
+        "correctionTarget": "不改变原已给事实、人物动机及段首约束；允许由原线索支持且不矛盾的合理发展与细节，不凭空引入改变因果的事实。",
+        "transferTarget": "在原故事核心内换情节组织，说明线索如何仍被兑现。",
+        "selfCheckTarget": "核事实、视角、时态、段首和结局衔接；无原材料不能臆测。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "sh_zhongkao_en_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "en_word_form_role",
+        "name": "原词形运用的句法职责与意义",
+        "knowledgeKeywords": [
+          "词形填空",
+          "词汇运用",
+          "单词适当形式",
+          "词性转换",
+          "词形变化"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能认识词义却忽略原句的位置、数或已考形式要求；只核原实际语法类别。",
+        "diagnosticContrast": "比较词义似通但句法职责不符的形式与意义、角色同时成立的形式。",
+        "correctionTarget": "由原句职责和语义共同决定原已考词形，不借词性一词添加新语法类别。",
+        "transferTarget": "在同一原词义/词形核心内改变原语境限制，说明形式选择为何调整。",
+        "selfCheckTarget": "回全句核角色、意义和原已考形式前提，不以孤立词形表记忆代替。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "zj_zhongkao_design_2025"
+        ]
+      },
+      {
+        "id": "en_task_reading_scope",
+        "name": "原任务型阅读的所问对象与必要表达",
+        "knowledgeKeywords": [
+          "任务型阅读",
+          "阅读表达",
+          "信息归纳",
+          "回答问题",
+          "完成表格"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原信息任务已有时，可能照抄原句却未回答所问对象/范围，或删去决定意义的限制。",
+        "diagnosticContrast": "比较文本中能支持问题的必要信息与虽在原文却不回应当前任务的细节。",
+        "correctionTarget": "按原问题—证据—必要表达对应，保原答案格式和限制，不新增回应要求或字数。",
+        "transferTarget": "在原材料和原信息核心内变提取焦点或呈现，解释范围变化而非加入新文章。",
+        "selfCheckTarget": "逐项核所问对象、证据、限定和原响应格式是否匹配，允许准确的不同表达。",
+        "sourceIds": [
+          "zj_gaokao_english_2025",
+          "zj_zhongkao_design_2025"
+        ]
+      },
+      {
+        "id": "en_clause_component",
+        "name": "原从句的句法职责与关系定位",
+        "knowledgeKeywords": [
+          "定语从句关系词",
+          "宾语从句语序",
+          "状语从句关系",
+          "从句成分"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原具体从句子点已考时，可能意思似通但关系词/语序未完成原句职责；不把各类从句全部捆绑。",
+        "diagnosticContrast": "比较原从句中角色完整的表达与只凭常见搭配选择、留下缺项的表达。",
+        "correctionTarget": "先核原从句的实际类型、句法职责和语义关系，未考另一从句类型不加入。",
+        "transferTarget": "仅在原已考关系内改变可见上下文或信息焦点，说明原职责怎样约束形式。",
+        "selfCheckTarget": "回原主从结构核连接、成分和句意，不以关键词机械套未考句式。",
+        "sourceIds": [
+          "zj_gaokao_english_2025"
+        ]
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "原词义、搭配与语境语用",
+        "原语法点的形式—意义对应",
+        "原阅读的事实、意图、指代与证据边界",
+        "原完形/语篇衔接的跨句逻辑",
+        "原应用文的对象、目的与信息组织",
+        "仅原续写任务的事实、动机、段首及合理发展",
+        "听力完全冻结"
+      ],
+      "misconceptionMechanisms": [
+        "时间词机械触发表面语法形式",
+        "近义替换忽略搭配、语域或交际后果",
+        "最近名词猜指代、局部同词替代篇章逻辑",
+        "将may改must、个例改全体或常识当文本证据",
+        "复杂语言掩盖任务遗漏、邀请缺行动信息",
+        "续写凭空反转因果或模板哲理结尾"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "让原语言点的一条语境限制决定选择，解析对照表面可用与实际达意",
+            "写作实质提高一项信息/对象控制，听力不参与任何升难指标"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "连接语境证据与篇章/语用选择，解释两类不同误区",
+            "按原文体协调必要信息、语气和组织，不增加未考语法点"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "在原语言与材料范围内处理隐含意图、过度推断或多重任务取舍",
+            "读写或写作的每次选择均兑现线索和读者效果，三类自检核条件、表达过程和任务结果"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "非听力逐核心说明原语言规则、文本判断或表达取舍在本语境/任务成立的依据，按题型择用，不强加语法形式术语",
+        "阅读推断逐项对应证据和限定，不把合理可能性当唯一事实",
+        "应用文参考答案可多样，核对象/信息/行动效果而非唯一模板",
+        "续写允许有据、无矛盾的创造，不改变原事实和段首约束",
+        "听力题、材料、图和作答指示保持，学习说明为空，缺可核验音频/转写待核"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "单项/词语辨析",
+          "design": "同一原语言点下调整目的、对象或可见限制，干扰有真实语义诱因",
+          "answerEvidence": "解析给语境依据和选项失效点，不因词更冷僻而加难"
+        },
+        {
+          "questionType": "完形/语篇填空",
+          "design": "保原任务与空位类型，提升原线索间的约束关系",
+          "answerEvidence": "核局部语法、词义与前后逻辑共同成立，指出跨句依据"
+        },
+        {
+          "questionType": "阅读/匹配",
+          "design": "保原材料关系和设问类型，强化证据限度和指代/意图判断",
+          "answerEvidence": "每个结论列可核文本依据和过度推断边界，不能凭课外常识补证"
+        },
+        {
+          "questionType": "应用文写作",
+          "design": "保文体、字数和原交际目标，加强信息优先级与读者行动",
+          "answerEvidence": "参考表达加任务对应和可能误区，按交际效果允许多种表达"
+        },
+        {
+          "questionType": "读后续写",
+          "design": "仅原任务确为续写时提高线索兑现与因果衔接",
+          "answerEvidence": "解析核事实、动机、视角、段首和合理创造的相容性"
+        },
+        {
+          "questionType": "听力",
+          "design": "全量原样保留，不生成变式与掌握说明",
+          "answerEvidence": "无原录音/可追溯转写不猜答案，明确待核"
+        }
+      ],
+      "scopeExclusions": [
+        "不新增原题未考时态/语法或陌生词义作为解题核心",
+        "不把通知、邀请一律改成哲理议论或续写",
+        "不以高级词/复杂句数量、额外字数充当深度",
+        "不改变听力或伪造录音、学生听力错因"
+      ]
+    }
+  }
+}

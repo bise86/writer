@@ -1,0 +1,586 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "chinese",
+    "label": "语文",
+    "summary": "聚焦原卷字词、语境、阅读证据与写作要求，避免以冷僻知识或空泛升华拔高。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "将直接识记改为有语境的辨析，加入一个易错点",
+          "写作实质加强或新增一项与原文体相符的内容或表达要求",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "evidenceLinks",
+            "label": "需建立的材料或语境证据联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          },
+          {
+            "key": "writingConstraints",
+            "label": "相对原题加强或新增的写作要求数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "writing"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "围绕同一材料联系两处证据，区分表层意思与依据",
+          "写作实质加强或新增两项细节、组织、文体或读者要求",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "evidenceLinks",
+            "label": "需建立的材料或语境证据联系数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          },
+          {
+            "key": "writingConstraints",
+            "label": "相对原题加强或新增的写作要求数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "writing"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "整合三处原材料信息，处理条件、比较或表达效果",
+          "写作实质加强或新增三项需协调落实的要求，不强制名言、修辞数量或哲理结尾",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "evidenceLinks",
+            "label": "需建立的材料或语境证据联系数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          },
+          {
+            "key": "writingConstraints",
+            "label": "相对原题加强或新增的写作要求数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "writing"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "zh_evidence_crosscheck",
+        "name": "材料互证与视角差异",
+        "description": "仅用原有材料比较视角、事实与主张，说明一处材料怎样支持、补充或限制另一处，不能为凑互证新增文章。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "sh_zhongkao_zh_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "zh_implicit_meaning",
+        "name": "言外之意与表达位置",
+        "description": "区分原字句的字面意思、语境含义和叙述位置，解释为何换一个位置或对象会改变理解；不靠冷僻典故拔高。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "sh_zhongkao_zh_2025"
+        ]
+      },
+      {
+        "id": "zh_concept_bounds",
+        "name": "概念边界与替代解释",
+        "description": "围绕原字词、观点或判断比较适用范围与可替代解释，避免把表面相近当成等义；核心考点不增不删。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "sh_zhongkao_zh_2025"
+        ]
+      },
+      {
+        "id": "zh_precision_focus",
+        "name": "表达精确与信息焦点",
+        "description": "在原语言任务中比较措辞、语序、称谓或信息先后对准确性和读者理解的真实影响，解释排除某表达的依据。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "sh_zhongkao_zh_2025"
+        ]
+      },
+      {
+        "id": "zh_counterevidence",
+        "name": "反证与解释限度",
+        "description": "用原有证据检验一项结论的解释边界或相反理解，说明哪条证据能排除过度概括；不是另加原知识外论据。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "sh_zhongkao_zh_2025"
+        ],
+        "taskCondition": "argument"
+      },
+      {
+        "id": "zh_writing_relations",
+        "name": "关系构建与读者取舍",
+        "description": "按原议论、叙事或应用文体，协调概念关系、事件变化或信息行动，说明一个组织决定如何制约下一步表达；不统一要求哲理。",
+        "appliesTo": "writing",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "sh_zhongkao_zh_2025"
+        ]
+      },
+      {
+        "id": "zh_writing_perspective",
+        "name": "叙述视角与自然推进",
+        "description": "仅在原写作任务需要时，通过视角、细节与认识变化形成自然推进；应用文可体现对象与信息分寸，不强迫通知写人物反思。",
+        "appliesTo": "writing",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "sh_zhongkao_zh_2025"
+        ]
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "zh_scope_logic",
+        "name": "语境词义与概念范围",
+        "knowledgeKeywords": [
+          "词义",
+          "语境",
+          "概念范围",
+          "逻辑关系",
+          "语言运用"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能按词面近义替换、偷换对象或条件，以偏概全或倒置因果。",
+        "diagnosticContrast": "比较在原句语境可成立与换对象/范围后失效的解释。",
+        "correctionTarget": "用原句与原概念限定纠正，不加冷僻知识。",
+        "transferTarget": "同核换语境或设问，解释范围和条件怎样限制表达。",
+        "selfCheckTarget": "核对象、范围、条件与因果方向，不能只看同词。",
+        "sourceIds": [
+          "zj_gaokao_chinese_2025",
+          "sh_zhongkao_zh_2025"
+        ]
+      },
+      {
+        "id": "zh_claim_evidence",
+        "name": "观点、证据与推理桥梁",
+        "knowledgeKeywords": [
+          "材料阅读",
+          "观点论证",
+          "证据",
+          "信息类阅读"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把观点当证据、相邻材料当互证或省略关键推理。",
+        "diagnosticContrast": "比较原证据能支持与只能并列出现的主张。",
+        "correctionTarget": "分清原事实、观点与推理联系，跨材料只比较可比内容。",
+        "transferTarget": "在原材料核心内换证据组织或问题视角，不新增文章或论据。",
+        "selfCheckTarget": "核每结论何据、推理桥梁是否成立及材料可证限度。",
+        "sourceIds": [
+          "zj_gaokao_chinese_2025",
+          "sh_zhongkao_zh_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "zh_voice_time",
+        "name": "叙述者、人物与时间视角",
+        "knowledgeKeywords": [
+          "叙述视角",
+          "作者态度",
+          "人物语言",
+          "文学阅读"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把人物话等同作者态度，或把回忆当时与叙写当下混同。",
+        "diagnosticContrast": "比较不同说话者、时间层次能承担的原文判断。",
+        "correctionTarget": "用原话语归属、语境与叙述位置限定结论。",
+        "transferTarget": "同核改变原线索呈现或关注视角，不编人物外经历。",
+        "selfCheckTarget": "核谁说、何时说、据何判断，不能以句代篇。",
+        "sourceIds": [
+          "zj_gaokao_chinese_2025",
+          "sh_zhongkao_zh_2025",
+          "moe_gaokao_zh_2024"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "zh_classical_context",
+        "name": "原文言词句与上下文互证",
+        "knowledgeKeywords": [
+          "文言词义",
+          "文言虚词",
+          "省略主语",
+          "文言句意",
+          "断句"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能现代义硬套、见熟词套常见义或脱离上下文补主语。",
+        "diagnosticContrast": "比较原可用义项在句法/语境中的成立条件。",
+        "correctionTarget": "以原词句和上下文互证，保留已考义项，不新增冷僻用法。",
+        "transferTarget": "仅在原词义/句意核心内改变表达组织或设问。",
+        "selfCheckTarget": "回代核主语、句法与上下文意义是否同时通顺。",
+        "sourceIds": [
+          "zj_gaokao_chinese_2025",
+          "sh_zhongkao_zh_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "zh_art_effect",
+        "name": "表达手法与具体效果",
+        "knowledgeKeywords": [
+          "表现手法",
+          "表达效果",
+          "修辞作用",
+          "结构作用"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能只报手法名称，不解释原用词、结构和阅读效果的联系。",
+        "diagnosticContrast": "比较标签式作答与有原句依据的效果解释。",
+        "correctionTarget": "把原表达选择与语境、结构职责相连，不数修辞加分。",
+        "transferTarget": "同核比较另一原允许表达的效果差别，不增新艺术理论。",
+        "selfCheckTarget": "核每个效果能否由原词句或结构事实支持。",
+        "sourceIds": [
+          "zj_gaokao_chinese_2025",
+          "sh_zhongkao_zh_2025",
+          "moe_gaokao_zh_2024"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "zh_writing_relations",
+        "name": "原题意关系与材料组织",
+        "knowledgeKeywords": [
+          "写作题意",
+          "叙事作文",
+          "议论写作",
+          "应用文",
+          "材料取舍"
+        ],
+        "appliesTo": "writing",
+        "misconception": "可能只抓一个关键词泛谈、堆材料、口号升华或遗漏对象任务。",
+        "diagnosticContrast": "叙事比较细节是否支撑变化，议论比较依据是否支持关系，应用文比较信息是否可行动。",
+        "correctionTarget": "按原文体与核心题意组织材料和表达，不统一加哲理或学习日志。",
+        "transferTarget": "同原文体核心换具体情境或组织，说明题意关系为何仍成立。",
+        "selfCheckTarget": "核原任务、材料依据、组织与读者效果一致，复杂语言不代替任务。",
+        "sourceIds": [
+          "zj_gaokao_chinese_2025",
+          "sh_zhongkao_zh_2025"
+        ]
+      },
+      {
+        "id": "zh_sentence_precision",
+        "name": "原病句与语义指向的条件",
+        "knowledgeKeywords": [
+          "病句辨析",
+          "病句修改",
+          "成分搭配",
+          "语义歧义",
+          "指向不明"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原错误类型已考时，可能局部搭配通顺却对象/成分错接，或修改后改变原意。",
+        "diagnosticContrast": "比较句法和原语境意义均成立的表达与只改表面词语的伪修改。",
+        "correctionTarget": "按原实际错误类型定位对象与关系，保原意，不新增语法术语考题。",
+        "transferTarget": "在同一原语言规范内换语境或表达组织，解释指向如何被限制。",
+        "selfCheckTarget": "回上下文核成分、搭配和原意是否共同成立，不把更长表达当更正确。",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "zj_gaokao_chinese_2025",
+          "zj_zhongkao_design_2025"
+        ]
+      },
+      {
+        "id": "zh_poetry_scene_emotion",
+        "name": "原诗句的意象关系与情感证据",
+        "knowledgeKeywords": [
+          "诗歌情感",
+          "诗词鉴赏",
+          "意象关系",
+          "诗歌语境"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能见某景物就套悲喜标签，忽略说话者、时序、转折或整诗语境。",
+        "diagnosticContrast": "比较原词句支持的情感/意味与仅凭单个意象惯常联想的解释。",
+        "correctionTarget": "用原词句—意象关系—全诗可见语境互证，不添作者生平或课外典故。",
+        "transferTarget": "只改原设问关注或在原材料内比较表达位置，核心诗句理解不变。",
+        "selfCheckTarget": "核每一情感判断有原词句和语境支持，诗中说话者不自动等于作者现实经历。",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "zj_gaokao_chinese_2025",
+          "zj_zhongkao_design_2025"
+        ]
+      },
+      {
+        "id": "zh_information_compression",
+        "name": "原概括压缩的必要信息与目的",
+        "knowledgeKeywords": [
+          "语言压缩",
+          "概括信息",
+          "新闻概括",
+          "信息转述",
+          "交际表达"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原概括/交流任务已有时，可能删掉必要对象、时间或因果，保留大量无关细节。",
+        "diagnosticContrast": "比较回应原对象目的的必要信息与内容真实但不服务任务的细节。",
+        "correctionTarget": "以原目的和范围筛必要信息，保原响应形式/字数，不把压缩题变扩写。",
+        "transferTarget": "在原信息和同一表达目的内调整呈现或问法，说明取舍何以改变。",
+        "selfCheckTarget": "核原任务必要要素、条件与因果不失真，表达简洁不等于删到无意义。",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "zj_gaokao_chinese_2025",
+          "zj_zhongkao_design_2025"
+        ]
+      },
+      {
+        "id": "zh_classical_sentence_boundary",
+        "name": "原文言断句翻译的角色与意义",
+        "knowledgeKeywords": [
+          "文言断句",
+          "文言翻译",
+          "省略主语",
+          "文言句式"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原句法任务已考时，可能按字数/熟词断句、补错主语，或把局部熟义拼成不通句意。",
+        "diagnosticContrast": "比较句法职责和上下文意义同时成立的划分与仅表面节奏工整的划分。",
+        "correctionTarget": "用原已考词句和上下文核对象、句法与语义，不新增冷僻义项或新句式。",
+        "transferTarget": "在原词句知识内调整设问或表达组织，不换成需要新古文知识的材料。",
+        "selfCheckTarget": "回原上下文检人物动作、主语和关联，不能以现代义套原古义。",
+        "sourceIds": [
+          "moe_gaokao_zh_2024",
+          "zj_gaokao_chinese_2025",
+          "zj_zhongkao_design_2025"
+        ]
+      },
+      {
+        "id": "zh_named_work_evidence",
+        "name": "原指定作品任务的人物与事件证据",
+        "knowledgeKeywords": [
+          "名著人物",
+          "名著片段",
+          "指定作品阅读",
+          "名著事件"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原明确作品任务已有时，可能混人物、叙述者与事件因果，或用全书印象替当前证据。",
+        "diagnosticContrast": "比较原指定子范围/给定片段可证的人物行为与记忆混淆或无据评价。",
+        "correctionTarget": "只按原实际考查子范围和给定片段解释，书名不授权全书百科或作者生平。",
+        "transferTarget": "原作品与核心关系内调整证据关注或问法，不补未考章节情节。",
+        "selfCheckTarget": "核人物、情节时序和评价依据；原资料不足时不猜故事细节。",
+        "sourceIds": [
+          "zj_zhongkao_design_2025",
+          "sh_zhongkao_zh_2025"
+        ]
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "原字音字形、词义与语言规范",
+        "原语境表达、病句/标点与信息准确",
+        "原信息性阅读的概念、观点与证据",
+        "原文学阅读的叙述位置、形象与表达效果",
+        "原文言的已考词句及上下文关系",
+        "原古诗文的意象、语境与情感证据",
+        "原写作文体、材料关系和读者任务"
+      ],
+      "misconceptionMechanisms": [
+        "熟词字面义替代具体语境、概念范围偷换",
+        "将人物/叙述者话语等同作者态度",
+        "术语或手法标签替代实际表达效果",
+        "一处意象机械对应唯一情感、以句代篇",
+        "文言现代义硬套或省略对象错接",
+        "写作只抓材料单词泛谈、堆砌例子或口号升华"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "围绕原词句/材料的一处具体歧义或证据缺口加深判断",
+            "作文实质强化一项原题意/细节/对象约束，解析说明为何有效"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "将不同位置证据接到解释，辨说话者、范围或表达职责的不同",
+            "原文体内协调材料取舍与组织，不把多列术语当分析"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "在原材料和核心内处理替代解释、叙述层次或论证限度",
+            "作文的关系、细节或论据形成有据推进，开放答案按证据与效果自检"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "语言判断回原语境与已考规则，不靠孤立字面同义",
+        "阅读每个判断明确谁说、何据、何限，并允许有据的合理解释",
+        "文言候选回原句法和上下文，未给冷僻义项不新增",
+        "作文核原题意关系、文体任务和实际细节/论据，而非修辞数量",
+        "学习说明增强理解，选择填空不新增解释响应，开放题不锁唯一措辞"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "语言选择/判断",
+          "design": "原字词、语法或标点规则内换有效语境与干扰",
+          "answerEvidence": "指出语境/规范触发条件与错因，不能用生僻知识凑难"
+        },
+        {
+          "questionType": "阅读选择/填空",
+          "design": "保原材料及信息任务，深化范围、对象和证据判断",
+          "answerEvidence": "核答案位置、推断桥梁与失效干扰，避免只摘同词"
+        },
+        {
+          "questionType": "阅读简答",
+          "design": "强化同一原设问下的证据关联与解释层次",
+          "answerEvidence": "答案说明事实、理解与表达效果的联系，评分点在原分值内"
+        },
+        {
+          "questionType": "文言/古诗",
+          "design": "按原已考词义、句式或诗句语境设置同核变式",
+          "answerEvidence": "回原文本互证，意象不机械贴情感，不另加背诵篇目"
+        },
+        {
+          "questionType": "作文/应用表达",
+          "design": "保原文体和材料核心，提高关系建构、组织与对象效果",
+          "answerEvidence": "给可参考的组织/材料方案及检验判据，不以唯一立场或哲理结尾定优劣"
+        }
+      ],
+      "scopeExclusions": [
+        "不新增冷僻字音字义、课外典故或未考文言义项",
+        "无原多材料不为互证另加文章，无原论证任务不强塞哲学思辨",
+        "叙事/通知不统一改议论或强加反思日志",
+        "不凭学生批改和原答案判掌握，不把开放题封闭成固定模板"
+      ]
+    }
+  }
+}

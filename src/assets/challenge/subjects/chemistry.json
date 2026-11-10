@@ -1,0 +1,542 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "chemistry",
+    "label": "化学",
+    "summary": "保留原反应、物质性质与实验知识范围，考查条件、守恒、现象与证据的关系。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "增加一项实验或反应条件判断",
+          "用一条现象证据区分常见混淆",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "conditionChecks",
+            "label": "反应、实验或结论适用条件检查数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "scientific_conditions"
+          },
+          {
+            "key": "evidenceLinks",
+            "label": "现象与结论之间的有效证据联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "联系两项条件与两条证据，排除似是而非的结论",
+          "在原反应内增加守恒或实验方案比较",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "conditionChecks",
+            "label": "反应、实验或结论适用条件检查数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "scientific_conditions"
+          },
+          {
+            "key": "evidenceLinks",
+            "label": "现象与结论之间的有效证据联系数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "整合三项条件检查及三条证据，审视方案边界",
+          "通过原有概念完成反向推断或多步实验解释",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "conditionChecks",
+            "label": "反应、实验或结论适用条件检查数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning",
+            "taskCondition": "scientific_conditions"
+          },
+          {
+            "key": "evidenceLinks",
+            "label": "现象与结论之间的有效证据联系数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "chemistry_concept_domain",
+        "name": "概念条件与性质边界",
+        "description": "在原物质、反应和性质概念内辨别条件，解释为何表面相近说法的适用范围不同；不新加陌生物质性质。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "chemistry_condition_reverse",
+        "name": "条件反推与候选排除",
+        "description": "由原结论或现象反查必要条件，排除原知识内的候选解释，区分条件满足与结论必然。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "chemistry_representation_meaning",
+        "name": "符号含义与关系核验",
+        "description": "在原已出现的化学符号、数量或描述之间核对对象和关系，指出符号相似为何不必代表同一性质；不新增符号体系。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "zj_selection_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "chemistry_process_selectivity",
+        "name": "流程与选择性",
+        "description": "沿原有物质转化路径依据条件筛选主路径或排除副路径，让上一产物限制下一分离步骤。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025",
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "scientific_conditions"
+      },
+      {
+        "id": "chemistry_coupled_conservation",
+        "name": "守恒与竞争路径",
+        "description": "仅联系原题已涉及的质量、元素、电荷或电子守恒，判断多路径分配与可行解，不默认新增守恒法。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "quantitative"
+      },
+      {
+        "id": "chemistry_macro_micro_evidence",
+        "name": "宏微符号闭环",
+        "description": "用原可观测现象约束微粒或结构，再约束方程式或产物，排除同象异因；各环节知识均需原题支持。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "chemistry_equilibrium_rate_tradeoff",
+        "name": "条件双重作用",
+        "description": "仅原题已有速率和平衡等目标时，比较同一条件对不同目标的作用，在原数据内判断可行折中。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025"
+        ],
+        "taskCondition": "scientific_conditions"
+      },
+      {
+        "id": "chemistry_discriminating_experiment",
+        "name": "鉴别与干扰排除",
+        "description": "用原有试剂、装置和原理区分会产生相同表象的解释，兼顾干扰、纯度、损失或对照；不增陌生试剂知识。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "zj_selection_2025",
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "experimental"
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "chemistry_conservation_boundary",
+        "name": "守恒对象与系统边界",
+        "knowledgeKeywords": [
+          "质量守恒",
+          "元素守恒",
+          "原子守恒",
+          "微粒",
+          "分子数"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把原子/元素守恒扩大为分子数守恒，或漏气体逸散和剩余物。",
+        "diagnosticContrast": "比较同原反应中守恒对象和表面总量变化。",
+        "correctionTarget": "说明守恒的对象与系统边界，不能泛称所有数量都守恒。",
+        "transferTarget": "在原反应/原微粒关系内换配比或边界，不添新反应。",
+        "selfCheckTarget": "逐核元素、原子和原反应余量，排除错误守恒口径。",
+        "sourceIds": [
+          "sh_grade_chemistry_2025",
+          "sh_zhongkao_integrated_2025"
+        ],
+        "taskCondition": "scientific_conditions"
+      },
+      {
+        "id": "chemistry_equation_conditions",
+        "name": "原方程式与反应条件",
+        "knowledgeKeywords": [
+          "化学方程式",
+          "离子方程式",
+          "反应条件",
+          "电荷守恒"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "按原表示类型择用：普通方程式可能漏原子配平或反应条件；仅原核心确有离子方程式时才辨可拆物质与电荷配平，不能因写方程式一并要求。",
+        "diagnosticContrast": "比较原反应事实允许的表示与形式配平但不符原条件的表示。",
+        "correctionTarget": "核原物质、原条件与题设表示要求，不把溶液授为电离/溶度积全章许可。",
+        "transferTarget": "在原反应核心内微调条件或表示焦点。",
+        "selfCheckTarget": "普通方程式核原子、原物质和题设反应条件；仅原题实际考查离子/电荷表示时再核电荷，不强加未覆盖子点。",
+        "sourceIds": [
+          "sh_grade_chemistry_2025",
+          "sh_zhongkao_integrated_2025"
+        ],
+        "taskCondition": "scientific_conditions"
+      },
+      {
+        "id": "chemistry_rate_equilibrium",
+        "name": "原速率与平衡条件区分",
+        "knowledgeKeywords": [
+          "反应速率",
+          "化学平衡",
+          "催化剂",
+          "平衡条件"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心确有时，可能把速率相等当浓度相等，混淆催化和温度后果。",
+        "diagnosticContrast": "比较原变量对速率与原平衡判断的不同作用。",
+        "correctionTarget": "按原实际子核心择用：仅催化/速率时只核该判断前提，不加入平衡；仅平衡时只核原平衡关系；只有原题两者确已考查才对比各前提，不添平衡常数或电势。",
+        "transferTarget": "原条件变化后分别调整原速率与平衡推断。",
+        "selfCheckTarget": "核速率口径、平衡限制和原已知数据，不用一个结论替另一个。",
+        "sourceIds": [
+          "sh_grade_chemistry_2025",
+          "sh_zhongkao_integrated_2025"
+        ],
+        "taskCondition": "scientific_conditions"
+      },
+      {
+        "id": "chemistry_identification_interference",
+        "name": "鉴别除杂与证据排他性",
+        "knowledgeKeywords": [
+          "鉴别",
+          "除杂",
+          "实验方案",
+          "试剂",
+          "物质检验"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把出现现象当唯一鉴定，忽略干扰、损耗或新杂质。",
+        "diagnosticContrast": "比较能观察差异与确能排除原候选/干扰的方案。",
+        "correctionTarget": "仅用原试剂、装置和原理，证据不足须承认不能唯一判断。",
+        "transferTarget": "在原候选和条件内换操作顺序或干扰情况。",
+        "selfCheckTarget": "核原对照、干扰和产物，不能编造实验结果。",
+        "sourceIds": [
+          "sh_grade_chemistry_2025",
+          "sh_zhongkao_integrated_2025"
+        ],
+        "taskCondition": "experimental"
+      },
+      {
+        "id": "chemistry_redox_electron_basis",
+        "name": "原氧化还原的电子转移与计量基准",
+        "knowledgeKeywords": [
+          "氧化还原",
+          "电子转移",
+          "得失电子",
+          "化合价变化",
+          "氧化剂还原剂"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原氧化还原核心已考时，可能按物质粒子数代电子数、漏部分元素价态变化，或混淆反应前后计量对象。",
+        "diagnosticContrast": "比较按实际变价原子数与价差计算的电子量和仅看化学式系数的伪计量。",
+        "correctionTarget": "按原反应、化合价和题设量确定得失电子，不引原题未有电极电势或电化学模型。",
+        "transferTarget": "仅在原反应和原计量关系内改变已给配比或所求对象，追踪基准量和限制条件。",
+        "selfCheckTarget": "核实际变价原子、电子得失和原反应计量；副反应或过量限制仅原核心确有时检查。",
+        "sourceIds": [
+          "sh_grade_chemistry_2025",
+          "zj_selection_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "chemistry_ionic_species_conditions",
+        "name": "原离子任务的存在、反应与条件",
+        "knowledgeKeywords": [
+          "离子共存",
+          "离子方程式",
+          "离子检验",
+          "溶液离子"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原离子子核心已考时，可能忽略酸碱/浓度等题设条件，把未实际存在的离子代入，或忽略原干扰。",
+        "diagnosticContrast": "在原已给条件下比较可存在与会转化的粒子，区分形式配平和真实反应。",
+        "correctionTarget": "按原已考离子规则和表示要求判断；不因溶液一词加入水解、电离平衡或溶度积。",
+        "transferTarget": "仅微调原已考环境条件或原粒子组合，说明哪条原规则随条件生效或失效。",
+        "selfCheckTarget": "核原粒子、反应条件与对应守恒；电荷或检验干扰只在原实际任务需用时检查。",
+        "sourceIds": [
+          "sh_grade_chemistry_2025",
+          "zj_selection_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "chemistry_organic_group_condition",
+        "name": "原有机官能团、反应条件与结构限制",
+        "knowledgeKeywords": [
+          "有机官能团",
+          "有机反应条件",
+          "有机结构推断",
+          "酯基",
+          "有机转化"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原官能团及反应类型已考时，可能只见局部基团就断反应、漏原条件/连接位置或把同分异构候选当唯一。",
+        "diagnosticContrast": "比较同时满足原结构证据和反应条件的方案与仅满足一个表面特征的方案。",
+        "correctionTarget": "只用原给官能团、原反应原理和原结构证据；不能借有机题新增陌生合成反应或机理。",
+        "transferTarget": "在原结构、已考转化和原条件内改信息组织或约束，解释候选怎样筛除。",
+        "selfCheckTarget": "回原结构证据和反应条件核每个候选；只有原题实际考到异构/原子计量时才核对应项目。",
+        "sourceIds": [
+          "sh_grade_chemistry_2025",
+          "zj_selection_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "chemistry_solution_mass_basis",
+        "name": "原溶解度或质量分数的口径",
+        "knowledgeKeywords": [
+          "溶质质量分数",
+          "溶解度曲线",
+          "饱和溶液",
+          "溶液质量",
+          "析晶"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "按原子点择用：可能把饱和当高浓度、溶液质量当溶剂质量，或析晶后仍沿用旧溶质/溶液量。",
+        "diagnosticContrast": "比较同温同对象口径下的原指标与换分母/漏析出物的伪计算。",
+        "correctionTarget": "按原温度和原溶解/析出过程区分溶质、溶剂和溶液，未考溶解度不新加其模型。",
+        "transferTarget": "只微调原温度、加水/原已给变化或问法，追踪原量关系不变处。",
+        "selfCheckTarget": "核原质量清单、温度和分母；原未有结晶水/复杂平衡不得带入。",
+        "sourceIds": [
+          "sh_zhongkao_integrated_2025",
+          "zj_zhongkao_science_2025",
+          "zj_selection_2025"
+        ]
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "原物质、微粒、组成与变化对象",
+        "原化学方程式/离子表达与反应条件",
+        "原守恒、计量和配比/系统边界",
+        "原溶液、酸碱或物质鉴别的具体子点",
+        "原实验原理、装置、现象与干扰",
+        "原学段已考的反应与变化；高中专属速率平衡、电子转移计量及有机结构子机制仅high且原题已考时启用"
+      ],
+      "misconceptionMechanisms": [
+        "把原子元素守恒扩大为分子数或任意质量口径",
+        "现象相同就认物质唯一，忽略干扰/损耗",
+        "形式配平代替真实条件与粒子存在判断",
+        "溶质、溶剂、溶液及剩余物的质量基准混淆",
+        "催化/速率与平衡、电子计量与粒子数混同",
+        "见官能团便断反应，不核连接与原试剂条件"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "核一处原反应、表示或计量的必要条件，纠正具体混淆",
+            "原物质与原理内改关系/问法，明确所守恒对象或现象可证范围"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "仅原任务已覆盖时衔接宏观证据、微观解释或原符号/计量；否则按本题实际表示与证据辨析，不给溶解度曲线强塞微粒机理",
+            "鉴别/除杂只在原试剂原理内判断充分性与干扰，不增加实验知识"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "在原核心内处理条件竞争、余量/边界或替代解释",
+            "条件—粒子/量关系—结果闭环自检，不能以列更多方程式代替实质判断"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "原物质、条件、微粒和表示类型准确相容",
+        "普通方程式不强加离子/电荷，速率题不强带入平衡",
+        "实验结论有原现象支持，证据不足允许不能唯一判断",
+        "计量回原反应与系统，核对象和适用守恒；开放方案依证据验收",
+        "每原核心五维可定位于真实反应/数据/条件，不将本卷生成当掌握认证"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "概念/物质选择",
+          "design": "在原概念适用条件与候选解释间设置差异",
+          "answerEvidence": "解析说明性质或表示判断的原前提及干扰为何失效"
+        },
+        {
+          "questionType": "方程式/符号填空",
+          "design": "保原表达类型与反应范围，改原条件关系",
+          "answerEvidence": "核真实反应、原子/电荷等原实际要求，不能追加新反应类型"
+        },
+        {
+          "questionType": "计算",
+          "design": "保原计量目标，调整原配比或数据组织",
+          "answerEvidence": "说明基准量、守恒与余量，核单位/质量口径及结果可行"
+        },
+        {
+          "questionType": "实验/流程",
+          "design": "原试剂装置与物质路径内深化选择或排干扰",
+          "answerEvidence": "说明每步证据和功能、替代解释及可行限制，不编现象"
+        },
+        {
+          "questionType": "结构/有机推断",
+          "design": "仅原官能团、原给信息和已考反应内改条件呈现",
+          "answerEvidence": "候选回所有原证据和反应条件，承认未排除多解"
+        }
+      ],
+      "scopeExclusions": [
+        "不因溶液新增电离水解/Ksp，不因氧化还原新增电极电势",
+        "有机题不自动许可所有官能团、陌生试剂或大学机理",
+        "未考两原理不得强套速率平衡对比或多守恒组合",
+        "不能虚构反应、现象和数据，也不通过增加新物质知识凑难"
+      ]
+    }
+  }
+}

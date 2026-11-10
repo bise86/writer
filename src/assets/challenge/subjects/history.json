@@ -1,0 +1,497 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "history",
+    "label": "历史",
+    "summary": "不增加史实范围，以原时空背景、史料和概念提升证据辨析与因果比较。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "由直接识记转为一条史料证据的情境判断",
+          "区分事实、观点与材料可支持的结论",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "sourceEvidenceLinks",
+            "label": "史料与判断的有效证据联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          },
+          {
+            "key": "comparisonAxes",
+            "label": "原知识范围内的比较或因果维度数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "comparison"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "整合两条原材料证据并比较同一背景下的差异",
+          "避免时间倒置、因果单一和以偏概全",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "sourceEvidenceLinks",
+            "label": "史料与判断的有效证据联系数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          },
+          {
+            "key": "comparisonAxes",
+            "label": "原知识范围内的比较或因果维度数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "comparison"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "整合三条证据，沿两个维度比较或解释因果",
+          "评价原结论的范围与材料限制，不增新历史事件",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "sourceEvidenceLinks",
+            "label": "史料与判断的有效证据联系数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "reasoning",
+            "taskCondition": "evidence"
+          },
+          {
+            "key": "comparisonAxes",
+            "label": "原知识范围内的比较或因果维度数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "comparison"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "hi_source_position",
+        "name": "史料来源与立场",
+        "description": "判断原有材料来源和立场怎样影响它能证明的范围，不能新补史实或把一种观点当全部事实。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_grade_history_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "hi_time_space_scale",
+        "name": "时空尺度与同异",
+        "description": "在原事件和背景内区分阶段、区域、短期与长期的解释范围，说明尺度改变为何影响结论。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_grade_history_2025"
+        ]
+      },
+      {
+        "id": "hi_multiple_causes",
+        "name": "因果层次与相互作用",
+        "description": "在原原因范围内区别背景、触发、限制条件及其关系，让一个条件影响另一个原因的作用，不把列点数当深度。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_grade_history_2025"
+        ]
+      },
+      {
+        "id": "hi_concept_perspective",
+        "name": "概念语境与解释视角",
+        "description": "从原课程概念比较不同叙述视角及适用语境，说明何种原证据使一个解释比另一个更稳妥。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_grade_history_2025"
+        ]
+      },
+      {
+        "id": "hi_explanation_limits",
+        "name": "制度预设与实际及解释边界",
+        "description": "在原材料支持下比较制度预设与实际运行，给结论加必要范围，不用价值口号代替证据。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_grade_history_2025"
+        ],
+        "taskCondition": "argument"
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "hist_source_claim",
+        "name": "史料立场与证明范围",
+        "knowledgeKeywords": [
+          "史料来源",
+          "史料实证",
+          "作者立场",
+          "材料解读"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把记载当普遍事实，或因立场不同就断言某方必假。",
+        "diagnosticContrast": "比较原材料中的事实、判断和它真正能证明的范围。",
+        "correctionTarget": "核原来源、时间和用途，承认互证不足，不补新史实。",
+        "transferTarget": "在原材料内换关注视角或选项措辞。",
+        "selfCheckTarget": "核每结论的来源、立场与证据限度，无记载不直接等从未发生。",
+        "sourceIds": [
+          "sh_grade_history_2025",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "hist_time_causality",
+        "name": "原时序与因果层次",
+        "knowledgeKeywords": [
+          "时序",
+          "历史因果",
+          "历史阶段",
+          "原因分析"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能先后即因果、时间倒置，或混淆背景/触发/机制/结果。",
+        "diagnosticContrast": "比较原因果链是否存在中间作用及必要制约。",
+        "correctionTarget": "在原事件时空内说明因果根据，不以多列原因替解释。",
+        "transferTarget": "同原原因/时空改变组织或设问尺度。",
+        "selfCheckTarget": "核时间地点主体及每条因果的原证据，不加入事件。",
+        "sourceIds": [
+          "sh_grade_history_2025",
+          "zj_selection_2025"
+        ]
+      },
+      {
+        "id": "hist_design_practice",
+        "name": "制度预设与实际运行",
+        "knowledgeKeywords": [
+          "制度",
+          "政策目标",
+          "实施效果",
+          "历史解释"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把制度目的直接当执行效果或由一群体推及全部。",
+        "diagnosticContrast": "比较原规范主张与材料实际支持的层级/群体结果。",
+        "correctionTarget": "以原执行证据限定结论，不用价值口号代替史料。",
+        "transferTarget": "同原制度/情境调整材料呈现或解释范围。",
+        "selfCheckTarget": "核原材料究竟证明目的、实施还是结果，避免层级跳跃。",
+        "sourceIds": [
+          "sh_grade_history_2025",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "argument"
+      },
+      {
+        "id": "hist_stage_scale",
+        "name": "阶段区域与比较口径",
+        "knowledgeKeywords": [
+          "历史阶段",
+          "时空尺度",
+          "历史比较",
+          "个案总体"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把个案或阶段发展推成所有地区持续上升，或以今律古。",
+        "diagnosticContrast": "比较固定维度下原区域/时期的可比与不可比。",
+        "correctionTarget": "按原情境限定比较，不仅贴时代标签。",
+        "transferTarget": "只换原事件的材料组织或原尺度关注。",
+        "selfCheckTarget": "核比较维度、阶段和时空口径相同，原证据不支持处保留限度。",
+        "sourceIds": [
+          "sh_grade_history_2025",
+          "zj_selection_2025"
+        ]
+      },
+      {
+        "id": "hist_map_time_alignment",
+        "name": "原历史地图的时间主体与图例",
+        "knowledgeKeywords": [
+          "历史地图",
+          "历史路线",
+          "疆域图",
+          "历史图例"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把不同时段疆域、路线或现代边界直接混用，忽略图例主体。",
+        "diagnosticContrast": "比较同一图例/时间/主体下可成立的定位与跨图跨时期的错位。",
+        "correctionTarget": "只按原印刷标注及原已考史实对齐，不从熟悉地名补现代边界或新事件。",
+        "transferTarget": "在原地图事实和核心内调整设问或明确的信息组织，真实年代和路线不改。",
+        "selfCheckTarget": "核图例、时段、空间主体及原证据，未标明关系不能猜。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025",
+          "sh_grade_history_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "hist_economic_data_basis",
+        "name": "原经济史指标与解释范围",
+        "knowledgeKeywords": [
+          "经济史图表",
+          "历史统计",
+          "经济变化指标",
+          "历史数据"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把总量/比例/增速互换，或局部行业增长直接当全经济/所有群体改善。",
+        "diagnosticContrast": "比较原指标与时空口径一致的解释和越过样本/范围的泛化。",
+        "correctionTarget": "按原数据及原核心背景解释，不能凭一个数字推普遍原因或补统计模型。",
+        "transferTarget": "只调整原数据设问、比较维度和信息组织，不篡改真实统计值。",
+        "selfCheckTarget": "核分母、单位、时期和地区，结论强度不超过原证据。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025",
+          "sh_grade_history_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "hist_institution_function",
+        "name": "原制度的职责、层级与时代",
+        "knowledgeKeywords": [
+          "历史制度职能",
+          "古代官职",
+          "选官制度",
+          "制度机构",
+          "治理层级"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原具体制度已考时，可能按相近名称混职能/层级/选官方式，或套现代制度定义。",
+        "diagnosticContrast": "比较原时代和职责对应的判断与名称看似相近但职能不同的判断。",
+        "correctionTarget": "按原制度子点和时代材料核职责，不因制度一词加入相邻朝代或现代机构。",
+        "transferTarget": "在原制度与实际职能内改变问法/证据关注，真实制度事实不修改。",
+        "selfCheckTarget": "核原时代、主体、层级和职责，制度设计与执行证据不能互替。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025",
+          "sh_grade_history_2025"
+        ]
+      },
+      {
+        "id": "hist_continuity_change",
+        "name": "原变革的延续、变化与作用限度",
+        "knowledgeKeywords": [
+          "历史变革",
+          "改革变化",
+          "社会转型",
+          "延续变化"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把改革/变化当全盘替代，或把政策目的直接当已实现结果。",
+        "diagnosticContrast": "比较原证据支持的变化和延续部分，区分意图、过程与实际效果。",
+        "correctionTarget": "用原材料和原已考机制限定判断，不加新阶段/事件补成完整历史叙事。",
+        "transferTarget": "在原变革核心内换设问焦点或材料组织，真实事实与时间不偷改。",
+        "selfCheckTarget": "核变化对象、比较前后和证据限度，未被材料覆盖的群体不一概推广。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025",
+          "sh_grade_history_2025"
+        ]
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "原事件、主体、时序与阶段边界",
+        "原史料来源、立场、用途与证明限度",
+        "原历史概念的内涵与适用情境",
+        "原因果链的背景、触发、机制和结果",
+        "原制度政策的设计与实际运行",
+        "原图表/多材料的口径及可比较关系"
+      ],
+      "misconceptionMechanisms": [
+        "时间先后等同因果或以今律古",
+        "记载等于普遍事实、立场不同等于必然虚假",
+        "制度目的当实际效果、个案推广全时空",
+        "同词不同历史概念或概念标签替代解释",
+        "数据比例/数量或比较口径混用",
+        "证据缺失当从未发生、常识补成新史实"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "在原史实与材料中辨一处时空/来源限制，纠正有诱因的解释",
+            "答案把原证据能证与不能证分清，历史事实不改写"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "连接来源判断、阶段或因果机制，比较同原事件的不同解释",
+            "原材料内换设问焦点/组织，不为增加视角补新史料或新事件"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "原范围内审多因相互作用、制度运行差异或解释限度",
+            "综合自检时间主体、证据链与结论范围；开放历史解释不以唯一措辞验收"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "真实史料引文和既定史实保真，假设情境明确其假设性质",
+        "每个因果/比较主张有原材料或实际原核心支持",
+        "来源可信度和可证范围分别判断，不一概否定某立场",
+        "核心概念按原时代和原定义使用，不能由整章标题补事件",
+        "学习说明核解释充分性与限度，不宣称学生已掌握历史规律"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "选择/判断",
+          "design": "保原材料和史实，深化时空、主体、概念或因果干扰",
+          "answerEvidence": "逐项解释材料可证范围和典型错误，不新增证明作答"
+        },
+        {
+          "questionType": "材料填空/定位",
+          "design": "在原信息与历史关系内调整提取焦点",
+          "answerEvidence": "核答案时空、对象与原材料位置，不凭新事实补空"
+        },
+        {
+          "questionType": "材料解释/比较",
+          "design": "原证据内建立可比维度和解释桥梁",
+          "answerEvidence": "区分事实/作者判断/解释，合理多解按证据和逻辑判据验收"
+        },
+        {
+          "questionType": "图表/地图",
+          "design": "原历史图表保真实来源与数据，仅改设问/干扰或明确的信息组织",
+          "answerEvidence": "核统计口径、时间区域及图示标注，不能用比例替绝对数量"
+        },
+        {
+          "questionType": "论述",
+          "design": "保原命题与材料范围，提升论题限定和反证处理",
+          "answerEvidence": "给有据论点—证据—推理—限度，评分点在原分值内，不强唯一立场模板"
+        }
+      ],
+      "scopeExclusions": [
+        "不伪造、偷改真实史料、年代、事件和政策",
+        "不把本学科其他事件或高中理论并入原核心",
+        "无原多材料不强加多来源互证，无原证据不臆造史实",
+        "不以现代价值口号替代历史情境，也不把开放解释封闭化"
+      ]
+    }
+  }
+}

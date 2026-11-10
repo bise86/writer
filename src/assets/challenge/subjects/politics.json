@@ -1,0 +1,490 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "politics",
+    "label": "道德与法治/思想政治",
+    "summary": "只使用原卷涉及的课程概念和材料，提升情境辨析、依据与行动的一致性。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "加强辨析与一步联系",
+        "aspects": [
+          "增加一项真实情境条件，区分概念适用范围",
+          "要求一项有材料依据的判断",
+          "至少落实1个相对原题新增或实质强化的适用深度方向，解释关键职责。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "scenarioConstraints",
+            "label": "必须同时满足的情境条件数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "principleLinks",
+            "label": "原课程概念与材料的有效联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "联系两项情境条件，比较理由与行动是否一致",
+          "排除绝对化、混淆权利义务等原知识范围内误区",
+          "至少2个不同方向用1条有效推理依赖衔接，不是并列列方法名称。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "scenarioConstraints",
+            "label": "必须同时满足的情境条件数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "principleLinks",
+            "label": "原课程概念与材料的有效联系数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "reasoning"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "整合三项情境条件并联系两个原有原则或关系",
+          "分析条件、边界或合理行动，不添加新法律条文",
+          "至少3个不同适用方向整体连通，至少2条有效连接并解释结论的条件或替代解释限制。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "scenarioConstraints",
+            "label": "必须同时满足的情境条件数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "principleLinks",
+            "label": "原课程概念与材料的有效联系数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "reasoning"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "po_concept_scope",
+        "name": "概念适用条件与边界",
+        "description": "判断原课程概念何时能用、何时不能用，以具体原事实限制笼统判断，不添加新法律条文。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_grade_politics_2025",
+          "sh_zhongkao_politics_2025"
+        ]
+      },
+      {
+        "id": "po_scenario_tradeoff",
+        "name": "情境权衡与行动主体",
+        "description": "在原主体、权利义务和目标内比较行动，说明主体或条件改变为何导致不同选择，不能套万能意义。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_grade_politics_2025",
+          "sh_zhongkao_politics_2025"
+        ]
+      },
+      {
+        "id": "po_evidence_action",
+        "name": "事实原则与行动对应",
+        "description": "让建议由原事实与原原则共同推出，解释事实怎样限制原则运用、原则又怎样筛选可行行动。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_grade_politics_2025",
+          "sh_zhongkao_politics_2025"
+        ]
+      },
+      {
+        "id": "po_counterargument",
+        "name": "反例与方案修正",
+        "description": "处理原情境中的一个反向条件，识别原方案的适用边界并据此修订，不为反驳增加新概念。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "sh_grade_politics_2025",
+          "sh_zhongkao_politics_2025"
+        ],
+        "taskCondition": "argument"
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "pol_actor_power",
+        "name": "原主体职责与行动权限",
+        "knowledgeKeywords": [
+          "主体职责",
+          "权利义务",
+          "政府职能",
+          "公民参与",
+          "行动主体"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能互换原题中的主体职责，或建议超越主体权限。",
+        "diagnosticContrast": "比较同一原情境下不同主体能做与不能做的行动。",
+        "correctionTarget": "依原所学主体和条件定位，不新增法律条文。",
+        "transferTarget": "原范围内换主体或限制，解释合法可行行动如何改变。",
+        "selfCheckTarget": "核主体、权限、条件和行动结果是否一致。",
+        "sourceIds": [
+          "sh_grade_politics_2025",
+          "sh_zhongkao_politics_2025"
+        ]
+      },
+      {
+        "id": "pol_right_duty",
+        "name": "原权利义务与规则条件",
+        "knowledgeKeywords": [
+          "权利义务",
+          "规则适用",
+          "法治",
+          "行为边界"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能绝对化权利、混同合法/合理或忽略行为前提。",
+        "diagnosticContrast": "比较满足与不满足原规则条件的判断，避免只抓关键词。",
+        "correctionTarget": "用原概念说明边界，不导入原卷未有新原则/法条。",
+        "transferTarget": "同原规则范围换具体情境或条件。",
+        "selfCheckTarget": "核主体、条件、结论和义务是否相容，不由价值愿望代事实。",
+        "sourceIds": [
+          "sh_grade_politics_2025",
+          "sh_zhongkao_politics_2025"
+        ]
+      },
+      {
+        "id": "pol_material_principle",
+        "name": "原事实原则与措施链",
+        "knowledgeKeywords": [
+          "原理应用",
+          "事实依据",
+          "措施建议",
+          "材料分析"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能见词套原理、只有万能意义而无作用机制或事实支持。",
+        "diagnosticContrast": "比较由原事实和适用条件推出的行动与脱离材料的口号。",
+        "correctionTarget": "把原事实→原原则适用→解释/措施连起来。",
+        "transferTarget": "只换原情境的限制或信息组织，保持原概念。",
+        "selfCheckTarget": "核事实依据、权限、作用机制和可行性，不把目标当结果。",
+        "sourceIds": [
+          "sh_grade_politics_2025",
+          "sh_zhongkao_politics_2025"
+        ],
+        "taskCondition": "argument"
+      },
+      {
+        "id": "pol_dialectical_condition",
+        "name": "原辩证概念的限定关系",
+        "knowledgeKeywords": [
+          "辩证否定",
+          "普遍特殊",
+          "主次关系",
+          "量变质变"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心确有时，可能批判等于全弃、继承等于照搬或无条件套辩证词。",
+        "diagnosticContrast": "比较原概念在条件成立与失效时的解释。",
+        "correctionTarget": "说明原关系兼容与限制，不泛化为全部哲学原理许可。",
+        "transferTarget": "同原概念内改变条件，解释判断需怎样限定。",
+        "selfCheckTarget": "核每一关系有具体原事实和条件，不能只写辩证口号。",
+        "sourceIds": [
+          "sh_grade_politics_2025",
+          "sh_zhongkao_politics_2025",
+          "zj_selection_2025"
+        ],
+        "taskCondition": "argument"
+      },
+      {
+        "id": "pol_responsibility_choice",
+        "name": "原责任与成长情境的行动条件",
+        "knowledgeKeywords": [
+          "责任承担",
+          "个人成长",
+          "社会责任",
+          "交往责任"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原责任/成长子点已考时，可能把责任等同无条件牺牲，或只谈愿望不看原能力与行动条件。",
+        "diagnosticContrast": "比较回应原对象和现实条件的行动与口号正向却不可行的做法。",
+        "correctionTarget": "按原主体、责任和情境后果解释可行方式，不做心理或个人品格诊断。",
+        "transferTarget": "只换原范围内行动限制或问法，原价值核心不扩为新心理理论。",
+        "selfCheckTarget": "核原责任对象、行动条件和后果，建议不能以越权或忽视条件为代价。",
+        "sourceIds": [
+          "sh_zhongkao_politics_2025",
+          "sh_grade_politics_2025",
+          "zj_selection_design_2025"
+        ]
+      },
+      {
+        "id": "pol_rule_procedure",
+        "name": "原参与监督的主体、渠道与程序",
+        "knowledgeKeywords": [
+          "民主参与",
+          "依法监督",
+          "公民参与渠道",
+          "依法参与",
+          "程序正当"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把目的正当当程序皆正当，混监督、决策或原主体权限。",
+        "diagnosticContrast": "比较原规则和主体条件均满足的参与方式与目标相同却渠道/程序错用的方式。",
+        "correctionTarget": "按原具体方式、职责和程序判断，不增新法条或现实政策。",
+        "transferTarget": "在原参与范围内改情境限制或信息组织，假设对照须明示。",
+        "selfCheckTarget": "核主体、渠道、条件、顺序和可行后果，不能靠万能措施替代。",
+        "sourceIds": [
+          "sh_zhongkao_politics_2025",
+          "sh_grade_politics_2025",
+          "zj_selection_design_2025"
+        ]
+      },
+      {
+        "id": "pol_supply_policy_chain",
+        "name": "原供求价格等经济关系的条件链",
+        "knowledgeKeywords": [
+          "供求价格",
+          "需求变化",
+          "供给变化",
+          "消费条件",
+          "价格影响"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原具体关系已考时，可能把供给与需求变化互换、目标当必然效果，或漏其它原给条件。",
+        "diagnosticContrast": "比较同一原条件链的机制与只凭结论关键词跳过作用环节的判断。",
+        "correctionTarget": "按原变量、主体和条件推导，不加入原未考弹性、宏观金融或新曲线模型。",
+        "transferTarget": "只调原关系中已有条件强弱或问法，说明不变原理与作用结果的限制。",
+        "selfCheckTarget": "核变量方向、原前提和机制后果，价格变化不自动证明某个唯一原因。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "pol_practice_knowledge",
+        "name": "原实践认识关系的条件与检验",
+        "knowledgeKeywords": [
+          "实践认识",
+          "真理检验",
+          "认识发展",
+          "实践决定认识"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原哲学子点已考时，可能把实践作用等同任何经验都正确，或把认识发展写成单向照抄。",
+        "diagnosticContrast": "比较有原事实支持且说明检验条件的判断与只套抽象原句的推断。",
+        "correctionTarget": "用原已考关系说明认识、实践和检验的具体对应，不引入其它哲学模块。",
+        "transferTarget": "原情境范围内调已有证据或问法，解释原认识为何需限定或发展。",
+        "selfCheckTarget": "核每个抽象判断与原事实/条件对应，不能用价值愿望代替实际检验。",
+        "sourceIds": [
+          "zj_selection_2025",
+          "zj_selection_design_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "原道德与法治/政治概念的主体、条件和边界",
+        "原权利义务、职责权限及程序关系",
+        "原材料事实—原则—行动的对应",
+        "原制度政策的目标、手段与实际后果",
+        "原经济生活/发展概念按原学段子点；高中专属经济、哲学关系仅high且原题确有时启用",
+        "原议题评价、方案约束和反例修正"
+      ],
+      "misconceptionMechanisms": [
+        "主体权限互换、权利义务绝对化",
+        "见关键词套原理或万能意义",
+        "目标/价值愿望直接当事实/实施效果",
+        "必要当充分、相关当因果、无条件最优",
+        "措施超主体权限或不回应原材料困难",
+        "以原则口号替代原条文条件和程序"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "让一处原概念适用或主体条件决定判断/措施，解释错用原因",
+            "答案建立具体事实→原原则→结论，不新增法条或时政"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "连接主体边界、证据与行动，比较原情境中两类不同错因",
+            "在原限制内调整措施，说明怎样可执行而非多写口号"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "原核心内处理条件权衡、反向事实或方案修正，开放评价承认合理取舍",
+            "三类自检核主体条件、论证链与行动结果，不把价值认同等同掌握认证"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "适用原概念的主体、条件和条文来源清楚，不编现实政策",
+        "建议回应原事实且在原主体权限内，有可解释机制",
+        "原经济生活/发展概念按实际学段子点验收；高中专属经济、哲学子机制仅high且原题已考，不由同名基础概念解锁相邻原理",
+        "开放题按事实依据与合理判据验收，不强唯一模板措辞",
+        "学习说明是候选误区训练，不推断学生价值立场或能力"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "选择/判断",
+          "design": "原情境和原则范围内设置主体/条件/因果区别",
+          "answerEvidence": "解析指出原事实与概念前提，不能凭政治词汇或绝对词机械判定"
+        },
+        {
+          "questionType": "材料分析",
+          "design": "保原设问维度，强化事实与原理适用关系",
+          "answerEvidence": "每一结论有材料事实和原原则之间的推理，不堆概念"
+        },
+        {
+          "questionType": "建议/方案",
+          "design": "原主体和资源权限内提高措施的针对性与条件控制",
+          "answerEvidence": "核行动机制、权限、可行性和原目标，多个方案按判据验收"
+        },
+        {
+          "questionType": "论证/评价",
+          "design": "原议题内处理反例或权衡，保原响应任务",
+          "answerEvidence": "区分事实/价值/规范判断并说明结论边界，不伪造政策依据"
+        },
+        {
+          "questionType": "规则/程序辨析",
+          "design": "仅原条文和已考程序内改设问或明确假设情境",
+          "answerEvidence": "核主体、条件、顺序和后果，真实法条政策原文不偷改"
+        }
+      ],
+      "scopeExclusions": [
+        "不新增法律条文、时政事件或学生原卷未考的哲学经济原理",
+        "不改现实制度政策事实来制造变种",
+        "不把单一价值目标当所有条件下最优，也不以立场模板替证据",
+        "初中道法不无条件引入高中政治抽象体系"
+      ]
+    }
+  }
+}

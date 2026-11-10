@@ -1,0 +1,826 @@
+{
+  "policyVersion": "exam-challenge-within-scope-v3:3",
+  "policy": {
+    "subject": "math",
+    "label": "数学",
+    "summary": "以原核心知识重组出灵活且有深度的解法：逆向、整体、构造、分类、对称、等价、边界或不变量按原任务适用，强化奥数式策略思维，不新增竞赛定理，也不锁死原参考解法。",
+    "tiers": [
+      {
+        "level": 1,
+        "label": "升1档",
+        "summary": "关键洞察与条件辨析",
+        "aspects": [
+          "至少落实1个相对原题新增或实质强化的策略，关键洞察须在新题和有效解法中定位。",
+          "把难点嵌入原题作答过程，不只增大数字、拉长步骤或另加证明小问。",
+          "以掌握原核心为目标：每题合计至少1个具体错因、1处同核迁移、1种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 1,
+            "max": 2,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "reasoningStepsAdded",
+            "label": "净新增有效推理步骤（辅助记实）",
+            "min": 0,
+            "max": 2,
+            "appliesTo": "reasoning"
+          },
+          {
+            "key": "representationChanges",
+            "label": "表征转化处数（辅助记实）",
+            "min": 0,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "quantitative"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 1,
+          "minConnections": 0,
+          "requireNecessityExplanation": true
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 1,
+          "minTransferLinks": 1,
+          "minSelfChecks": 1,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 2,
+        "label": "升2档",
+        "summary": "增加关联条件与综合判断",
+        "aspects": [
+          "组合路线：至少2个不同方向由1条真实解法依赖联系，说明前一结论如何成为后一判断输入。",
+          "或单策略深挖：1个核心策略含至少2个新增或强化关键决策、1个真实边界检查；两路线任选其一，不叠加。",
+          "以掌握原核心为目标：每题合计至少2个具体错因、1处同核迁移、2种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 2,
+            "max": 3,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "reasoningStepsAdded",
+            "label": "净新增有效推理步骤（辅助记实）",
+            "min": 0,
+            "max": 3,
+            "appliesTo": "reasoning"
+          },
+          {
+            "key": "representationChanges",
+            "label": "表征转化处数（辅助记实）",
+            "min": 0,
+            "max": 2,
+            "appliesTo": "reasoning",
+            "taskCondition": "quantitative"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 2,
+          "minConnections": 1,
+          "requireNecessityExplanation": true,
+          "focusedRoute": {
+            "minDirections": 1,
+            "minDecisions": 2,
+            "minBoundaryChecks": 1
+          }
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 2,
+          "minTransferLinks": 1,
+          "minSelfChecks": 2,
+          "requireEvidence": true
+        }
+      },
+      {
+        "level": 3,
+        "label": "升3档",
+        "summary": "原范围内的高阶整合与边界检查",
+        "aspects": [
+          "组合路线：至少3个不同适用方向形成至少2条连接且整体连通，不能把同一数学动作换名重复计数。",
+          "或单策略深挖：1核心策略含至少3个新增或强化关键决策、2个逻辑作用不同的真实边界检查；常规拆步与例行验算不计。",
+          "以掌握原核心为目标：每题合计至少3个具体错因、2处同核迁移、3种实际自检；每个原核心都有完整五维学习说明，不能推断学生已掌握。"
+        ],
+        "metrics": [
+          {
+            "key": "changedConditions",
+            "label": "实质微调处数",
+            "min": 1,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "pitfallDistinctions",
+            "label": "易错辨析点数",
+            "min": 3,
+            "max": 4,
+            "appliesTo": "non_listening"
+          },
+          {
+            "key": "reasoningStepsAdded",
+            "label": "净新增有效推理步骤（辅助记实）",
+            "min": 0,
+            "max": 4,
+            "appliesTo": "reasoning"
+          },
+          {
+            "key": "representationChanges",
+            "label": "表征转化处数（辅助记实）",
+            "min": 0,
+            "max": 3,
+            "appliesTo": "reasoning",
+            "taskCondition": "quantitative"
+          }
+        ],
+        "depthRequirements": {
+          "minDirections": 3,
+          "minConnections": 2,
+          "requireNecessityExplanation": true,
+          "focusedRoute": {
+            "minDirections": 1,
+            "minDecisions": 3,
+            "minBoundaryChecks": 2
+          }
+        },
+        "masteryRequirements": {
+          "requireEveryCore": true,
+          "requiredDimensions": [
+            "concept_boundary",
+            "diagnosis_correction",
+            "reasoning_evidence",
+            "variant_transfer",
+            "integrated_self_check"
+          ],
+          "minMisconceptions": 3,
+          "minTransferLinks": 2,
+          "minSelfChecks": 3,
+          "requireEvidence": true
+        }
+      }
+    ],
+    "deepDirections": [
+      {
+        "id": "math_reverse_goal",
+        "name": "逆向目标与条件反推",
+        "description": "由目标、结果或候选答案反推原条件，再核对反向推理是否成立；必须改变筛选或求解的关键决策，不能只是把正问改成否定句。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "math_whole_structure",
+        "name": "整体结构与关系识别",
+        "description": "识别原概念内的整体量、共同结构、互补或因子关系，用整体关系替代零散逐项处理；须指明被隐藏的结构及它怎样限制答案，不以多算或新定理代替。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "math_construction",
+        "name": "基础构造与可行实例",
+        "description": "在原概念允许范围内构造满足条件的具体例子、代换、对象或辅助关系，并解释构造为什么满足约束；不是随便加图、猜数或直接调用未给出的竞赛结论。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "math_exhaustive_cases",
+        "name": "分类完备与边界归属",
+        "description": "依据原题真实分支条件组织互不遗漏的情况，说明边界归哪类及为何没有漏解；不把一道直接运算机械拆成多类。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "relations"
+      },
+      {
+        "id": "math_symmetry_pairing",
+        "name": "对称配对与对应关系",
+        "description": "利用可核实的原结构对称、配对或一一对应减少无效处理，并说明这种对应保留哪些目标条件；不能凭不清晰图形假设对称，也不能借未给出的计数定理。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "math_equivalence",
+        "name": "非显然等价转化",
+        "description": "在原知识内发现能揭示条件本质的等价关系，说明合法前提、转换方向和候选解核验；给原有移项、套公式重新命名不计深度。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "math_extreme_boundary",
+        "name": "极端临界与边界检验",
+        "description": "从原知识内的端点、临界或极端可行情形锁定限制，并说明为何此边界控制所需全局结论，再核验可达或例外；不能只看端点就无依据推广，也不增加高阶最值定理。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "relations"
+      },
+      {
+        "id": "math_invariant",
+        "name": "不变量与状态联系",
+        "description": "对原题或合法微调中明确给出的操作/变化，以原核心知识直接推导保持量，说明每一种允许操作为何保持、结论为何覆盖全部允许状态；只验几个例子不算证明，不得调用未给出的模运算或竞赛定理。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "invariant"
+      },
+      {
+        "id": "math_representation",
+        "name": "表征转换揭示关系",
+        "description": "在原数式、文字、图表或可核实几何关系之间转换，利用转换揭示原来不明显的约束；不能只改排版或增添新的图形知识。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "quantitative"
+      },
+      {
+        "id": "math_counterexample",
+        "name": "反例与结论限度",
+        "description": "在原定义域内构造确实否定候选结论的可核验反例，指出被推翻的具体断言及其后果；域外例子和仅不相似的例子都不算。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ]
+      },
+      {
+        "id": "math_existence_uniqueness",
+        "name": "存在唯一与必要充分辨析",
+        "description": "原任务涉及可行、解的个数或条件关系时，区分存在与唯一、必要与充分，分别解释依据；不能把原知识不足的问题改成新定理证明。",
+        "appliesTo": "reasoning",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ],
+        "taskCondition": "relations"
+      },
+      {
+        "id": "math_strategy_economy",
+        "name": "策略选择与有效路径",
+        "description": "对比原知识内可行路径，指出新条件下哪一关键洞察避免无效展开、枚举或遗漏，说明选择依据；更短可以更深，不要求强行增加总步骤，也不要求证明只有一种解法。",
+        "appliesTo": "non_listening",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025",
+          "moe_gaokao_2026"
+        ]
+      }
+    ],
+    "masteryChallenges": [
+      {
+        "id": "math_operation_structure",
+        "name": "运算对象、符号与顺序",
+        "knowledgeKeywords": [
+          "整数运算",
+          "有理数运算",
+          "四则运算",
+          "运算顺序",
+          "去括号",
+          "负号"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把符号连同运算对象拆错，或忽略原括号/运算顺序。",
+        "diagnosticContrast": "比较保持原运算结构与只改表面符号的两种计算，定位意义改变处。",
+        "correctionTarget": "先认运算对象与优先关系，再解释每次合法操作，不靠机械符号口诀。",
+        "transferTarget": "仅在原运算范围内改变符号、括号或表征，说明同一运算原则如何调整。",
+        "selfCheckTarget": "回到原式按对象、符号与顺序逐段核验；例行重算不冒充新知识。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ]
+      },
+      {
+        "id": "math_equivalence_condition",
+        "name": "等量与等价变形条件",
+        "knowledgeKeywords": [
+          "等式性质",
+          "等量关系",
+          "一元一次方程",
+          "移项",
+          "等价变形"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能只记移项口诀，忽略同一对象或变形的可逆条件。",
+        "diagnosticContrast": "比较同对等式两边作合法操作与只改一边或改变对象的推导。",
+        "correctionTarget": "说清哪条等式性质保持了解集或量关系，避免必要条件当充分。",
+        "transferTarget": "在原等量/方程结构内改变问法或已知关系，不借新方程类型提高。",
+        "selfCheckTarget": "核每步两边对应同一对象且可逆，必要时回原条件排除伪候选。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "relations"
+      },
+      {
+        "id": "math_equation_domain",
+        "name": "分式根式的合法域与验根",
+        "knowledgeKeywords": [
+          "分式方程",
+          "根式方程",
+          "分母",
+          "约分",
+          "增根",
+          "平方变形"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "原核心已涉及时，可能约去零因子、忘禁值或平方后不验原式。",
+        "diagnosticContrast": "比较在原定义域成立的等价式与只满足变形式的伪解。",
+        "correctionTarget": "先列原分母/根式约束，再区分等价与单向推出。",
+        "transferTarget": "只调整原方程已有条件使禁值或增根边界生效，不新加根式/分式知识。",
+        "selfCheckTarget": "回原式核域、分母和原等量，而不是只代入化简式。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "relations"
+      },
+      {
+        "id": "math_function_interval",
+        "name": "函数与不等式的区间边界",
+        "knowledgeKeywords": [
+          "函数定义域",
+          "函数区间",
+          "不等式",
+          "最值",
+          "单调性"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把给定区间当全域、只试端点或把一例成立当普遍。",
+        "diagnosticContrast": "比较区间内有效推断与遗漏内部/临界情形的结论。",
+        "correctionTarget": "按原已有函数性质说明范围和全局依据；原题无导数不得增导数。",
+        "transferTarget": "在原函数与性质内改变区间或原参数，解释适用范围如何变化。",
+        "selfCheckTarget": "检查内部与边界是否都被原性质控制，必要时用原域反例否定过度推广。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "relations"
+      },
+      {
+        "id": "math_geometry_classification",
+        "name": "几何位置分类与印刷已知",
+        "knowledgeKeywords": [
+          "圆的位置关系",
+          "相交",
+          "相切",
+          "半径范围",
+          "几何分类"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能混用相交/相切条件、漏边界或凭图外观认等长平行。",
+        "diagnosticContrast": "比较由题干/印刷标注可证的类别与视觉看似相同但条件不同的类别。",
+        "correctionTarget": "列真实分类条件及边界归属，不以学生辅助线或图像外观作已知。",
+        "transferTarget": "仅原位置关系已考查时反求可行范围或换给定关系。",
+        "selfCheckTarget": "互斥穷尽核对分类，回清晰印刷事实核可达边界。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "geometric"
+      },
+      {
+        "id": "math_probability_base",
+        "name": "概率事件与样本口径",
+        "knowledgeKeywords": [
+          "概率",
+          "等可能",
+          "样本空间",
+          "事件计数",
+          "频率"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把频率当必然概率、漏等可能前提或用错分母。",
+        "diagnosticContrast": "比较同口径事件计数与重复/遗漏样本导致的比例。",
+        "correctionTarget": "先界定原事件、总样本及等可能条件，再给原范围判断。",
+        "transferTarget": "在原事件或原数据内改呈现或反问，不加入新概率模型。",
+        "selfCheckTarget": "核分子分母同口径、枚举完备且概率量合法。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "discrete"
+      },
+      {
+        "id": "math_statistics_population",
+        "name": "统计样本总体与指标",
+        "knowledgeKeywords": [
+          "统计量",
+          "样本",
+          "总体",
+          "平均数",
+          "中位数"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "可能把样本结论无条件推广总体，或混淆不同统计指标。",
+        "diagnosticContrast": "比较同一数据在不同已考指标下的含义，区分可支持与过度推广。",
+        "correctionTarget": "按原抽样与指标定义解释结论范围，不加入新统计检验。",
+        "transferTarget": "用原数据换表征或原指标的设问焦点，保留统计核心。",
+        "selfCheckTarget": "核样本量、对象、单位及指标定义，找能否定错误解释的数据。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "evidence"
+      },
+      {
+        "id": "math_case_completeness",
+        "name": "有限分组的可行与完备",
+        "knowledgeKeywords": [
+          "等量关系",
+          "有限分组",
+          "完整分法",
+          "简单枚举"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原题确有有限对象/分组时，可能把一个可行例当全部分法或唯一性证明。",
+        "diagnosticContrast": "比较给出一个合法构造与证明没有漏掉其余合法情况。",
+        "correctionTarget": "依据原有限约束解释覆盖全部候选的理由，不引排列组合公式。",
+        "transferTarget": "在原对象和等量关系内改变分组要求，区分存在与完备。",
+        "selfCheckTarget": "检每个分支是否被覆盖、边界是否归类，不能以多试几个例子代替完备。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "finite_objects"
+      },
+      {
+        "id": "math_case_deduplication",
+        "name": "有限对象的同一性与重复计数",
+        "knowledgeKeywords": [
+          "有限分组",
+          "重复计数",
+          "等量关系",
+          "简单枚举"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原题确有分组/枚举时，可能把交换组顺序或同一对象的不同写法算成新解。",
+        "diagnosticContrast": "比较对象真正不同与只是记法/排列顺序不同的候选。",
+        "correctionTarget": "按原题是否区分顺序或标签统一计数口径，不默认新的计数定理。",
+        "transferTarget": "在原对象身份与等量关系内换呈现次序，说明何者仍是同一解。",
+        "selfCheckTarget": "将候选按原同一性规则归并，核重复项与实际不同项。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "finite_objects"
+      },
+      {
+        "id": "math_object_constraints",
+        "name": "有限分配的对象与次数约束",
+        "knowledgeKeywords": [
+          "整数分组",
+          "有限对象",
+          "分配",
+          "等量关系"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原题确有对象分配时，可能只验等和而重复使用、遗漏元素或违反组内数量。",
+        "diagnosticContrast": "比较满足局部和式与同时满足原对象、次数、数量全部约束的方案。",
+        "correctionTarget": "将原给对象清单与次数要求同时接到等量判断，不添新对象规则。",
+        "transferTarget": "在原有限对象范围内改变分配条件，说明守住哪些对象约束。",
+        "selfCheckTarget": "逐一核原对象用量、各组数量与目标关系，局部正确不能替代整体可行。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "finite_objects"
+      },
+      {
+        "id": "math_derivative_domain_extrema",
+        "name": "原导数任务的区间、驻点与最值",
+        "knowledgeKeywords": [
+          "导数极值",
+          "导数最值",
+          "导数单调性",
+          "驻点",
+          "导数符号"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心已有导数时，可能把导数为零当极值充分条件，或遗漏不可导处、区间端点和定义域限制；仅选择原题实际相关子点。",
+        "diagnosticContrast": "比较同一区间内导数变号、未变号及候选点的合法性，区分局部极值与全局最值。",
+        "correctionTarget": "从原定义域和已考导数规则说明候选的必要性与充分性，不把普通函数题新增为导数题。",
+        "transferTarget": "只在原函数、导数核心和参数范围内调整区间或条件，说明候选集合及结论怎样改变。",
+        "selfCheckTarget": "分别核原域、候选覆盖和目标值比较；原任务无不可导点不强造，不能只代一个驻点宣称全局最值。",
+        "sourceIds": [
+          "sh_gaokao_math_2025",
+          "zj_gaokao_math_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "math_sequence_initial_recurrence",
+        "name": "原数列递推的首项、下标与转化前提",
+        "knowledgeKeywords": [
+          "数列递推",
+          "数列通项",
+          "递推关系",
+          "等比数列",
+          "数列求和"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原题已考数列对应关系时，可能将仅对n≥2成立的关系套到首项，或作商、取倒数时漏非零前提。",
+        "diagnosticContrast": "比较保留原首项与下标范围的转化和只核递推却不核初值的候选通项。",
+        "correctionTarget": "说明每次原范围转化的下标、初值与可逆前提，不因数列一词新增函数导数或新求和法。",
+        "transferTarget": "在原递推与已考数列类型内变条件或问法，区分首项和一般项的职责。",
+        "selfCheckTarget": "回代原首项及原递推，并核所有合法下标和分母前提；检若干项只作查错不能代替完整论证。",
+        "sourceIds": [
+          "sh_gaokao_math_2025",
+          "zj_gaokao_math_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "math_vector_zero_projection",
+        "name": "原向量任务的零向量与投影条件",
+        "knowledgeKeywords": [
+          "向量数量积",
+          "向量投影",
+          "向量夹角",
+          "向量共线"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅按原已考向量子点择用：可能用零向量定义夹角、将数量积当模乘积，或丢失投影方向符号。",
+        "diagnosticContrast": "比较非零前提和方向条件成立与失效时同一公式的意义，不能把共线、同向和相等混为一谈。",
+        "correctionTarget": "按原数量积/投影/共线规则解释对象和适用前提，原题未考空间向量或夹角则不加入。",
+        "transferTarget": "仅调原向量之间的方向、模或条件表述，解释原不变关系与候选方向如何受限。",
+        "selfCheckTarget": "仅夹角、除模或投影方向等原任务确需非零时核非零前提；允许零向量的共线/等式任务不得无故排除零。模、方向与符号等只按原实际子点检查。",
+        "sourceIds": [
+          "sh_gaokao_math_2025",
+          "zj_gaokao_math_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "math_trigonometric_candidates",
+        "name": "原三角关系的角域与候选解",
+        "knowledgeKeywords": [
+          "解三角形",
+          "三角方程",
+          "正弦定理",
+          "余弦定理",
+          "三角函数值"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原对应关系已考时，可能从同一正弦值只取一个角，或忽略原角域、边角对应和三角形存在条件。",
+        "diagnosticContrast": "比较所有满足原角域的候选和仅满足变形式但不满足原几何/角域的伪候选。",
+        "correctionTarget": "依据原已考关系保留合法分支，再按原条件筛选，不新引另一套三角公式。",
+        "transferTarget": "在原三角关系与原角域知识内调整已有条件，说明候选数和筛选依据的变化。",
+        "selfCheckTarget": "回原角域和原关系逐候选验证；仅三角形任务已有时核边角与存在性，不能把函数题硬套几何义务。",
+        "sourceIds": [
+          "sh_gaokao_math_2025",
+          "zj_gaokao_math_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "math_conic_intersection_degeneracy",
+        "name": "原圆锥曲线的交点与退化条件",
+        "knowledgeKeywords": [
+          "直线与圆锥曲线",
+          "圆锥曲线交点",
+          "椭圆交点",
+          "双曲线交点",
+          "抛物线交点"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原核心已含交点时，可能默认直线斜率存在、消元后二次项非零，或忽略判别和原曲线限制。",
+        "diagnosticContrast": "比较消元确实保持原交点的情形与因斜率/降次/分母导致丢点或伪点的情形。",
+        "correctionTarget": "先检原表示与消元前提，再用原已考交点条件；不默认新增极点极线或竞赛几何结论。",
+        "transferTarget": "在原曲线和交点核心内微调原参数或位置条件，追踪哪些分支须单独处理。",
+        "selfCheckTarget": "回原联立关系检候选与遗漏分支；只对原任务真实可发生的退化检查，不新增曲线类型。",
+        "sourceIds": [
+          "sh_gaokao_math_2025",
+          "zj_gaokao_math_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "math_spatial_position_premises",
+        "name": "原立体线面位置的判定前提",
+        "knowledgeKeywords": [
+          "线面平行",
+          "线面垂直",
+          "面面平行",
+          "面面垂直",
+          "异面直线"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原位置关系已考时，可能以图外观代证、把平面内一条线的垂直当线面垂直，或混淆平行与包含。",
+        "diagnosticContrast": "比较原判定定理全部前提与只满足部分前提的候选，指出缺少哪条关系。",
+        "correctionTarget": "按原已考判定或性质逐条接证据，原题不含空间向量则不用向量法添新核心。",
+        "transferTarget": "只在原清晰已知与位置核心内重组证明或判断条件，合法辅助构造须说明作用和依据。",
+        "selfCheckTarget": "核线与平面归属、相交条件和各前提；只能依据印刷已知或可证明关系，不能由透视外观断言。",
+        "sourceIds": [
+          "sh_gaokao_math_2025",
+          "zj_gaokao_math_2025"
+        ],
+        "educationLevels": [
+          "high"
+        ]
+      },
+      {
+        "id": "math_geometric_correspondence",
+        "name": "原全等或相似的对应与判定前提",
+        "knowledgeKeywords": [
+          "三角形全等",
+          "三角形相似",
+          "对应边",
+          "对应角",
+          "相似比"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原对应关系已考时，可能凭外观配对应、比例对象不一致或漏原判定前提；全等与相似按原题二选或裁剪。",
+        "diagnosticContrast": "比较同时满足原对应和判定前提的关系与只在图上看似相同的关系。",
+        "correctionTarget": "从印刷已知或原知识可证关系确定对应，再逐条核原定理前提；原仅相似不新引全等定理，反之亦然。",
+        "transferTarget": "只在原图和原判定核心内换给定关系或问法，追踪对应关系而非固定记图形位置。",
+        "selfCheckTarget": "回原对象核对应边角、比例方向和全部适用前提；学生标记或视觉相似不算证据。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ],
+        "taskCondition": "geometric"
+      },
+      {
+        "id": "math_ratio_reference_quantity",
+        "name": "原比例与应用数量的基准对象",
+        "knowledgeKeywords": [
+          "百分数应用",
+          "比例关系",
+          "比的应用",
+          "单位1",
+          "增长率计算"
+        ],
+        "appliesTo": "non_listening",
+        "misconception": "仅原比例应用已考时，可能换了基准仍沿用旧分母，或将相同增加量与相同增加率混同。",
+        "diagnosticContrast": "对照同一原量关系在不同基准下的意义，指出百分比或比值究竟比较哪两个量。",
+        "correctionTarget": "先明原对象、基准与量纲，再按原关系解释，不加入新函数/统计模型。",
+        "transferTarget": "在原数量关系内改变已给基准或提问方向，说明不变实际量与比值调整。",
+        "selfCheckTarget": "核分子分母对象、单位和回原量关系的一致性，不能仅看数值大小。",
+        "sourceIds": [
+          "sh_zhongkao_math_2025",
+          "sh_gaokao_math_2025"
+        ]
+      }
+    ],
+    "subjectBlueprint": {
+      "coreDomains": [
+        "原数与式的对象、运算和合法域",
+        "原方程/不等式的等价、条件和候选",
+        "原函数与数列的关系、区间和初始条件",
+        "原几何的对应、位置与可证明事实",
+        "原统计概率的对象、事件和口径",
+        "原学段实际覆盖的三角/空间基础；仅高中原题已考的导数、向量及高中三角/圆锥/空间专属子机制"
+      ],
+      "misconceptionMechanisms": [
+        "约去可能为零的量或进行不可逆变形",
+        "把一例可行当全部或必要当充分",
+        "候选漏域、漏边界或重复计数",
+        "图形外观代已知或对应对象错配",
+        "局部极值/局部关系无依据推广全局",
+        "把计算拉长或同一步贴多标签当深度"
+      ],
+      "difficultyProgression": [
+        {
+          "level": 1,
+          "qualityTargets": [
+            "让一处隐藏关系或合法前提成为真正筛选条件，答案指明易混对象和纠正",
+            "在同一原核心内完成一处真实变式迁移，给可否定错解的检查"
+          ]
+        },
+        {
+          "level": 2,
+          "qualityTargets": [
+            "组合相依策略或单策略的不同关键决策，说明为何这一入口缩小候选",
+            "区分必要/充分、存在/唯一或局部/全局中的原任务真实难点，核漏解和伪解"
+          ]
+        },
+        {
+          "level": 3,
+          "qualityTargets": [
+            "在原范围内处理条件交互、退化/可达或替代路径，组合/聚焦两路线任选合格者",
+            "用原域、完备性及结果一致性检查整个解法；洞察可以减少总步骤"
+          ]
+        }
+      ],
+      "masteryAcceptance": [
+        "新题和独立解法保持原核心集合，原参考方法可重组",
+        "每个原核心的五维说明落在真实式、量或几何关系，不能只报策略名",
+        "同一动作不重复算方向/错因，巧解记新增步骤为0即可",
+        "候选回原条件，分类完备性、极端全局性或不变量全操作只在实际相关时验明",
+        "验收的是题目与学习说明的可解性和覆盖，不认证学生掌握"
+      ],
+      "questionTypeGuidance": [
+        {
+          "questionType": "选择/判断",
+          "design": "把关键条件、等价性或反例嵌入原判断，保选项标签和响应方式",
+          "answerEvidence": "给正确判断的依据与主要干扰的具体失效条件，不追加考生证明任务"
+        },
+        {
+          "questionType": "填空",
+          "design": "在原所求量/集合内改变关系，避免仅把数变大",
+          "answerEvidence": "解析说明候选范围、是否漏解及结果回验，题面不另问理由"
+        },
+        {
+          "questionType": "计算/解答",
+          "design": "用原概念组织灵活解路，原小问与分值不增",
+          "answerEvidence": "给完整合法推理、关键决策和原分值内评分依据，允许多种有效解法"
+        },
+        {
+          "questionType": "证明/探究",
+          "design": "只强化原命题的条件识别或结构关系，不借新定理",
+          "answerEvidence": "核已知来源、推理方向与覆盖范围；必要时给原域反例或合法构造"
+        },
+        {
+          "questionType": "图表/几何题",
+          "design": "变化与图文数据同步，几何已知从印刷标记或合法推导取得",
+          "answerEvidence": "解析引本题核实图caption并说明图中关系，不采信学生辅助线"
+        }
+      ],
+      "scopeExclusions": [
+        "不默认竞赛定理、模运算、高阶不等式或另一学段方法",
+        "原函数题未考导数则不得新加导数，原平面题不得默认空间向量",
+        "不能把函数/几何等章名变成整章许可",
+        "不得增小问、改题型或用外观猜等长/平行/对称"
+      ]
+    }
+  }
+}
