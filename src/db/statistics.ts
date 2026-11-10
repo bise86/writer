@@ -77,7 +77,9 @@ export async function initializeStatistics(
     ['score_records', 'education_level'],
     ['writing_score_records', 'education_level'],
   ] as const) {
-    const [tableInfo] = await database.executeSql(`PRAGMA table_info(${table})`);
+    const [tableInfo] = await database.executeSql(
+      `PRAGMA table_info(${table})`,
+    );
     let present = false;
     for (let i = 0; i < tableInfo.rows.length; i += 1) {
       present ||= tableInfo.rows.item(i).name === column;
@@ -96,7 +98,9 @@ export async function initializeStatistics(
   );
   // One insert atomically saves all numeric scores and the completed essay.
   await database.executeSql('DROP TRIGGER IF EXISTS score_records_publish');
-  await database.executeSql('DROP TRIGGER IF EXISTS writing_score_records_publish');
+  await database.executeSql(
+    'DROP TRIGGER IF EXISTS writing_score_records_publish',
+  );
   await database.executeSql(`CREATE TRIGGER score_records_publish AFTER INSERT ON score_records BEGIN
     UPDATE score_records SET is_current = 0 WHERE essay_id = NEW.essay_id AND id != NEW.id;
     UPDATE writing_score_records SET is_current = 0 WHERE essay_id = NEW.essay_id;
@@ -185,12 +189,36 @@ function validNumbers(
   educationLevel: EducationLevel = 'middle',
 ) {
   const rules = getWritingProfile(writingType, educationLevel).rules;
-  const adjustment = 'admissionPolicy' in rules.rules
-    ? score?.admissionAdjustment ?? 0
-    : 0;
+  const adjustment =
+    'admissionPolicy' in rules.rules ? score?.admissionAdjustment ?? 0 : 0;
+  const band = rules.bands.find(item => item.id === score?.bandId);
+  const enhancedEnglishValid =
+    rules.scoringMethod !== 'exam-informed-enhanced' ||
+    (score?.rubricVersion === `${rules.id}:${rules.version}` &&
+      Number.isInteger(score.admissionAdjustment) &&
+      typeof score.admissionReason === 'string' &&
+      score.admissionReason.trim() &&
+      (score.bandId === 'unqualified'
+        ? score.score < rules.passingScore
+        : !!band &&
+          score.score >= band.min &&
+          score.score <= band.max &&
+          Object.entries(band.floor).every(
+            ([key, minimum]) => score.dimensionScores?.[key] >= minimum,
+          )) &&
+      (!adjustment ||
+        score.score ===
+          (score.bandId === 'unqualified'
+            ? rules.passingScore - 1
+            : band?.max)));
   return (
     score &&
-    (score.educationLevel === undefined || score.educationLevel === educationLevel) &&
+    enhancedEnglishValid &&
+    (rules.scoringMethod !== 'exam-informed-analytic' ||
+      (score.admissionAdjustment === undefined &&
+        score.admissionReason === undefined)) &&
+    (score.educationLevel === undefined ||
+      score.educationLevel === educationLevel) &&
     Number.isInteger(score.score) &&
     score.score >= 0 &&
     score.score <= rules.total &&
@@ -206,7 +234,9 @@ function validNumbers(
     rules.dimensions.reduce(
       (sum, item) => sum + score.dimensionScores[item.id],
       0,
-    ) - adjustment === score.score
+    ) -
+      adjustment ===
+      score.score
   );
 }
 
@@ -230,8 +260,7 @@ async function insertScore(
     throw new Error('评分数值无效，不能保存统计记录');
   }
   const rules = getWritingProfile(type, level).rules;
-  const flexibleRubric =
-    type === 'english' || 'admissionPolicy' in rules.rules;
+  const flexibleRubric = type === 'english' || 'admissionPolicy' in rules.rules;
   if (flexibleRubric) {
     await database.executeSql(
       `INSERT OR IGNORE INTO writing_score_records

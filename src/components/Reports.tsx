@@ -13,6 +13,8 @@ import {
 import {getScoreReport} from '../db/database';
 import {
   recentMonth,
+  englishComparisonNote,
+  englishRubricLabel,
   reportBounds,
   ReportRange,
   ScoreMetric,
@@ -51,7 +53,9 @@ export default function Reports({
   const [loading, setLoading] = useState(true);
   const [revision, setRevision] = useState(0);
   const [metric, setMetric] = useState<ScoreMetric>('total');
-  const activeMetric = metrics.some(item => item.key === metric) ? metric : 'total';
+  const activeMetric = metrics.some(item => item.key === metric)
+    ? metric
+    : 'total';
   const [selectedId, setSelectedId] = useState<string>();
   useEffect(() => {
     const listener = BackHandler.addEventListener('hardwareBackPress', () => {
@@ -78,7 +82,8 @@ export default function Reports({
       ? type === 'english'
         ? getScoreReport(range, 'english')
         : getScoreReport(range)
-      : getScoreReport(range, type, educationLevel))
+      : getScoreReport(range, type, educationLevel)
+    )
       .then(value => {
         if (active) {
           setReport(value);
@@ -113,6 +118,10 @@ export default function Reports({
   const selected =
     report?.entries.find(entry => entry.id === selectedId) ||
     report?.entries[0];
+  const comparisonNote =
+    type === 'english' && report
+      ? englishComparisonNote(report.entries)
+      : undefined;
   return (
     <SafeAreaView style={styles.safe}>
       <View style={styles.header}>
@@ -217,6 +226,9 @@ export default function Reports({
                   </View>
                 ))}
               </View>
+              {comparisonNote && (
+                <Text style={styles.note}>{comparisonNote}</Text>
+              )}
               {!!report.estimatedCount && (
                 <Text style={styles.note}>
                   其中 {report.estimatedCount}{' '}
@@ -242,7 +254,8 @@ export default function Reports({
                       <Text
                         style={[
                           styles.metricText,
-                          activeMetric === item.key && styles.metricSelectedText,
+                          activeMetric === item.key &&
+                            styles.metricSelectedText,
                         ]}>
                         {item.label}
                       </Text>
@@ -263,6 +276,11 @@ export default function Reports({
                       {new Date(selected.scoredAt).toLocaleString()}
                       {selected.estimatedTime ? ' · 旧版保存时间' : ''}
                     </Text>
+                    {type === 'english' && (
+                      <Text style={styles.muted}>
+                        评分标准：{englishRubricLabel(selected.rubricVersion)}
+                      </Text>
+                    )}
                     <View style={styles.scoreGrid}>
                       {metrics.map(item => (
                         <Text key={item.key} style={styles.scoreText}>
@@ -272,7 +290,8 @@ export default function Reports({
                     </View>
                     {!!selected.admissionAdjustment && (
                       <Text style={styles.note}>
-                        分项合计 {selected.scores.total + selected.admissionAdjustment}
+                        分项合计{' '}
+                        {selected.scores.total + selected.admissionAdjustment}
                         {' · '}准入调整 −{selected.admissionAdjustment}
                       </Text>
                     )}

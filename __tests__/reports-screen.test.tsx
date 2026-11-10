@@ -14,9 +14,11 @@ import ScoreTrendChart from '../src/components/ScoreTrendChart';
 import {getScoreReport} from '../src/db/database';
 import {
   ReportEntry,
+  scoreMetricsFor,
   ScoreReport,
   summarizeScores,
 } from '../src/services/reports';
+import {getWritingRules} from '../src/services/writing';
 
 jest.mock('../src/db/database', () => ({getScoreReport: jest.fn()}));
 const entry: ReportEntry = {
@@ -62,9 +64,15 @@ afterEach(() => {
   act(() => view?.unmount());
   jest.useRealTimers();
 });
-async function render() {
+async function render(writingType?: 'chinese' | 'english') {
   await act(async () => {
-    view = create(<Reports onBack={onBack} onOpenEssay={onOpenEssay} />);
+    view = create(
+      <Reports
+        onBack={onBack}
+        onOpenEssay={onOpenEssay}
+        writingType={writingType}
+      />,
+    );
   });
 }
 
@@ -230,4 +238,90 @@ test('日历支持跨月选日、有效日期输入和硬件返回，不接受�
   expect(text()).toContain('请输入有效日期');
   act(() => view.root.findByType(Modal).props.onRequestClose());
   expect(onBack).toHaveBeenCalledTimes(1);
+});
+
+test('英语混合版本报表说明标准差异，选中记录显示其原版标准和原分数', async () => {
+  const entries: ReportEntry[] = [
+    {
+      ...entry,
+      id: 'english-v3',
+      title: '旧练习',
+      rubricVersion: 'english-writing-zhongkao-100-v3:3',
+      scores: {
+        total: 85,
+        task: 18,
+        content: 17,
+        organization: 13,
+        language: 29,
+        format: 8,
+      },
+    },
+    {
+      ...entry,
+      id: 'english-v4',
+      title: '新练习',
+      rubricVersion: 'english-writing-zhongkao-enhanced-100-v4:4',
+      scores: {
+        total: 79,
+        task: 18,
+        content: 17,
+        organization: 13,
+        language: 29,
+        format: 8,
+      },
+    },
+  ];
+  (getScoreReport as jest.Mock).mockResolvedValueOnce(
+    summarizeScores(
+      entries,
+      scoreMetricsFor(getWritingRules('english').dimensions),
+    ),
+  );
+  await render('english');
+  expect(text()).toContain('平均分与趋势不宜直接比较');
+  expect(text()).toContain('旧分数未重算');
+  expect(text()).toContain('常规训练 v3（本次强化前）');
+  expect(text()).toContain('82.0');
+  act(() => view.root.findByType(ScoreTrendChart).props.onSelect('english-v4'));
+  expect(text()).toContain('强化训练 v4（较 v3 提高一档）');
+  expect(
+    view.root
+      .findByType(ScoreTrendChart)
+      .props.entries.map((item: ReportEntry) => item.scores.total),
+  ).toEqual([85, 79]);
+});
+
+test('英文无版本记录明确未知，中文报表不增加版本说明', async () => {
+  const values = {
+    total: 85,
+    task: 18,
+    content: 17,
+    organization: 13,
+    language: 29,
+    format: 8,
+  };
+  const entries = [
+    {...entry, scores: values},
+    {...entry, id: 'unknown-2', scores: values},
+  ];
+  (getScoreReport as jest.Mock).mockResolvedValueOnce(
+    summarizeScores(
+      entries,
+      scoreMetricsFor(getWritingRules('english').dimensions),
+    ),
+  );
+  await render('english');
+  expect(text()).toContain('版本未记录（无法确认评分标准）');
+  expect(text()).toContain('可比性无法确认');
+  await act(async () => view.unmount());
+  (getScoreReport as jest.Mock).mockResolvedValueOnce(
+    summarizeScores([
+      {...entry, rubricVersion: 'english-writing-zhongkao-100-v3:3'},
+      {...entry, id: '2'},
+    ]),
+  );
+  await render('chinese');
+  expect(text()).not.toContain('评分标准：');
+  expect(text()).not.toContain('可比性无法确认');
+  expect(text()).not.toContain('不宜直接比较');
 });

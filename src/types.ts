@@ -75,6 +75,11 @@ export interface ScoreResult {
   bandId: string;
   bandName?: string;
   dimensionScores: Record<string, number>;
+  /** Verbatim evidence for each dimension of the enhanced English rubric. */
+  qualificationEvidence?: Record<
+    string,
+    {quote: string; explanation: string}[]
+  >;
   summary: string;
   strengths: string[];
   weaknesses: string[];

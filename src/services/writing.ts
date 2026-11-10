@@ -8,16 +8,25 @@ export interface ScoringRules {
   id: string;
   version: number;
   educationLevel?: string;
+  language?: string;
   total: number;
   passingScore: number;
+  scoringMethod?: string;
   dimensions: {id: string; name: string; max: number}[];
-  bands: {id: string; name: string; min: number; max: number; floor: Record<string, number>}[];
+  bands: {
+    id: string;
+    name: string;
+    min: number;
+    max: number;
+    floor: Record<string, number>;
+  }[];
   highSchoolCapabilities?: {
     id: string;
     name: string;
     dimension: string;
     minimumBand: string;
     evidence: string;
+    applicableTaskTypes?: string[];
   }[];
   rules: {
     techniquePolicy: string;
@@ -50,7 +59,12 @@ const rules: Record<WritingType, Record<EducationLevel, ScoringRules>> = {
   english: {middle: englishRules, high: highEnglishRules},
 };
 
-const profiles: Record<WritingType, Omit<WritingProfile, 'educationLevel' | 'educationLabel' | 'rules'> & {rules: Record<EducationLevel, ScoringRules>}> = {
+const profiles: Record<
+  WritingType,
+  Omit<WritingProfile, 'educationLevel' | 'educationLabel' | 'rules'> & {
+    rules: Record<EducationLevel, ScoringRules>;
+  }
+> = {
   chinese: {
     type: 'chinese',
     label: '作文',

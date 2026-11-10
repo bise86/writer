@@ -29,6 +29,8 @@ export type ReportEntry = {
   estimatedTime: boolean;
   scores: Record<string, number>;
   admissionAdjustment?: number;
+  /** Recorded English rubric; absent on legacy rows without a saved version. */
+  rubricVersion?: string;
 };
 export type ScoreReport = {
   entries: ReportEntry[];
@@ -38,6 +40,50 @@ export type ScoreReport = {
   lowest: number | null;
   estimatedCount: number;
 };
+
+export function recordedRubricVersion(value: unknown): string | undefined {
+  return typeof value === 'string' && value.trim() ? value.trim() : undefined;
+}
+
+export function englishRubricLabel(value: unknown): string {
+  const version = recordedRubricVersion(value);
+  if (!version) {
+    return '版本未记录（无法确认评分标准）';
+  }
+  if (/^english-writing-(zhongkao|gaokao)-enhanced-100-v4:4$/.test(version)) {
+    return '强化训练 v4（较 v3 提高一档）';
+  }
+  if (/^english-writing-(zhongkao|gaokao)-100-v3:3$/.test(version)) {
+    return '常规训练 v3（本次强化前）';
+  }
+  if (
+    /^english-writing-(enhanced-100-v1|high-school-enhanced-100-v2):2$/.test(
+      version,
+    )
+  ) {
+    return '旧版强化训练 v2';
+  }
+  return `历史标准：${version}`;
+}
+
+export function englishComparisonNote(
+  entries: ReportEntry[],
+): string | undefined {
+  if (entries.length < 2) {
+    return undefined;
+  }
+  const versions = entries.map(entry =>
+    recordedRubricVersion(entry.rubricVersion),
+  );
+  const distinctVersions = new Set(versions);
+  if (distinctVersions.size > 1) {
+    return '本报表含不同或未记录的评分标准，平均分与趋势不宜直接比较；旧分数未重算。';
+  }
+  if (distinctVersions.has(undefined)) {
+    return '部分成绩未记录评分标准版本，平均分与趋势的可比性无法确认；旧分数未重算。';
+  }
+  return undefined;
+}
 
 export function dateLabel(date: Date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(

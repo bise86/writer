@@ -3,6 +3,7 @@ import {DEFAULT_SETTINGS} from '../src/settings';
 import {runResponse} from '../src/services/openai';
 import {scoreEssay, scoreInstructions} from '../src/services/scoring';
 import {ScoreResult} from '../src/types';
+import {getWritingRules} from '../src/services/writing';
 
 jest.mock('react-native-fs', () => ({}));
 jest.mock('../src/db/database', () => ({
@@ -135,4 +136,88 @@ test('重试恢复最终输出及校验反馈，以当前角色数量请求模�
     content: '缺少 annotations',
   });
   expect(request.mock.calls[0][1]).toContain('组织 3 个不同角色');
+});
+
+test('英语强化重评仅恢复当前学段和v4规则，排除v2/v3、无版本及其他学段输出', async () => {
+  const text = 'I went home.';
+  const rules = getWritingRules('english');
+  const rubricVersion = `${rules.id}:${rules.version}`;
+  const dimensionScores = rules.bands[0].floor;
+  const value = {
+    ...draft,
+    score: Object.values(dimensionScores).reduce((sum, item) => sum + item, 0),
+    bandId: 'pass',
+    admissionAdjustment: 0,
+    admissionReason: '无准入调整',
+    summary: '待核题、待核材料、待核原图，训练预评。',
+    dimensionScores,
+    dimensionFeedback: Object.fromEntries(
+      rules.dimensions.map(item => [item.id, feedback]),
+    ),
+    qualificationEvidence: Object.fromEntries(
+      rules.dimensions.map(item => [
+        item.id,
+        [
+          {
+            quote: text,
+            explanation: '按当前学段强化档次逐项说明可见文字，缺失材料待核。',
+          },
+        ],
+      ]),
+    ),
+    annotations: [
+      {
+        quote: text,
+        type: 'improvement',
+        comment: '信息可更具体',
+        suggestion: '补充一个原因',
+      },
+    ],
+  };
+  request.mockResolvedValue({text: JSON.stringify(value)});
+  (getScoreAttempts as jest.Mock).mockResolvedValue([
+    {
+      sourceText: text,
+      educationLevel: 'middle',
+      rubricVersion: 'english-writing-enhanced-100-v1:2',
+      output: '旧版封顶',
+    },
+    {
+      sourceText: text,
+      educationLevel: 'middle',
+      rubricVersion: 'english-writing-zhongkao-100-v3:3',
+      output: 'v3常规训练输出',
+    },
+    {sourceText: text, output: '无版本输出'},
+    {
+      sourceText: text,
+      educationLevel: 'high',
+      rubricVersion,
+      output: '高中输出',
+    },
+    {
+      sourceText: text,
+      educationLevel: 'middle',
+      rubricVersion,
+      output: '当前版本输出',
+      feedback: '补全一项批注',
+    },
+  ]);
+  const result = await scoreEssay(text, settings, {
+    essayId: 'english-1',
+    writingType: 'english',
+  });
+  expect(result).toMatchObject({score: 60, bandId: 'pass', rubricVersion});
+  expect(request.mock.calls[0][4].history).toEqual([
+    {role: 'assistant', content: '当前版本输出'},
+    {role: 'user', content: '补全一项批注'},
+  ]);
+  expect(saveScoreAttempt).toHaveBeenCalledWith(
+    'english-1',
+    text,
+    JSON.stringify(value),
+    '',
+    'middle',
+    rubricVersion,
+  );
 });

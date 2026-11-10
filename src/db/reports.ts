@@ -2,6 +2,7 @@ import type {SQLiteDatabase} from 'react-native-sqlite-storage';
 import {
   ReportEntry,
   ReportRange,
+  recordedRubricVersion,
   reportBounds,
   scoreMetricsFor,
   summarizeScores,
@@ -19,13 +20,12 @@ export async function readScoreReport(
   const {from, until} = reportBounds(range);
   const type = normalizeWritingType(writingType);
   const level = normalizeEducationLevel(educationLevel);
-  const flexibleRubric =
-    type === 'english' || level === 'high';
+  const flexibleRubric = type === 'english' || level === 'high';
   if (flexibleRubric) {
     const [result] = await database.executeSql(
       `
       SELECT s.id, s.essay_id, e.title, s.scored_at, s.time_source,
-        s.total_score, s.dimension_scores_json
+        s.total_score, s.dimension_scores_json, s.rubric_version
       FROM writing_score_records s JOIN essays e ON e.id = s.essay_id
       WHERE s.writing_type = ? AND s.education_level = ? AND s.scored_at >= ? AND s.scored_at < ?
         AND NOT EXISTS (
@@ -48,8 +48,11 @@ export async function readScoreReport(
           !values ||
           typeof values !== 'object' ||
           Array.isArray(values) ||
-          dimensions.some(item =>
-            !Number.isInteger(values[item.id]) || values[item.id] < 0 || values[item.id] > item.max,
+          dimensions.some(
+            item =>
+              !Number.isInteger(values[item.id]) ||
+              values[item.id] < 0 ||
+              values[item.id] > item.max,
           )
         ) {
           throw new Error('无效分项');
@@ -73,10 +76,14 @@ export async function readScoreReport(
       entries.push({
         id: row.id,
         essayId: row.essay_id,
-        title: row.title || (type === 'english' ? '未命名英语作文' : '未命名作文'),
+        title:
+          row.title || (type === 'english' ? '未命名英语作文' : '未命名作文'),
         scoredAt: row.scored_at,
         estimatedTime: row.time_source !== 'scored_at',
         admissionAdjustment,
+        ...(type === 'english'
+          ? {rubricVersion: recordedRubricVersion(row.rubric_version)}
+          : {}),
         scores: {
           total: row.total_score,
           ...Object.fromEntries(

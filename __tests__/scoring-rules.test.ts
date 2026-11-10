@@ -9,7 +9,12 @@ test('评分规则包含五档、五个分项，并且总分封顶为 100', () =
   expect(rules.dimensions).toHaveLength(5);
   expect(rules.bands).toHaveLength(5);
   expect(rules.bands[0].min).toBeLessThan(rules.bands[4].min);
-  expect(rules.dimensions.reduce((sum: number, item: {max: number}) => sum + item.max, 0)).toBe(100);
+  expect(
+    rules.dimensions.reduce(
+      (sum: number, item: {max: number}) => sum + item.max,
+      0,
+    ),
+  ).toBe(100);
 });
 
 test('规则明确要求主题深化和语言表现，避免单靠套话进入高档', () => {
@@ -18,23 +23,36 @@ test('规则明确要求主题深化和语言表现，避免单靠套话进入�
   expect(rules.rules.ceiling.length).toBeGreaterThan(0);
 });
 
-test('高中中文和英语规则独立、总分完整且第三档对应高中高考满分基准', () => {
+test('高中中文保留原强化基准，英语以自身能力要求提高一个档次', () => {
   for (const rubric of [highRules, highEnglishRules]) {
     expect(rubric.educationLevel).toBe('high');
-    expect(rubric.dimensions.reduce((sum, item) => sum + item.max, 0)).toBe(100);
+    expect(
+      rubric.dimensions
+        .map(item => item.max)
+        .reduce((sum, max) => sum + max, 0),
+    ).toBe(100);
     expect(rubric.bands).toHaveLength(5);
-    expect(rubric.bands[2].min).toBe(80);
-    expect(rubric.thirdBandIsExamFullQuality).toBe(true);
-    expect(rubric.rules.admissionPolicy).toBeTruthy();
     expect(rubric.rules.materialPolicy).toBeTruthy();
     expect(rubric.rules.crossLevelPolicy).toContain('独立评阅');
-    expect(rubric.rules.quantitativePolicy).toBeTruthy();
-    expect(rubric.highSchoolCapabilities.length).toBeGreaterThanOrEqual(6);
   }
+  expect(highRules.bands[2].min).toBe(80);
+  expect(highRules.thirdBandIsExamFullQuality).toBe(true);
+  expect(highRules.rules.admissionPolicy).toBeTruthy();
+  expect(highRules.rules.quantitativePolicy).toBeTruthy();
+  expect(highRules.highSchoolCapabilities.length).toBeGreaterThanOrEqual(6);
+  expect(highEnglishRules.scoringMethod).toBe('exam-informed-enhanced');
+  expect(highEnglishRules.bands[0].min).toBe(60);
+  expect(highEnglishRules.raisedByOneBand).toBe(true);
+  expect(highEnglishRules.thirdBandIsExamFullQuality).toBe(true);
+  expect(highEnglishRules.rules.admissionPolicy).toBeTruthy();
   expect(highRules.id).not.toBe(rules.id);
   expect(highEnglishRules.id).not.toBe('english-writing-enhanced-100-v1');
-  expect(Object.values(highRules.bands[1].floor).reduce((sum, value) => sum + value, 0)).toBeGreaterThan(74);
-  expect(Object.values(highEnglishRules.bands[1].floor).reduce((sum, value) => sum + value, 0)).toBeGreaterThan(74);
+  expect(
+    Object.values(highRules.bands[1].floor).reduce(
+      (sum, value) => sum + value,
+      0,
+    ),
+  ).toBeGreaterThan(74);
 });
 
 test('同一份只达到初中良好档的中文分项不能直接通过高中良好档', () => {
@@ -78,6 +96,10 @@ test('同一份只达到初中良好档的中文分项不能直接通过高中�
     ],
   };
   expect(() =>
-    validateScore(middleLike, '初春，我在雨中学会了等待。', getWritingRules('chinese', 'high')),
+    validateScore(
+      middleLike,
+      '初春，我在雨中学会了等待。',
+      getWritingRules('chinese', 'high'),
+    ),
   ).toThrow();
 });

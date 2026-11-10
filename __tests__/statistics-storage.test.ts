@@ -6,6 +6,7 @@ import {DEFAULT_SETTINGS} from '../src/settings';
 import {ModelCall, ScoreResult} from '../src/types';
 import {parseUsage} from '../src/services/usage';
 import RNFS from 'react-native-fs';
+import {getWritingRules} from '../src/services/writing';
 
 // Exercise the shipped SQL against real SQLite, including views, triggers,
 // migrations, atomic score publication and late replies after deletion.
@@ -372,82 +373,230 @@ test('新作文与三个步骤原子入库，任一步骤失败都不留下半�
   await db.initDatabase();
   await mockExecute(`CREATE TRIGGER fail_stage BEFORE INSERT ON pipeline_steps
     WHEN NEW.step = 'reconcile' BEGIN SELECT RAISE(ABORT, 'stage storage failed'); END`);
-  await expect(db.createEssay('file:///one.jpg')).rejects.toThrow('stage storage failed');
+  await expect(db.createEssay('file:///one.jpg')).rejects.toThrow(
+    'stage storage failed',
+  );
   expect(await rows('SELECT * FROM essays')).toHaveLength(0);
   expect(await rows('SELECT * FROM pipeline_steps')).toHaveLength(0);
   await mockExecute('DROP TRIGGER fail_stage');
   const essay = await db.createEssay('file:///one.jpg', 'english');
   expect(essay.writingType).toBe('english');
-  expect((await db.getSteps(essay.id)).map(item => item.step)).toEqual(['vision_ocr', 'reconcile', 'scoring']);
+  expect((await db.getSteps(essay.id)).map(item => item.step)).toEqual([
+    'vision_ocr',
+    'reconcile',
+    'scoring',
+  ]);
 }, 30000);
 
-test.each(['single', 'time'] as const)('%s 删除数据库失败时，图片、流程和历史仍完整保留', async mode => {
-  const essay = await db.createEssay('file:///one.jpg');
-  await db.saveEssayScore(essay.id, 'keep-score', score, settings);
-  await db.saveModelCall(essay.id, 'keep-call', 'scoring', call('keep-call'));
-  await db.saveScoreAttempt(essay.id, 'source', 'output', '');
-  await mockExecute('UPDATE essays SET created_at = ?', ['2000-01-01T00:00:00.000Z']);
-  await mockExecute(`CREATE TRIGGER fail_delete BEFORE DELETE ON essays
+test.each(['single', 'time'] as const)(
+  '%s 删除数据库失败时，图片、流程和历史仍完整保留',
+  async mode => {
+    const essay = await db.createEssay('file:///one.jpg');
+    await db.saveEssayScore(essay.id, 'keep-score', score, settings);
+    await db.saveModelCall(essay.id, 'keep-call', 'scoring', call('keep-call'));
+    await db.saveScoreAttempt(essay.id, 'source', 'output', '');
+    await mockExecute('UPDATE essays SET created_at = ?', [
+      '2000-01-01T00:00:00.000Z',
+    ]);
+    await mockExecute(`CREATE TRIGGER fail_delete BEFORE DELETE ON essays
     BEGIN SELECT RAISE(ABORT, 'delete failed'); END`);
-  (RNFS.exists as jest.Mock).mockResolvedValue(true);
-  (RNFS.unlink as jest.Mock).mockClear();
-  try {
-    await expect(mode === 'single' ? db.deleteEssay(essay.id) : db.clearEssaysBefore(new Date('2001-01-01T00:00:00.000Z')))
-      .rejects.toThrow('delete failed');
-    expect(await db.getEssay(essay.id)).toBeDefined();
-    expect(await db.getSteps(essay.id)).toHaveLength(3);
-    expect(await db.getScoreAttempts(essay.id)).toHaveLength(1);
-    expect((await db.getEssayUsage(essay.id)).total.callCount).toBe(1);
-    expect(await rows('SELECT * FROM score_records')).toHaveLength(1);
-    expect(RNFS.unlink).not.toHaveBeenCalled();
-  } finally {
-    (RNFS.exists as jest.Mock).mockResolvedValue(false);
-  }
-}, 30000);
+    (RNFS.exists as jest.Mock).mockResolvedValue(true);
+    (RNFS.unlink as jest.Mock).mockClear();
+    try {
+      await expect(
+        mode === 'single'
+          ? db.deleteEssay(essay.id)
+          : db.clearEssaysBefore(new Date('2001-01-01T00:00:00.000Z')),
+      ).rejects.toThrow('delete failed');
+      expect(await db.getEssay(essay.id)).toBeDefined();
+      expect(await db.getSteps(essay.id)).toHaveLength(3);
+      expect(await db.getScoreAttempts(essay.id)).toHaveLength(1);
+      expect((await db.getEssayUsage(essay.id)).total.callCount).toBe(1);
+      expect(await rows('SELECT * FROM score_records')).toHaveLength(1);
+      expect(RNFS.unlink).not.toHaveBeenCalled();
+    } finally {
+      (RNFS.exists as jest.Mock).mockResolvedValue(false);
+    }
+  },
+  30000,
+);
 
 test('整套 API 设置原子保存，写入失败不留下新地址配旧模型', async () => {
   const before = await db.getSettings();
   await mockExecute(`CREATE TRIGGER fail_settings BEFORE INSERT ON settings
     WHEN NEW.key = 'modelName' AND NEW.value = 'new-model'
     BEGIN SELECT RAISE(ABORT, 'settings write failed'); END`);
-  await expect(db.saveSettings({...before, apiBaseUrl: 'https://new.example.com/v1', apiKey: 'new-test-key', modelName: 'new-model'}))
-    .rejects.toThrow('settings write failed');
+  await expect(
+    db.saveSettings({
+      ...before,
+      apiBaseUrl: 'https://new.example.com/v1',
+      apiKey: 'new-test-key',
+      modelName: 'new-model',
+    }),
+  ).rejects.toThrow('settings write failed');
   expect(await db.getSettings()).toEqual(before);
 }, 30000);
 
-test('英语准入调整、重评、报表和删除使用英语历史，不混入中文记录', async () => {
+test('英语v4强化保存、v2/v3历史、重评、报表和删除相互兼容，不混入中文记录', async () => {
   const chinese = await db.createEssay('file:///chinese.jpg');
   const english = await db.createEssay('file:///english.jpg', 'english');
+  const rules = getWritingRules('english');
+  const rubricVersion = `${rules.id}:${rules.version}`;
   const englishScore: ScoreResult = {
-    ...score, score: 79, bandId: 'good', admissionAdjustment: 6,
-    admissionReason: '一处语言错误未达到第三档条件',
-    dimensionScores: {task: 18, content: 17, organization: 13, language: 29, format: 8},
+    ...score,
+    score: 85,
+    bandId: 'high',
+    rubricVersion,
+    admissionAdjustment: 0,
+    admissionReason: '无准入调整',
+    dimensionScores: {
+      task: 18,
+      content: 17,
+      organization: 13,
+      language: 29,
+      format: 8,
+    },
   };
   await db.saveEssayScore(chinese.id, 'chinese', score, settings);
-  await db.saveEssayScore(english.id, 'english-a', englishScore, settings, 'english');
+  await db.saveEssayScore(
+    english.id,
+    'english-a',
+    englishScore,
+    settings,
+    'english',
+  );
   const range = {start: '2000-01-01', end: '2099-12-31'};
-  expect((await db.getScoreReport(range)).entries.map(entry => entry.essayId)).toEqual([chinese.id]);
+  expect(
+    (await db.getScoreReport(range)).entries.map(entry => entry.essayId),
+  ).toEqual([chinese.id]);
   const initial = await db.getScoreReport(range, 'english');
-  expect(initial.entries[0]).toMatchObject({essayId: english.id, scores: {total: 79, language: 29}, admissionAdjustment: 6});
+  expect(initial.entries[0]).toMatchObject({
+    essayId: english.id,
+    scores: {total: 85, language: 29},
+  });
   expect(initial.average?.task).toBe(18);
-  expect(JSON.parse((await db.getEssay(english.id))!.scoreJson)).toEqual(englishScore);
-  await db.saveEssayScore(english.id, 'english-b', {...englishScore, admissionAdjustment: 0, admissionReason: '无准入调整', score: 85, bandId: 'high'}, settings, 'english');
+  expect(JSON.parse((await db.getEssay(english.id))!.scoreJson)).toEqual(
+    englishScore,
+  );
+  // Historical versions remain readable, but cannot be saved as new v4 scores.
+  const v3Version = 'english-writing-zhongkao-100-v3:3';
+  const v3 = {
+    ...englishScore,
+    bandId: 'proficient',
+    rubricVersion: v3Version,
+    admissionAdjustment: undefined,
+    admissionReason: undefined,
+  };
+  await mockExecute(
+    'UPDATE writing_score_records SET rubric_version = ?, band_id = ?, score_json = ? WHERE run_id = ?',
+    [v3Version, 'proficient', JSON.stringify(v3), 'english-a'],
+  );
+  expect(
+    (await db.getScoreReport(range, 'english')).entries[0].scores.total,
+  ).toBe(85);
+  await expect(
+    db.saveEssayScore(english.id, 'invalid-v3', v3, settings, 'english'),
+  ).rejects.toThrow('评分数值无效');
+  const legacy = {
+    ...englishScore,
+    score: 79,
+    bandId: 'good',
+    rubricVersion: 'english-writing-enhanced-100-v1:2',
+    admissionAdjustment: 6,
+    admissionReason: '旧版准入封顶',
+  };
+  await mockExecute(
+    'UPDATE writing_score_records SET total_score = ?, band_id = ?, rubric_version = ?, score_json = ? WHERE run_id = ?',
+    [
+      79,
+      'good',
+      'english-writing-enhanced-100-v1:2',
+      JSON.stringify(legacy),
+      'english-a',
+    ],
+  );
+  expect((await db.getScoreReport(range, 'english')).entries[0]).toMatchObject({
+    scores: {total: 79},
+    admissionAdjustment: 6,
+  });
+  await expect(
+    db.saveEssayScore(
+      english.id,
+      'invalid-legacy',
+      legacy,
+      settings,
+      'english',
+    ),
+  ).rejects.toThrow('评分数值无效');
+  await db.saveEssayScore(
+    english.id,
+    'english-b',
+    {
+      ...englishScore,
+      score: 86,
+      dimensionScores: {...englishScore.dimensionScores, content: 18},
+    },
+    settings,
+    'english',
+  );
   expect((await db.getScoreReport(range, 'english')).count).toBe(1);
-  expect((await rows('SELECT is_current FROM writing_score_records ORDER BY rowid')).map(item => item.is_current)).toEqual([0, 1]);
-  await mockExecute('UPDATE essays SET created_at = ?', ['2000-01-01T00:00:00.000Z']);
+  expect(
+    (await db.getScoreReport(range, 'english')).entries[0].scores.total,
+  ).toBe(86);
+  expect(
+    (
+      await rows(
+        'SELECT rubric_version FROM writing_score_records ORDER BY rowid',
+      )
+    ).map(item => item.rubric_version),
+  ).toEqual(['english-writing-enhanced-100-v1:2', rubricVersion]);
+  expect(
+    (
+      await rows('SELECT is_current FROM writing_score_records ORDER BY rowid')
+    ).map(item => item.is_current),
+  ).toEqual([0, 1]);
+  await mockExecute('UPDATE essays SET created_at = ?', [
+    '2000-01-01T00:00:00.000Z',
+  ]);
   await db.clearEssaysBefore(new Date('2001-01-01T00:00:00.000Z'), 'english');
   expect(await db.getEssay(chinese.id)).toBeDefined();
   expect(await rows('SELECT * FROM writing_score_records')).toHaveLength(0);
-  await db.saveEssayScore(english.id, 'late-english', englishScore, settings, 'english');
+  await db.saveEssayScore(
+    english.id,
+    'late-english',
+    englishScore,
+    settings,
+    'english',
+  );
   expect(await rows('SELECT * FROM writing_score_records')).toHaveLength(0);
 }, 30000);
 
 test('英语历史分项损坏时明确报错，不伪造为零分统计', async () => {
   const essay = await db.createEssay('file:///english.jpg', 'english');
-  const englishScore = {...score, score: 60, dimensionScores: {task: 12, content: 12, organization: 9, language: 21, format: 6}};
-  await db.saveEssayScore(essay.id, 'english', englishScore, settings, 'english');
-  await mockExecute('UPDATE writing_score_records SET dimension_scores_json = ?', ['null']);
-  await expect(db.getScoreReport({start: '2000-01-01', end: '2099-12-31'}, 'english')).rejects.toThrow('分项数据无效');
+  const rules = getWritingRules('english');
+  const englishScore = {
+    ...score,
+    score: 60,
+    bandId: 'pass',
+    rubricVersion: `${rules.id}:${rules.version}`,
+    admissionAdjustment: 0,
+    admissionReason: '无准入调整',
+    dimensionScores: {...rules.bands[0].floor},
+  };
+  await db.saveEssayScore(
+    essay.id,
+    'english',
+    englishScore,
+    settings,
+    'english',
+  );
+  await mockExecute(
+    'UPDATE writing_score_records SET dimension_scores_json = ?',
+    ['null'],
+  );
+  await expect(
+    db.getScoreReport({start: '2000-01-01', end: '2099-12-31'}, 'english'),
+  ).rejects.toThrow('分项数据无效');
 }, 30000);
 
 test('高中中文使用独立准入规则和历史表，不触发初中固定分项约束', async () => {
@@ -458,9 +607,22 @@ test('高中中文使用独立准入规则和历史表，不触发初中固定�
     bandId: 'good',
     admissionAdjustment: 11,
     admissionReason: '材料分析仍不足以进入高中高考满分基准。',
-    dimensionScores: {thesis: 22, content: 22, structure: 18, language: 19, format: 9},
+    dimensionScores: {
+      thesis: 22,
+      content: 22,
+      structure: 18,
+      language: 19,
+      format: 9,
+    },
   };
-  await db.saveEssayScore(essay.id, 'high-chinese', highScore, settings, 'chinese', 'high');
+  await db.saveEssayScore(
+    essay.id,
+    'high-chinese',
+    highScore,
+    settings,
+    'chinese',
+    'high',
+  );
   const report = await db.getScoreReport(
     {start: '2000-01-01', end: '2099-12-31'},
     'chinese',
@@ -471,7 +633,7 @@ test('高中中文使用独立准入规则和历史表，不触发初中固定�
     scores: {total: 79, thesis: 22, language: 19},
     admissionAdjustment: 11,
   });
-  expect(await rows('SELECT education_level FROM writing_score_records')).toEqual([
-    {education_level: 'high'},
-  ]);
+  expect(
+    await rows('SELECT education_level FROM writing_score_records'),
+  ).toEqual([{education_level: 'high'}]);
 });

@@ -17,6 +17,7 @@ import CorrectionPdf from './CorrectionPdf';
 import UsageDetails from './UsageDetails';
 import ImageViewer from './ImageViewer';
 import {getWritingProfile, normalizeWritingType} from '../services/writing';
+import {englishRubricLabel} from '../services/reports';
 
 const STAGES: [StepId, string][] = [
   ['vision_ocr', '逐页图片识别'],
@@ -322,6 +323,16 @@ export default function EssayDetail({
                 <Text style={styles.band}>
                   {score.bandName || score.bandId}
                 </Text>
+                {profile.type === 'english' && (
+                  <>
+                    <Text style={styles.muted}>
+                      百分制训练分，考试原始分与档次以当题细则为准。
+                    </Text>
+                    <Text style={styles.muted}>
+                      评分标准：{englishRubricLabel(score.rubricVersion)}
+                    </Text>
+                  </>
+                )}
                 {profile.rules.rules.materialPolicy && (
                   <Text style={styles.muted}>
                     待核题、待核材料、待核原图：当前评分依据复核文本，{profile.educationLabel}任务完成度和书写需另行核对。

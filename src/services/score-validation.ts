@@ -47,9 +47,90 @@ export function validateScore(
   if (!isObject(value)) {
     throw new ScoreValidationError(['根节点必须是 JSON 对象']);
   }
+  const examEnglish = rules.language === 'en';
+  const enhancedEnglish = rules.scoringMethod === 'exam-informed-enhanced';
   for (const key of ['summary']) {
     if (typeof value[key] !== 'string' || !value[key].trim()) {
       issues.push(`${key} 必须是非空字符串`);
+    }
+  }
+  if (examEnglish) {
+    if (
+      typeof value.summary === 'string' &&
+      ['待核题', '待核材料', '待核原图', '训练预评'].some(
+        label => !value.summary.includes(label),
+      )
+    ) {
+      issues.push('summary 必须标明待核题、待核材料、待核原图，训练预评');
+    }
+    if (
+      !enhancedEnglish &&
+      (value.admissionAdjustment !== undefined ||
+        value.admissionReason !== undefined)
+    ) {
+      issues.push(
+        '英语考试训练量表不使用 admissionAdjustment 或 admissionReason，请按五项实际表现评分',
+      );
+    }
+    if (enhancedEnglish) {
+      if (!isObject(value.qualificationEvidence)) {
+        issues.push('qualificationEvidence 必须包含五个分项的原文证据与解释');
+      } else {
+        for (const dimension of rules.dimensions) {
+          const evidence = value.qualificationEvidence[dimension.id];
+          if (!Array.isArray(evidence) || !evidence.length) {
+            issues.push(
+              `qualificationEvidence.${dimension.id} 至少包含一条原文证据`,
+            );
+            continue;
+          }
+          evidence.forEach((item: unknown, index: number) => {
+            const field = `qualificationEvidence.${dimension.id}[${index}]`;
+            if (
+              !isObject(item) ||
+              typeof item.quote !== 'string' ||
+              !item.quote.trim() ||
+              !originalText.includes(item.quote)
+            ) {
+              issues.push(`${field}.quote 必须逐字引用原文中的连续文字`);
+            }
+            if (
+              !isObject(item) ||
+              typeof item.explanation !== 'string' ||
+              !item.explanation.trim()
+            ) {
+              issues.push(
+                `${field}.explanation 必须说明该证据如何支持当前档次或显示差距`,
+              );
+            }
+          });
+        }
+        if (
+          Object.keys(value.qualificationEvidence).some(
+            id => !rules.dimensions.some(dimension => dimension.id === id),
+          )
+        ) {
+          issues.push('qualificationEvidence 只能使用当前英语规则的五个分项键');
+        }
+      }
+      if (
+        value.admissionAdjustment === undefined ||
+        value.admissionReason === undefined
+      ) {
+        issues.push(
+          '英语强化评分必须明确输出 admissionAdjustment 与 admissionReason，无调整时为0和无准入调整',
+        );
+      }
+    }
+    for (const key of ['dimensionScores', 'dimensionFeedback']) {
+      if (
+        isObject(value[key]) &&
+        Object.keys(value[key]).some(
+          id => !rules.dimensions.some(dimension => dimension.id === id),
+        )
+      ) {
+        issues.push(`${key} 只能使用当前英语规则的五个分项键`);
+      }
     }
   }
   for (const key of [
@@ -97,34 +178,57 @@ export function validateScore(
   if (
     adjusted &&
     ((value.admissionReason !== undefined &&
-      (typeof value.admissionReason !== 'string' || !value.admissionReason.trim())) ||
+      (typeof value.admissionReason !== 'string' ||
+        !value.admissionReason.trim())) ||
       (adjustment > 0 && value.admissionReason === undefined))
   ) {
     issues.push('admissionReason 必须说明准入封顶的具体门槛和原文证据');
   }
   if (
+    enhancedEnglish &&
+    adjustment > 0 &&
+    typeof value.admissionReason === 'string' &&
+    (!isObject(value.qualificationEvidence) ||
+      !Object.values(value.qualificationEvidence).some(
+        evidence =>
+          Array.isArray(evidence) &&
+          evidence.some(
+            item =>
+              isObject(item) &&
+              typeof item.quote === 'string' &&
+              item.quote.trim() &&
+              originalText.includes(item.quote) &&
+              value.admissionReason.includes(item.quote),
+          ),
+      ))
+  ) {
+    issues.push(
+      'admissionReason 必须包含 qualificationEvidence 中逐字引用的原文，并解释触发的具体准入门槛',
+    );
+  }
+  if (
     !Number.isInteger(value.score) ||
     value.score < 0 ||
-    value.score > 100 ||
+    value.score > rules.total ||
     value.score !== total - adjustment ||
-    total > 100
+    total > rules.total
   ) {
     issues.push(
       `score 必须等于五项分数之和 ${total}${
         adjusted ? ` 减去准入调整 ${adjustment}` : ''
-      }，收到 ${JSON.stringify(
-        value.score,
-      )}`,
+      }，收到 ${JSON.stringify(value.score)}`,
     );
   }
   const band = rules.bands.find(item => item.id === value.bandId);
-  if (value.bandId === 'unqualified') {
+  if (value.bandId === 'unqualified' && (!examEnglish || enhancedEnglish)) {
     if (value.score >= rules.passingScore) {
       issues.push('unqualified 只适用于总分低于 60');
     }
   } else if (!band) {
     issues.push(
-      'bandId 只能为 pass、good、high、excellent、model 或 unqualified',
+      `bandId 只能为 ${rules.bands.map(item => item.id).join('、')}${
+        examEnglish && !enhancedEnglish ? '' : ' 或 unqualified'
+      }`,
     );
   } else {
     if (value.score < band.min || value.score > band.max) {
@@ -159,7 +263,11 @@ export function validateScore(
     );
   }
   if (sections.some(section => section.kind === 'salutation')) {
-    validateFeedback('salutationFeedback（称呼评价，不计入正文段落）', value.salutationFeedback, issues);
+    validateFeedback(
+      'salutationFeedback（称呼评价，不计入正文段落）',
+      value.salutationFeedback,
+      issues,
+    );
   }
   if (!Array.isArray(value.paragraphReviews)) {
     issues.push(
@@ -278,6 +386,9 @@ export function validateScore(
       : {}),
     bandId: value.bandId,
     dimensionScores: value.dimensionScores,
+    ...(enhancedEnglish
+      ? {qualificationEvidence: value.qualificationEvidence}
+      : {}),
     dimensionFeedback: value.dimensionFeedback,
     summary: value.summary,
     strengths: value.strengths,
@@ -290,7 +401,13 @@ export function validateScore(
     paragraphIndexing: sections.some(section => section.kind === 'salutation')
       ? 'body-v2'
       : 'body-v1',
-    bandName: band?.name || '未达强化及格',
+    bandName:
+      band?.name ||
+      (enhancedEnglish
+        ? '未达英语强化及格'
+        : examEnglish
+        ? '待确认'
+        : '未达强化及格'),
     annotations,
   };
 }

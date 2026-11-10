@@ -189,3 +189,54 @@ test('点击第二张照片打开对应大图，关闭后仍在当前页卡，�
     .map(node => node.props.children);
   expect(original).toEqual(['春天', '第一段。第二句。', '第二段。']);
 });
+
+test.each([
+  [
+    'english-writing-zhongkao-enhanced-100-v4:4',
+    '强化训练 v4（较 v3 提高一档）',
+  ],
+  ['english-writing-zhongkao-100-v3:3', '常规训练 v3（本次强化前）'],
+  [undefined, '版本未记录（无法确认评分标准）'],
+])(
+  '英语详情展示保存时的版本 %s，旧分数保持原值',
+  async (rubricVersion, label) => {
+    essay = {
+      ...essay,
+      writingType: 'english',
+      status: 'completed',
+      canonicalText: 'I went home.',
+      scoreJson: JSON.stringify({
+        ...score,
+        score: 85,
+        rubricVersion,
+        dimensionScores: {
+          task: 18,
+          content: 17,
+          organization: 13,
+          language: 29,
+          format: 8,
+        },
+      }),
+    };
+    await render();
+    expect(text()).toContain(label!);
+    expect(text()).toContain('85');
+    expect(JSON.parse(essay.scoreJson).score).toBe(85);
+  },
+);
+
+test('中文详情不增加英语评分版本说明', async () => {
+  essay = {
+    ...essay,
+    writingType: 'chinese',
+    status: 'completed',
+    canonicalText: '春天到了。',
+    scoreJson: JSON.stringify({
+      ...score,
+      rubricVersion: 'essay-lens-enhanced-100-v1:1',
+    }),
+  };
+  await render();
+  expect(text()).not.toContain('评分标准：');
+  expect(text()).not.toContain('较 v3 提高一档');
+});
