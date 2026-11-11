@@ -1,7 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Alert,
   BackHandler,
   Image,
   PermissionsAndroid,
@@ -35,7 +34,16 @@ import {
   getChallenge,
   listChallenges,
 } from '../challenge/store';
-import {analyzeChallenge, upgradeChallenge} from '../challenge/pipeline';
+import {
+  cancelChallengeTask,
+  getChallengeTask,
+  startChallengeTask,
+  subscribeChallengeTasks,
+} from '../challenge/tasks';
+import {
+  CHALLENGE_STATUS_LABELS as STATUS_LABELS,
+  CHALLENGE_RUNNING_STATUSES as RUNNING_STATUSES,
+} from '../challenge/presentation';
 import {
   challengeReviewRoleLabel,
   getChallengeReviewRoles,
@@ -56,26 +64,8 @@ import {
   loadChallengeSubjectRules,
 } from '../challenge/rules';
 import ImageViewer from './ImageViewer';
-
-const STATUS_LABELS: Record<ChallengeRecord['status'], string> = {
-  imported: '待解析',
-  analyzing: '解析试卷中',
-  analyzed: '已解析',
-  generating: '生成变种题中',
-  reviewing: '按标准校核中',
-  repairing: '修复校核问题中',
-  exporting: '生成 PDF 中',
-  completed: '已完成',
-  failed: '处理未完成',
-  cancelled: '已停止',
-};
-const RUNNING_STATUSES = new Set([
-  'analyzing',
-  'generating',
-  'reviewing',
-  'repairing',
-  'exporting',
-]);
+import ChallengeManager from './ChallengeManager';
+import ChallengeUsageDetails from './ChallengeUsageDetails';
 
 function errorText(error: unknown) {
   if (error && typeof error === 'object' && 'message' in error) {
@@ -542,9 +532,13 @@ export default function ChallengeScreen({
   const [policySubject, setPolicySubject] = useState<ChallengeSubject>();
   const [showPolicies, setShowPolicies] = useState(false);
   const [showQuestions, setShowQuestions] = useState(false);
-  const [busy, setBusy] = useState<
+  const [localBusy, setBusy] = useState<
     'import' | 'analysis' | 'upgrade' | 'save' | 'open'
   >();
+  const [panel, setPanel] = useState<'main' | 'manage' | 'usage'>('main');
+  const [, setTaskVersion] = useState(0);
+  const task = record ? getChallengeTask(record.id) : undefined;
+  const busy = localBusy || task?.kind;
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
@@ -561,7 +555,6 @@ export default function ChallengeScreen({
   const lock = useRef(false);
   const epoch = useRef(0);
   const historyRequest = useRef(0);
-  const controller = useRef<AbortController>();
   const pendingSources = useRef(sources);
   const copyingSources = useRef(false);
   const resumeId = useRef(initialChallengeId);
@@ -579,7 +572,9 @@ export default function ChallengeScreen({
     try {
       const values = await listChallenges();
       if (mounted.current && request === historyRequest.current) {
-        setRecords(values);
+        setRecords(
+          values.map(value => getChallengeTask(value.id)?.record || value),
+        );
         setListError('');
       }
     } catch (reason) {
@@ -599,9 +594,11 @@ export default function ChallengeScreen({
       const request = epoch.current;
       getChallenge(resumeId.current)
         .then(value => {
-          if (mounted.current && request === epoch.current && value) {
-            setRecord(value);
-            setLevel(value.level);
+          const latest = getChallengeTask(resumeId.current!)?.record || value;
+          if (mounted.current && request === epoch.current && latest) {
+            selectedId.current = latest.id;
+            setRecord(latest);
+            setLevel(latest.level);
           }
         })
         .catch(reason => {
@@ -613,7 +610,6 @@ export default function ChallengeScreen({
     return () => {
       mounted.current = false;
       epoch.current += 1;
-      controller.current?.abort();
       if (!copyingSources.current) {
         discardImports(pendingSources.current);
       }
@@ -621,9 +617,39 @@ export default function ChallengeScreen({
     // The initial history load is independent of model settings.
   }, []);
 
+  useEffect(() => {
+    const unsubscribe = subscribeChallengeTasks((id, value) => {
+      if (!mounted.current) {
+        return;
+      }
+      setTaskVersion(version => version + 1);
+      if (value) {
+        if (selectedId.current === id) {
+          setRecord(value);
+        }
+        setRecords(values =>
+          values
+            .map(previous => (previous.id === id ? value : previous))
+            .sort((left, right) =>
+              right.updatedAt.localeCompare(left.updatedAt),
+            ),
+        );
+      } else {
+        // Load newly created records and final states, including work started
+        // before this screen was mounted.
+        refresh();
+      }
+    });
+    return unsubscribe;
+    // A task subscription follows the screen, not its current settings/selection.
+  }, []);
+
   const leave = () => {
+    if (panel !== 'main') {
+      setPanel('main');
+      return;
+    }
     epoch.current += 1;
-    controller.current?.abort();
     onBack();
   };
   useEffect(() => {
@@ -640,7 +666,7 @@ export default function ChallengeScreen({
     );
     return () => subscription.remove();
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [onBack, imagePreview]);
+  }, [onBack, imagePreview, panel]);
 
   const begin = (operation: NonNullable<typeof busy>) => {
     if (lock.current) {
@@ -756,12 +782,14 @@ export default function ChallengeScreen({
     }
   };
   const run = async (upgrade: boolean) => {
+    if (record && getChallengeTask(record.id)) {
+      return;
+    }
     const request = begin(upgrade ? 'upgrade' : 'analysis');
     if (request === undefined) {
       return;
     }
-    const activeController = new AbortController();
-    controller.current = activeController;
+    let signal: AbortSignal | undefined;
     setPreview('paper');
     try {
       let active = record;
@@ -776,26 +804,24 @@ export default function ChallengeScreen({
           }
         }
         await discardImports(sources);
-        if (!current(request)) {
-          return;
-        }
-        setRecord(active);
-        setSources([]);
         pendingSources.current = [];
         onSelectionChange?.(active.id);
+        if (current(request)) {
+          selectedId.current = active.id;
+          setRecord(active);
+          setSources([]);
+        }
       }
-      const options = {
+      const promise = startChallengeTask(
+        active.id,
+        upgrade ? 'upgrade' : 'analysis',
         settings,
-        signal: activeController.signal,
-        onUpdate: (value: ChallengeRecord) => {
-          if (current(request)) {
-            setRecord(value);
-          }
-        },
-      };
-      const result = upgrade
-        ? await upgradeChallenge(active.id, level, options)
-        : await analyzeChallenge(active.id, options);
+        upgrade ? level : undefined,
+      );
+      signal = getChallengeTask(active.id)?.signal;
+      // File operations lock the view; model work stays with the app task.
+      finish(request);
+      const result = await promise;
       if (current(request)) {
         setRecord(result);
         setPreview('paper');
@@ -807,16 +833,13 @@ export default function ChallengeScreen({
       }
     } catch (reason) {
       if (current(request)) {
-        if (activeController.signal.aborted) {
+        if (signal?.aborted) {
           setNotice('已停止处理，已保存的试卷与进度会保留。');
         } else {
           setError(errorText(reason));
         }
       }
     } finally {
-      if (controller.current === activeController) {
-        controller.current = undefined;
-      }
       finish(request);
       if (mounted.current) {
         await refresh();
@@ -829,22 +852,25 @@ export default function ChallengeScreen({
       return;
     }
     try {
-      const value = await getChallenge(id);
+      const saved = await getChallenge(id);
       if (current(request)) {
-        if (!value) {
+        if (!saved) {
           throw new Error('这份挑战已删除，请刷新记录。');
         }
         await discardImports(sources);
         if (!current(request)) {
           return;
         }
+        const value = getChallengeTask(id)?.record || saved;
         setRecord(value);
+        selectedId.current = value.id;
         onSelectionChange?.(value.id);
         setLevel(value.level);
         setSources([]);
         setPreview('paper');
         setPreviewError('');
         setPdfPage('');
+        setPanel('main');
       }
     } catch (reason) {
       if (current(request)) {
@@ -881,61 +907,49 @@ export default function ChallengeScreen({
       finish(request);
     }
   };
-  const protectDraftSource = (value: ChallengeRecord) => {
-    if (!draftUsesRecord(pendingSources.current, value)) {
-      return false;
-    }
-    setError(
-      '这份记录正用于补充页面。请先完成解析，或移除待解析的原卷页面后再删除。',
-    );
-    return true;
-  };
-  const removeRecord = (value: ChallengeRecord) => {
-    if (!mounted.current || lock.current || protectDraftSource(value)) {
+  const deleteRecords = async (ids: string[]) => {
+    if (!mounted.current) {
       return;
     }
-    Alert.alert('删除挑战', '删除这份挑战及其保存的试卷、答案和导入副本？', [
-      {text: '取消', style: 'cancel'},
-      {
-        text: '删除',
-        style: 'destructive',
-        onPress: async () => {
-          // A confirmation can outlive the view that opened it. Recheck the
-          // current draft before deleting files referenced by pending inputs.
-          if (!mounted.current || protectDraftSource(value)) {
-            return;
+    // Recheck the current draft when a confirmation is accepted.
+    if (
+      records.some(
+        value =>
+          ids.includes(value.id) &&
+          draftUsesRecord(pendingSources.current, value),
+      )
+    ) {
+      throw new Error(
+        '这份记录正用于补充页面。请先完成解析，或移除待解析的原卷页面后再删除。',
+      );
+    }
+    const request = begin('open');
+    if (request === undefined) {
+      throw new Error('正在保存或读取文件，请稍后再删除。');
+    }
+    try {
+      for (const id of ids) {
+        cancelChallengeTask(id);
+        await deleteChallenge(id);
+        if (selectedId.current === id) {
+          selectedId.current = undefined;
+          onSelectionChange?.(undefined);
+          if (mounted.current) {
+            setRecord(undefined);
           }
-          const request = begin('open');
-          if (request === undefined) {
-            return;
-          }
-          try {
-            await deleteChallenge(value.id);
-            if (current(request)) {
-              setRecord(selected =>
-                selected?.id === value.id ? undefined : selected,
-              );
-              if (selectedId.current === value.id) {
-                onSelectionChange?.(undefined);
-              }
-            }
-            await refresh();
-          } catch (reason) {
-            if (current(request)) {
-              setError(`删除失败：${errorText(reason)}`);
-            }
-          } finally {
-            finish(request);
-          }
-        },
-      },
-    ]);
+        }
+      }
+    } finally {
+      await refresh();
+      finish(request);
+    }
   };
   const newChallenge = () => {
     if (lock.current) {
       return;
     }
     epoch.current += 1;
+    selectedId.current = undefined;
     setRecord(undefined);
     onSelectionChange?.(undefined);
     setSources([]);
@@ -1059,6 +1073,44 @@ export default function ChallengeScreen({
   const historicalPolicy =
     !!record?.candidate && record.policyVersion !== CHALLENGE_POLICY_VERSION;
 
+  if (panel === 'manage') {
+    return (
+      <ChallengeManager
+        records={records}
+        protectedIds={records
+          .filter(value => draftUsesRecord(sources, value))
+          .map(value => value.id)}
+        loading={loading}
+        busy={!!localBusy}
+        error={listError || error}
+        onBack={() => setPanel('main')}
+        onRefresh={refresh}
+        onOpen={id => {
+          open(id);
+        }}
+        onDelete={deleteRecords}
+      />
+    );
+  }
+  if (panel === 'usage' && record) {
+    return (
+      <SafeAreaView style={styles.safe}>
+        <ScrollView contentContainerStyle={styles.container}>
+          <View style={styles.header}>
+            <Pressable
+              accessibilityRole="button"
+              onPress={() => setPanel('main')}>
+              <Text style={styles.back}>‹ 返回挑战</Text>
+            </Pressable>
+            <Text style={styles.heading}>模型消耗详情</Text>
+          </View>
+          <Text style={styles.label}>{record.title || '未命名试卷'}</Text>
+          <ChallengeUsageDetails record={record} />
+        </ScrollView>
+      </SafeAreaView>
+    );
+  }
+
   return (
     <SafeAreaView style={styles.safe}>
       <ScrollView contentContainerStyle={styles.container}>
@@ -1066,15 +1118,33 @@ export default function ChallengeScreen({
           <Pressable accessibilityRole="button" onPress={leave}>
             <Text style={styles.back}>‹ 返回首页</Text>
           </Pressable>
-          <Button
-            title="模型设置"
-            secondary
-            disabled={!!busy}
-            onPress={() => {
-              showSettings();
-            }}
-          />
+          <View style={styles.actions}>
+            <Button
+              title="管理"
+              secondary
+              disabled={!!localBusy}
+              onPress={() => {
+                setError('');
+                setPanel('manage');
+              }}
+            />
+            <Button
+              title="模型设置"
+              secondary
+              disabled={!!localBusy}
+              onPress={() => {
+                showSettings();
+              }}
+            />
+          </View>
         </View>
+        {!!record?.calls.length && (
+          <Button
+            title="模型消耗详情"
+            secondary
+            onPress={() => setPanel('usage')}
+          />
+        )}
         <Text style={styles.eyebrow}>CHALLENGE</Text>
         <Text style={styles.title}>挑战</Text>
         <Text style={styles.subtitle}>
@@ -1201,7 +1271,7 @@ export default function ChallengeScreen({
               <Button
                 title="新建挑战"
                 secondary
-                disabled={!!busy}
+                disabled={!!localBusy}
                 onPress={newChallenge}
               />
               <Button
@@ -1271,11 +1341,21 @@ export default function ChallengeScreen({
                 ? '请选择 PDF 保存位置…'
                 : record?.progress || '正在处理试卷…'}
             </Text>
+            {!!task && (
+              <Text style={styles.muted}>
+                返回首页或切换页面后会继续处理，再次打开可查看进度。
+              </Text>
+            )}
             {(busy === 'analysis' || busy === 'upgrade') && (
               <Button
                 title="停止处理"
                 secondary
-                onPress={() => controller.current?.abort()}
+                disabled={!task}
+                onPress={() => {
+                  if (record) {
+                    cancelChallengeTask(record.id);
+                  }
+                }}
               />
             )}
           </Card>
@@ -1782,7 +1862,7 @@ export default function ChallengeScreen({
               <Pressable
                 accessibilityRole="button"
                 accessibilityLabel={`打开挑战${value.title || '未命名试卷'}`}
-                disabled={!!busy}
+                disabled={!!localBusy}
                 onPress={() => {
                   open(value.id);
                 }}>
@@ -1796,23 +1876,12 @@ export default function ChallengeScreen({
                 <Button
                   title={`打开${value.title || '未命名试卷'}`}
                   secondary
-                  disabled={!!busy}
+                  disabled={!!localBusy}
                   onPress={() => {
                     open(value.id);
                   }}
                 />
-                <Button
-                  title={`删除${value.title || '未命名试卷'}`}
-                  secondary
-                  disabled={!!busy || draftUsesRecord(sources, value)}
-                  onPress={() => removeRecord(value)}
-                />
               </View>
-              {draftUsesRecord(sources, value) && (
-                <Text style={styles.muted}>
-                  当前补充页面正在使用此记录，完成解析或移除这些页面后可删除。
-                </Text>
-              )}
             </Card>
           ))
         )}
@@ -1833,6 +1902,8 @@ const styles = StyleSheet.create({
   container: {padding: 20, paddingBottom: 48, gap: 16},
   header: {
     flexDirection: 'row',
+    flexWrap: 'wrap',
+    gap: 8,
     alignItems: 'center',
     justifyContent: 'space-between',
   },

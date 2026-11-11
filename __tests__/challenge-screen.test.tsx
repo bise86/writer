@@ -19,6 +19,9 @@ import {
   listChallenges,
 } from '../src/challenge/store';
 import {analyzeChallenge, upgradeChallenge} from '../src/challenge/pipeline';
+import {getChallengeTask} from '../src/challenge/tasks';
+import {parseUsage} from '../src/services/usage';
+import {ModelCall} from '../src/types';
 import {
   CHALLENGE_REVIEW_PROTOCOL_VERSION,
   challengeReviewRoleLabel,
@@ -51,11 +54,10 @@ jest.mock('../src/challenge/store', () => ({
   getChallenge: jest.fn(),
   listChallenges: jest.fn(),
 }));
-jest.mock(
-  '../src/challenge/pipeline',
-  () => ({analyzeChallenge: jest.fn(), upgradeChallenge: jest.fn()}),
-  {virtual: true},
-);
+jest.mock('../src/challenge/pipeline', () => ({
+  analyzeChallenge: jest.fn(),
+  upgradeChallenge: jest.fn(),
+}));
 jest.mock('../src/challenge/documents', () => ({
   pickChallengePdf: jest.fn(),
   saveChallengePdf: jest.fn(),
@@ -243,6 +245,13 @@ const press = (label: string) =>
     await button(label).props.onPress();
   });
 const settle = () => act(async () => {});
+const selectRecord = (title: string) =>
+  act(() => {
+    view!.root
+      .findAllByType(Pressable)
+      .find(node => node.props.accessibilityLabel === `选择${title}`)!
+      .props.onPress();
+  });
 async function render(
   initialChallengeId?: string,
   roundtableSize: ChallengeRoundtableSize = settings.roundtableSize,
@@ -280,6 +289,24 @@ function deferred<T>() {
     resolve = done;
   });
   return {promise, resolve};
+}
+
+function modelCall(patch: Partial<ModelCall> = {}): ModelCall {
+  return {
+    id: 'call_analysis',
+    operation: 'response',
+    model: 'test-model',
+    status: 'running',
+    startedAt: '2026-11-11T01:00:00.000Z',
+    finishedAt: null,
+    durationMs: null,
+    responseId: null,
+    httpStatus: null,
+    measuredInputTokens: null,
+    rawUsageJson: null,
+    ...parseUsage(undefined),
+    ...patch,
+  };
 }
 
 beforeEach(() => {
@@ -939,7 +966,7 @@ test('不是试卷或解析失败时不假成功，重新解析复用已持久�
   expect(analyzeChallenge).toHaveBeenCalledTimes(2);
 });
 
-test('重复点击解析只创建一次，离页中止请求，迟到结果不更新已卸载页面', async () => {
+test('重复点击解析只创建一次，返回首页和卸载后继续请求，重进可恢复进度', async () => {
   const pending = deferred<ChallengeRecord>();
   (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
   await render();
@@ -953,13 +980,28 @@ test('重复点击解析只创建一次，离页中止请求，迟到结果不�
   expect(analyzeChallenge).toHaveBeenCalledTimes(1);
   const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
   await press('‹ 返回首页');
-  expect(options.signal.aborted).toBe(true);
+  expect(options.signal.aborted).toBe(false);
   expect(back).toHaveBeenCalledTimes(1);
   act(() => view!.unmount());
   view = undefined;
+  expect(options.signal.aborted).toBe(false);
+  expect(getChallengeTask(base.id)).toBeDefined();
+  const running: ChallengeRecord = {
+    ...base,
+    status: 'analyzing',
+    progress: '已完成两页，继续识别科目',
+  };
+  options.onUpdate(running);
+  (getChallenge as jest.Mock).mockResolvedValueOnce(base);
+  await render(base.id);
+  expect(text()).toContain(running.progress);
+  expect(button('停止处理').props.disabled).toBe(false);
+  expect(button('重新解析').props.disabled).toBe(true);
   await act(async () => {
     pending.resolve(analyzed);
   });
+  expect(getChallengeTask(base.id)).toBeUndefined();
+  expect(button('重新解析').props.disabled).toBe(false);
 });
 
 test('停止处理保留原卷与记录，可以重试而不重新导入', async () => {
@@ -1043,18 +1085,26 @@ test('恢复上次挑战的迟到结果不能覆盖用户新导入的试卷', as
 
 test('补充页面引用旧记录时禁止删除，旧确认回调也不能破坏草稿；新副本保存后解除保护', async () => {
   await openSaved(analyzed);
-  await press(`删除${analyzed.title}`);
+  await press('管理');
+  selectRecord(analyzed.title);
+  await press('删除已选（1）');
   const confirmation = (Alert.alert as jest.Mock).mock.calls.slice(-1)[0][2];
   const confirmDelete = confirmation.find(
     (item: {text: string}) => item.text === '删除',
   ).onPress;
+  await press('‹ 返回挑战');
   await press('补充页面');
-  expect(button(`删除${analyzed.title}`).props.disabled).toBe(true);
-  expect(text()).toContain('当前补充页面正在使用此记录');
+  await press('管理');
+  const protectedRow = view!.root
+    .findAllByType(Pressable)
+    .find(node => node.props.accessibilityLabel === `选择${analyzed.title}`)!;
+  expect(protectedRow.props.disabled).toBe(true);
+  expect(text()).toContain('当前补充页面正在使用的记录暂不可删除');
   await act(async () => {
     await confirmDelete();
   });
   expect(deleteChallenge).not.toHaveBeenCalled();
+  await press('‹ 返回挑战');
   expect(button('解析试卷').props.disabled).toBe(false);
 
   const copying = deferred<ChallengeRecord>();
@@ -1081,10 +1131,14 @@ test('补充页面引用旧记录时禁止删除，旧确认回调也不能破�
   await press('解析试卷');
   await settle();
   expect(createChallenge).toHaveBeenCalledWith(analyzed.sources);
-  expect(button(`删除${analyzed.title}`).props.disabled).toBe(true);
+  expect(button('管理').props.disabled).toBe(true);
   await act(async () => copying.resolve(copied));
   await settle();
-  expect(button(`删除${analyzed.title}`).props.disabled).toBe(false);
+  await press('管理');
+  const unprotectedRow = view!.root
+    .findAllByType(Pressable)
+    .find(node => node.props.accessibilityLabel === `选择${analyzed.title}`)!;
+  expect(unprotectedRow.props.disabled).toBe(false);
   expect(deleteChallenge).not.toHaveBeenCalled();
 });
 
@@ -1108,7 +1162,10 @@ test('记录读取失败可重试，删除只在确认后调用持久化服务',
   (listChallenges as jest.Mock).mockResolvedValueOnce([analyzed]);
   await press('重新读取记录');
   await settle();
-  await press(`删除${analyzed.title}`);
+  expect(button(`删除${analyzed.title}`)).toBeUndefined();
+  await press('管理');
+  selectRecord(analyzed.title);
+  await press('删除已选（1）');
   expect(deleteChallenge).not.toHaveBeenCalled();
   const buttons = (Alert.alert as jest.Mock).mock.calls.slice(-1)[0][2];
   await act(async () => {
@@ -1117,4 +1174,155 @@ test('记录读取失败可重试，删除只在确认后调用持久化服务',
       .onPress();
   });
   expect(deleteChallenge).toHaveBeenCalledWith(analyzed.id);
+});
+
+test('升档时可进入模型设置，重进后仍可主动停止原请求', async () => {
+  const pending = deferred<ChallengeRecord>();
+  (upgradeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
+  await openSaved(analyzed);
+  await press('升档');
+  await settle();
+  const options = (upgradeChallenge as jest.Mock).mock.calls[0][2];
+  expect(button('模型设置').props.disabled).toBe(false);
+  await press('模型设置');
+  expect(modelSettings).toHaveBeenCalledTimes(1);
+  act(() => view!.unmount());
+  view = undefined;
+  expect(options.signal.aborted).toBe(false);
+  options.onUpdate({
+    ...analyzed,
+    status: 'reviewing',
+    progress: '后台圆桌评审中',
+  });
+  (getChallenge as jest.Mock).mockResolvedValueOnce(analyzed);
+  await render(analyzed.id);
+  expect(text()).toContain('后台圆桌评审中');
+  expect(button('升档').props.disabled).toBe(true);
+  await press('停止处理');
+  expect(options.signal.aborted).toBe(true);
+  await act(async () => pending.resolve({...analyzed, status: 'cancelled'}));
+  expect(getChallengeTask(analyzed.id)).toBeUndefined();
+  expect(button('升档').props.disabled).toBe(false);
+});
+
+test('保存原卷期间返回首页，导入完成后仍启动已请求的解析', async () => {
+  const copying = deferred<ChallengeRecord>();
+  (createChallenge as jest.Mock).mockReturnValueOnce(copying.promise);
+  await render();
+  await uploadPhoto();
+  await press('解析试卷');
+  expect(analyzeChallenge).not.toHaveBeenCalled();
+  await press('‹ 返回首页');
+  act(() => view!.unmount());
+  view = undefined;
+  await act(async () => copying.resolve(base));
+  expect(analyzeChallenge).toHaveBeenCalledTimes(1);
+  expect((analyzeChallenge as jest.Mock).mock.calls[0][1].signal.aborted).toBe(
+    false,
+  );
+  expect(selection).toHaveBeenCalledWith(base.id);
+});
+
+test('打开另一份记录不停止后台任务，原任务迟到进度和结果不覆盖当前记录', async () => {
+  const other = {...base, id: 'challenge_other', title: '另一份英语卷'};
+  const pending = deferred<ChallengeRecord>();
+  (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
+  (listChallenges as jest.Mock).mockResolvedValue([analyzed, other]);
+  (getChallenge as jest.Mock).mockImplementation(async id =>
+    id === other.id ? other : analyzed,
+  );
+  await render(analyzed.id);
+  await press('重新解析');
+  await settle();
+  const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
+  expect(button(`打开${other.title}`).props.disabled).toBe(false);
+  await press(`打开${other.title}`);
+  expect(options.signal.aborted).toBe(false);
+  act(() => options.onUpdate({...analyzed, progress: '原任务的后续进度'}));
+  expect(text()).not.toContain('原任务的后续进度');
+  await act(async () => pending.resolve(analyzed));
+  expect(text()).not.toContain('原卷解析');
+  expect(selection).toHaveBeenLastCalledWith(other.id);
+});
+
+test('管理页可删除正在处理的记录，明确停止请求并清除选中记录', async () => {
+  const pending = deferred<ChallengeRecord>();
+  (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
+  (listChallenges as jest.Mock).mockResolvedValue([analyzed]);
+  await openSaved(analyzed);
+  expect(button(`删除${analyzed.title}`)).toBeUndefined();
+  await press('重新解析');
+  await settle();
+  const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
+  expect(button('管理').props.disabled).toBe(false);
+  await press('管理');
+  expect(text()).toContain('挑战管理');
+  selectRecord(analyzed.title);
+  await press('删除已选（1）');
+  expect(options.signal.aborted).toBe(false);
+  expect(deleteChallenge).not.toHaveBeenCalled();
+  (listChallenges as jest.Mock).mockResolvedValue([]);
+  const confirmation = (Alert.alert as jest.Mock).mock.calls.slice(-1)[0][2];
+  await act(async () =>
+    confirmation.find((item: {text: string}) => item.text === '删除').onPress(),
+  );
+  expect(deleteChallenge).toHaveBeenCalledWith(analyzed.id);
+  expect(options.signal.aborted).toBe(true);
+  expect(selection).toHaveBeenLastCalledWith(undefined);
+  await press('‹ 返回挑战');
+  // A late model callback cannot restore a record the user deleted.
+  act(() => options.onUpdate(analyzed));
+  await act(async () => pending.resolve(analyzed));
+  expect(text()).toContain('上传一份试卷');
+  expect(text()).not.toContain('原卷解析');
+});
+
+test('首次请求前隐藏顶部消耗入口，运行中显示分阶段统计与逐次明细并实时更新', async () => {
+  const pending = deferred<ChallengeRecord>();
+  (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
+  await render();
+  expect(button('模型消耗详情')).toBeUndefined();
+  await uploadPhoto();
+  await press('解析试卷');
+  await settle();
+  expect(button('模型消耗详情')).toBeUndefined();
+  const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
+  const first = modelCall();
+  act(() =>
+    options.onUpdate({
+      ...base,
+      status: 'analyzing',
+      calls: [{stage: 'analysis', call: first}],
+    }),
+  );
+  expect(button('模型消耗详情')).toBeDefined();
+  await press('模型消耗详情');
+  expect(text()).toContain('总体消耗');
+  expect(screenText()).toContain('进行中 1 次');
+  expect(screenText()).toContain('输入：未返回');
+  await press('展开逐次调用');
+  expect(text()).toContain('test-model');
+  expect(text()).toContain('请求中');
+  const calls: ChallengeRecord['calls'] = [
+    {
+      stage: 'analysis',
+      call: {
+        ...first,
+        status: 'completed',
+        finishedAt: '2026-11-11T01:00:02.000Z',
+        durationMs: 2000,
+        ...parseUsage({input_tokens: 100, output_tokens: 20}),
+      },
+    },
+    {stage: 'analysis', call: modelCall({id: 'retry', status: 'failed'})},
+  ];
+  act(() => options.onUpdate({...base, status: 'analyzing', calls}));
+  expect(screenText()).toContain('实际调用 2 次');
+  expect(screenText()).toContain('合计：120（另 1 次未返回）');
+  expect(text()).toContain('请求失败');
+  expect(text()).toContain('2.0 秒');
+  expect(options.signal.aborted).toBe(false);
+  await press('‹ 返回挑战');
+  await act(async () => pending.resolve({...analyzed, calls}));
+  expect(button('模型消耗详情')).toBeDefined();
 });
