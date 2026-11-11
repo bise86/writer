@@ -3,7 +3,7 @@ import {Alert, PermissionsAndroid, Pressable, Text} from 'react-native';
 import {act, create, ReactTestRenderer} from 'react-test-renderer';
 import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
 import App from '../App';
-import ImageCropper from '../src/components/ImageCropper';
+import ImageCropper from '../src/shared/media/ImageCropper';
 import Reports from '../src/components/Reports';
 import Detail from '../src/components/EssayDetail';
 import {createEssay, getEssay, listEssays} from '../src/db/database';
@@ -11,7 +11,7 @@ import {
   cropImage,
   discardPreparedImages,
   persistImage,
-} from '../src/services/images';
+} from '../src/shared/media/images';
 import {retryEssay, runEssayPipeline} from '../src/services/pipeline';
 
 jest.mock('../src/components/Startup', () => ({
@@ -22,7 +22,7 @@ jest.mock('../src/components/Startup', () => ({
       settings: jest.requireActual('../src/settings').DEFAULT_SETTINGS,
     }),
 }));
-jest.mock('../src/components/ImageCropper', () => 'ImageCropper');
+jest.mock('../src/shared/media/ImageCropper', () => 'ImageCropper');
 jest.mock('../src/components/EssayDetail', () => 'EssayDetail');
 jest.mock('../src/components/Reports', () => 'Reports');
 jest.mock('react-native-image-picker', () => ({
@@ -34,7 +34,7 @@ jest.mock('../src/db/database', () => ({
   listEssays: jest.fn(async () => []),
   getEssay: jest.fn(),
 }));
-jest.mock('../src/services/images', () => ({
+jest.mock('../src/shared/media/images', () => ({
   cropImage: jest.fn(),
   persistImage: jest.fn(),
   discardPreparedImages: jest.fn(async () => undefined),
@@ -80,13 +80,19 @@ beforeEach(async () => {
 });
 
 test('入库后的列表刷新失败仍启动批改，不删除已归属作文的图片', async () => {
-  (launchImageLibrary as jest.Mock).mockResolvedValue({assets: [{uri: 'file:///one.jpg'}]});
+  (launchImageLibrary as jest.Mock).mockResolvedValue({
+    assets: [{uri: 'file:///one.jpg'}],
+  });
   (listEssays as jest.Mock).mockRejectedValueOnce(new Error('列表读取失败'));
   press('选择图片（可多选）');
   await settle();
-  await act(async () => view.root.findByType(ImageCropper).props.onSubmit({kind: 'original'}));
+  await act(async () =>
+    view.root.findByType(ImageCropper).props.onSubmit({kind: 'original'}),
+  );
   await settle();
-  expect(runEssayPipeline).toHaveBeenCalledWith(expect.objectContaining({id: 'essay'}));
+  expect(runEssayPipeline).toHaveBeenCalledWith(
+    expect.objectContaining({id: 'essay'}),
+  );
   expect(discardPreparedImages).not.toHaveBeenCalled();
 });
 afterEach(() => {
@@ -145,10 +151,11 @@ test('相册多选逐张进入裁剪，混合原图与裁剪后按顺序入库',
     choice.source,
     choice.rect,
   );
-  expect(createEssay).toHaveBeenCalledWith([
-    'file:///one.jpg.saved',
-    'file:///cropped.saved',
-  ], 'chinese', 'middle');
+  expect(createEssay).toHaveBeenCalledWith(
+    ['file:///one.jpg.saved', 'file:///cropped.saved'],
+    'chinese',
+    'middle',
+  );
   expect(runEssayPipeline).toHaveBeenCalledTimes(1);
   expect(discardPreparedImages).not.toHaveBeenCalled();
 });
@@ -207,10 +214,11 @@ test('连续拍照每张进入裁剪，结束拍摄才提交，同一次导入�
       .onPress(),
   );
   await settle();
-  expect(createEssay).toHaveBeenCalledWith([
-    'file:///camera1.jpg.saved',
-    'file:///camera2.jpg.saved',
-  ], 'chinese', 'middle');
+  expect(createEssay).toHaveBeenCalledWith(
+    ['file:///camera1.jpg.saved', 'file:///camera2.jpg.saved'],
+    'chinese',
+    'middle',
+  );
 });
 
 test('数据库保存失败时清理尚未关联的图片副本', async () => {
@@ -230,7 +238,9 @@ test('数据库保存失败时清理尚未关联的图片副本', async () => {
 
 function pending<T>() {
   let resolve!: (value: T) => void;
-  const promise = new Promise<T>(done => { resolve = done; });
+  const promise = new Promise<T>(done => {
+    resolve = done;
+  });
   return {promise, resolve};
 }
 
@@ -262,25 +272,37 @@ test('数据库读取缓慢时详情轮询不会叠加请求', async () => {
   await act(async () => slowRead.resolve({id: 'first', status: 'completed'}));
 });
 
-test.each(['onRetry', 'onRecognize'] as const)('%s 完成时只刷新原作文，不把另一篇详情替换回去', async action => {
-  press('报表');
-  await openReportedEssay('first');
-  const processing = pending<void>();
-  (action === 'onRetry' ? retryEssay as jest.Mock : runEssayPipeline as jest.Mock)
-    .mockReturnValueOnce(processing.promise);
-  act(() => { view.root.findByType(Detail).props[action](); });
-  await act(async () => view.root.findByType(Detail).props.onBack());
-  await openReportedEssay('second');
-  (getEssay as jest.Mock).mockResolvedValueOnce({id: 'first', status: 'completed'});
-  await act(async () => processing.resolve());
-  expect(view.root.findByType(Detail).props.essay.id).toBe('second');
-});
+test.each(['onRetry', 'onRecognize'] as const)(
+  '%s 完成时只刷新原作文，不把另一篇详情替换回去',
+  async action => {
+    press('报表');
+    await openReportedEssay('first');
+    const processing = pending<void>();
+    (action === 'onRetry'
+      ? (retryEssay as jest.Mock)
+      : (runEssayPipeline as jest.Mock)
+    ).mockReturnValueOnce(processing.promise);
+    act(() => {
+      view.root.findByType(Detail).props[action]();
+    });
+    await act(async () => view.root.findByType(Detail).props.onBack());
+    await openReportedEssay('second');
+    (getEssay as jest.Mock).mockResolvedValueOnce({
+      id: 'first',
+      status: 'completed',
+    });
+    await act(async () => processing.resolve());
+    expect(view.root.findByType(Detail).props.essay.id).toBe('second');
+  },
+);
 
 test('连续打开两篇作文时以最后一次选择为准', async () => {
   press('报表');
   const firstRead = pending<object>();
   (getEssay as jest.Mock).mockReturnValueOnce(firstRead.promise);
-  act(() => { view.root.findByType(Reports).props.onOpenEssay('first'); });
+  act(() => {
+    view.root.findByType(Reports).props.onOpenEssay('first');
+  });
   await openReportedEssay('second');
   await act(async () => firstRead.resolve({id: 'first', status: 'completed'}));
   expect(view.root.findByType(Detail).props.essay.id).toBe('second');
@@ -290,7 +312,9 @@ test('离开报表后，尚未完成的打开请求不能把用户拉回详情',
   press('报表');
   const firstRead = pending<object>();
   (getEssay as jest.Mock).mockReturnValueOnce(firstRead.promise);
-  act(() => { view.root.findByType(Reports).props.onOpenEssay('first'); });
+  act(() => {
+    view.root.findByType(Reports).props.onOpenEssay('first');
+  });
   act(() => view.root.findByType(Reports).props.onBack());
   press('⚙');
   await act(async () => firstRead.resolve({id: 'first', status: 'completed'}));

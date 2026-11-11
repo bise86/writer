@@ -2,12 +2,11 @@ import React, {useEffect, useState} from 'react';
 import {
   ActivityIndicator,
   Pressable,
-  Platform,
   StyleSheet,
   Text,
   View,
 } from 'react-native';
-import Pdf from 'react-native-pdf';
+import PdfPreview from '../shared/pdf/PdfPreview';
 import RNFS from 'react-native-fs';
 import Share from 'react-native-share';
 import {Essay, ScoreResult} from '../types';
@@ -112,17 +111,9 @@ export default function CorrectionPdf({
           </Pressable>
         </View>
       ) : uri ? (
-        <Pdf
-          source={{
-            uri:
-              (Platform.OS as string) === 'harmony'
-                ? uri.replace(/^file:\/\//, '')
-                : uri,
-            cache: false,
-          }}
+        <PdfPreview
+          uri={uri}
           style={styles.pdf}
-          fitPolicy={0}
-          trustAllCerts={false}
           onPageChanged={(current, count) => setPage(`${current}/${count}`)}
           onError={reason => setError(String(reason))}
         />

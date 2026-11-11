@@ -2,8 +2,6 @@ import React, {useEffect, useRef, useState} from 'react';
 import {
   Alert,
   Image,
-  PermissionsAndroid,
-  Platform,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -12,11 +10,6 @@ import {
   TextInput,
   View,
 } from 'react-native';
-import {
-  launchCamera,
-  launchImageLibrary,
-  Asset,
-} from 'react-native-image-picker';
 import {
   createEssay,
   clearLogsAndCache,
@@ -36,12 +29,8 @@ import {
   EDUCATION_LEVELS,
   validateSettings,
 } from './src/settings';
-import {
-  cropImage,
-  discardPreparedImages,
-  persistImage,
-} from './src/services/images';
-import ImageCropper from './src/components/ImageCropper';
+import {discardPreparedImages} from './src/shared/media/images';
+import {useImageImport} from './src/shared/media/useImageImport';
 import Reports from './src/components/Reports';
 import {recentMonth} from './src/services/reports';
 import Startup, {StartupData} from './src/components/Startup';
@@ -580,11 +569,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   const navigationRequest = useRef(0);
   const captureLock = useRef(false);
   const [capturing, setCapturing] = useState(false);
-  const [cropTask, setCropTask] = useState<{
-    asset: Asset;
-    pageLabel: string;
-    resolve: (uri?: string) => void;
-  }>();
+  const imageImport = useImageImport();
   const [screen, setScreen] = useState<
     | 'landing'
     | 'home'
@@ -649,37 +634,6 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       clearInterval(timer);
     };
   }, [screen, selectedId]);
-  const prepareAsset = async (
-    asset: Asset | undefined,
-    pageLabel: string,
-  ): Promise<string | undefined> => {
-    if (!asset?.uri) {
-      throw new Error('未读取到所选图片，请重新选择或拍摄');
-    }
-    return new Promise(resolve => setCropTask({asset, pageLabel, resolve}));
-  };
-  const askContinueCamera = () =>
-    new Promise<boolean>(resolve => {
-      Alert.alert('照片已加入', '还要继续拍摄下一页吗？', [
-        {text: '完成', onPress: () => resolve(false)},
-        {text: '继续拍摄', onPress: () => resolve(true)},
-      ]);
-    });
-  const cameraPermission = async () => {
-    if (Platform.OS !== 'android') {
-      return true;
-    }
-    const result = await PermissionsAndroid.request(
-      PermissionsAndroid.PERMISSIONS.CAMERA,
-      {
-        title: '相机权限',
-        message: '需要使用相机拍摄作文图片。',
-        buttonPositive: '允许',
-        buttonNegative: '拒绝',
-      },
-    );
-    return result === PermissionsAndroid.RESULTS.GRANTED;
-  };
   const capture = async (camera: boolean) => {
     if (captureLock.current) {
       return;
@@ -689,66 +643,10 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     const imageUris: string[] = [];
     let committed = false;
     try {
-      if (camera && !(await cameraPermission())) {
-        Alert.alert(
-          '无法打开相机',
-          '相机权限未授权，请在系统设置中允许相机权限。',
-        );
-        return;
-      }
-      if (camera) {
-        let continueCapturing = true;
-        while (continueCapturing) {
-          const result = await launchCamera({
-            mediaType: 'photo',
-            cameraType: 'back',
-            includeBase64: false,
-            quality: 1,
-            saveToPhotos: false,
-          });
-          if (result.errorCode) {
-            throw new Error(
-              result.errorMessage || `相机错误：${result.errorCode}`,
-            );
-          }
-          if (result.didCancel || !result.assets?.length) {
-            break;
-          }
-          const uri = await prepareAsset(
-            result.assets[0],
-            `第 ${imageUris.length + 1} 张`,
-          );
-          if (!uri) {
-            return;
-          }
-          imageUris.push(uri);
-          continueCapturing = await askContinueCamera();
-        }
-      } else {
-        const result = await launchImageLibrary({
-          mediaType: 'photo',
-          includeBase64: false,
-          quality: 1,
-          selectionLimit: 0,
-          assetRepresentationMode: 'compatible',
-        });
-        if (result.errorCode) {
-          throw new Error(
-            result.errorMessage || `图片选择错误：${result.errorCode}`,
-          );
-        }
-        const assets = result.assets || [];
-        for (const [index, asset] of assets.entries()) {
-          const uri = await prepareAsset(
-            asset,
-            `${index + 1} / ${assets.length}`,
-          );
-          if (!uri) {
-            return;
-          }
-          imageUris.push(uri);
-        }
-      }
+      const prepared = await imageImport.pickImages(camera, {
+        permissionMessage: '需要使用相机拍摄作文图片。',
+      });
+      imageUris.push(...(prepared || []).map(image => image.uri));
       if (!imageUris.length) {
         return;
       }
@@ -784,31 +682,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       setCapturing(false);
     }
   };
-  if (cropTask) {
-    return (
-      <ImageCropper
-        key={`${cropTask.pageLabel}-${cropTask.asset.uri}`}
-        uri={cropTask.asset.uri!}
-        pageLabel={cropTask.pageLabel}
-        onCancel={() => {
-          setCropTask(undefined);
-          cropTask.resolve();
-        }}
-        onSubmit={async choice => {
-          const uri =
-            choice.kind === 'original'
-              ? await persistImage(cropTask.asset.uri!, cropTask.asset)
-              : await cropImage(
-                  cropTask.asset.uri!,
-                  choice.source,
-                  choice.rect,
-                );
-          setCropTask(undefined);
-          cropTask.resolve(uri);
-        }}
-      />
-    );
-  }
+  if (imageImport.cropper) {return imageImport.cropper;}
   if (screen === 'landing') {
     return (
       <SafeAreaView style={styles.safe}>

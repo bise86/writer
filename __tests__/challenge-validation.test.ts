@@ -1,3 +1,4 @@
+import {guessSubjectFromTitle} from '../src/challenge/subjectTitle';
 import {
   challengeCoverage,
   minimumUpgradeCount,
@@ -2787,4 +2788,68 @@ test('递进抽样不能替换已抽题、删减完整题池或伪造多数确�
   expect(() => validateSubjectIdentification(identified, pages, mixed)).toThrow(
     '超过半数',
   );
+});
+
+test.each([
+  ['九年级数学期中试卷', 'math', '数学'],
+  ['English Test Paper', 'english', '英语'],
+  ['道德与法治试卷', 'politics', '道德与法治'],
+  ['理科综合（物理化学生物）试卷', 'science', '理科综合'],
+  ['信息技术试卷', 'other', '信息技术'],
+] as const)(
+  '先从真实印刷标题%s识别%s，尚不视为已核验',
+  (quote, subject, courseName) => {
+    expect(guessSubjectFromTitle([{pageIndex: 0, quote}])).toMatchObject({
+      subject,
+      courseName,
+    });
+    const {analysis, pages} = samplingFixture();
+    analysis.titleEvidence = [{pageIndex: 0, quote}];
+    pages[0].text = quote + '\n' + pages[0].text;
+    const verification = buildProgressiveSubjectVerification(analysis);
+    expect(verification.titleGuess?.subject).toBe(subject);
+    expect(verification.titleVerification).toBe('pending');
+    expect(verification.samples).toHaveLength(3);
+  },
+);
+
+test('无标题、通用标题和混科标题不猜科，文件名不能当标题证据', () => {
+  expect(guessSubjectFromTitle([])).toBeUndefined();
+  expect(
+    guessSubjectFromTitle([{pageIndex: 0, quote: '期末测试试卷'}]),
+  ).toBeUndefined();
+  expect(
+    guessSubjectFromTitle([{pageIndex: 0, quote: '数学与英语混合练习'}]),
+  ).toBeUndefined();
+  const {analysis} = samplingFixture();
+  analysis.title = '数学.pdf';
+  analysis.titleEvidence = [];
+  const verification = buildProgressiveSubjectVerification(analysis);
+  expect(verification.titleGuess).toBeUndefined();
+  expect(verification.titleVerification).toBe('unavailable');
+  expect(verification.samples).toHaveLength(3);
+});
+
+test('不能伪造标题初判或跳过三题核验直接宣称标题已确认', () => {
+  const {analysis, pages} = samplingFixture();
+  const verification = buildProgressiveSubjectVerification(analysis);
+  expect(() =>
+    validateSubjectVerification(
+      {
+        ...verification,
+        titleGuess: {
+          subject: 'english',
+          courseName: '英语',
+          evidence: verification.titleEvidence,
+        },
+      },
+      pages,
+    ),
+  ).toThrow('标题初判');
+  expect(() =>
+    validateSubjectVerification(
+      {...verification, titleVerification: 'verified'},
+      pages,
+    ),
+  ).toThrow('须经抽样');
 });

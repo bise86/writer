@@ -1,7 +1,7 @@
+import PageGallery from '../shared/media/PageGallery';
 import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
-  Image,
   Pressable,
   SafeAreaView,
   ScrollView,
@@ -165,30 +165,7 @@ export default function EssayDetail({
       <Text accessibilityLabel="作文标题" style={styles.title}>
         {title || (recognized ? '未命名作文' : '正在识别标题…')}
       </Text>
-      <View style={styles.photos} accessibilityLabel="原始照片">
-        <View style={styles.photoHeading}>
-          <Text style={styles.subheading}>原始照片 · {photos.length} 张</Text>
-          <Text style={styles.muted}>左右滑动 · 点击放大</Text>
-        </View>
-        <ScrollView horizontal showsHorizontalScrollIndicator={false}>
-          {photos.map((uri, i) => (
-            <Pressable
-              key={`${uri}-${i}`}
-              accessibilityRole="button"
-              accessibilityLabel={`查看原始照片 ${i + 1}`}
-              onPress={() => setPhotoIndex(i)}>
-              <Image
-                source={{uri}}
-                style={[
-                  styles.photo,
-                  {width: photoHeight * 0.75, height: photoHeight},
-                ]}
-                accessibilityLabel={`原始照片 ${i + 1}`}
-              />
-            </Pressable>
-          ))}
-        </ScrollView>
-      </View>
+      <PageGallery uris={photos} height={photoHeight} onOpen={setPhotoIndex} />
       <View style={styles.tabs} accessibilityRole="tablist">
         {tabs.map(([key, label]) => (
           <Pressable
@@ -335,13 +312,15 @@ export default function EssayDetail({
                 )}
                 {profile.rules.rules.materialPolicy && (
                   <Text style={styles.muted}>
-                    待核题、待核材料、待核原图：当前评分依据复核文本，{profile.educationLabel}任务完成度和书写需另行核对。
+                    待核题、待核材料、待核原图：当前评分依据复核文本，
+                    {profile.educationLabel}任务完成度和书写需另行核对。
                   </Text>
                 )}
                 {!!score.admissionAdjustment && (
                   <Text selectable style={styles.body}>
-                    分项合计 {score.score + score.admissionAdjustment} · 准入调整
-                    −{score.admissionAdjustment}：{score.admissionReason}
+                    分项合计 {score.score + score.admissionAdjustment} ·
+                    准入调整 −{score.admissionAdjustment}：
+                    {score.admissionReason}
                   </Text>
                 )}
                 <Text selectable style={styles.body}>

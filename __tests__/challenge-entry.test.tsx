@@ -17,7 +17,7 @@ jest.mock('../src/components/ChallengeScreen', () => ({
   __esModule: true,
   default: 'ChallengeScreen',
 }));
-jest.mock('../src/components/ImageCropper', () => 'ImageCropper');
+jest.mock('../src/shared/media/ImageCropper', () => 'ImageCropper');
 jest.mock('../src/components/EssayDetail', () => 'EssayDetail');
 jest.mock('../src/components/Reports', () => 'Reports');
 jest.mock('react-native-image-picker', () => ({
@@ -28,7 +28,7 @@ jest.mock('../src/db/database', () => ({
   listEssays: jest.fn(async () => []),
   saveSettings: jest.fn(),
 }));
-jest.mock('../src/services/images', () => ({
+jest.mock('../src/shared/media/images', () => ({
   cropImage: jest.fn(),
   persistImage: jest.fn(),
   discardPreparedImages: jest.fn(),

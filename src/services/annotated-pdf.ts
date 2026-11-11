@@ -1,5 +1,5 @@
-import {PDFDocument, PDFFont, PDFPage, rgb} from 'pdf-lib';
-import fontkit from '@pdf-lib/fontkit';
+import {PDFPage, rgb} from 'pdf-lib';
+import {createPdfWithFont} from '../shared/pdf/core';
 import {Annotation, ScoreResult} from '../types';
 import {
   essaySections,
@@ -28,7 +28,8 @@ const colorFor = (type: Annotation['type']) =>
     ? COLORS.problem
     : COLORS.improvement;
 
-type Line = {text: string; start: number; end: number};
+import {Line, wrapPdfText} from '../shared/pdf/text';
+export {wrapPdfText} from '../shared/pdf/text';
 
 /** Partition, rather than overpaint, so colored text remains searchable once.
  * Overlapping annotations use problem > improvement > strength precedence. */
@@ -70,46 +71,6 @@ export function coloredPdfRuns(
 }
 
 /** Code-point wrapping retains UTF-16 offsets used by the scorer. */
-export function wrapPdfText(
-  text: string,
-  width: number,
-  measure: (text: string) => number,
-  offset = 0,
-): Line[] {
-  const lines: Line[] = [];
-  let line = '';
-  let start = offset;
-  let position = offset;
-  let lineWidth = 0;
-  for (const char of text) {
-    if (char === '\r') {
-      position += 1;
-      continue;
-    }
-    if (char === '\n') {
-      lines.push({text: line, start, end: position});
-      line = '';
-      lineWidth = 0;
-      start = ++position;
-      continue;
-    }
-    const charWidth = measure(char);
-    if (line && lineWidth + charWidth > width) {
-      lines.push({text: line, start, end: position});
-      line = '';
-      lineWidth = 0;
-      start = position;
-    }
-    line += char;
-    lineWidth += charWidth;
-    position += char.length;
-  }
-  if (line) {
-    lines.push({text: line, start, end: position});
-  }
-  return lines;
-}
-
 export function locateAnnotations(text: string, annotations: Annotation[]) {
   return annotations.map((annotation, index) => {
     const hasValidStart =
@@ -154,13 +115,7 @@ export async function buildAnnotatedPdf(
   if (!text.trim()) {
     throw new Error('原文识别完成后才能生成批改 PDF');
   }
-  const pdf = await PDFDocument.create();
-  pdf.registerFontkit(fontkit);
-  // Deferred until the user opens the correction tab; works offline on all platforms.
-  const font: PDFFont = await pdf.embedFont(
-    fontData || (require('../assets/fonts/noto-sans-sc.json') as string),
-    {subset: true},
-  );
+  const {pdf, font} = await createPdfWithFont(fontData);
   const supported = new Set(font.getCharacterSet());
   const display = (value: string) =>
     Array.from(value, char => {

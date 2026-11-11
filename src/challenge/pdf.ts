@@ -1,8 +1,8 @@
 import {Image} from 'react-native';
 import RNFS from 'react-native-fs';
 import {PDFDocument, PDFFont, PDFImage, PDFPage, rgb} from 'pdf-lib';
-import fontkit from '@pdf-lib/fontkit';
-import {wrapPdfText} from '../services/annotated-pdf';
+import {createPdfWithFont} from '../shared/pdf/core';
+import {wrapPdfText} from '../shared/pdf/text';
 import {
   ChallengeFigure,
   ChallengeLearningGuide,
@@ -315,12 +315,7 @@ async function newWriter(
   answers: boolean,
   fontData?: string | Uint8Array,
 ) {
-  const pdf = await PDFDocument.create();
-  pdf.registerFontkit(fontkit);
-  const font = await pdf.embedFont(
-    fontData || (require('../assets/fonts/noto-sans-sc.json') as string),
-    {subset: true},
-  );
+  const {pdf, font} = await createPdfWithFont(fontData);
   const kind = answers ? '答案与解析' : '试卷';
   pdf.setTitle(`${paper.title} · ${kind}`);
   pdf.setAuthor('EssayLens');

@@ -2056,3 +2056,64 @@ test('识科返回整体不确定时仍记录本轮未知票，不自动发送�
   expect(calls).toHaveLength(1);
   expect(JSON.parse(calls[0][0] as string)).not.toHaveProperty('pages');
 });
+
+test('标题先初判科目，再以样题核验；确认前不加载科规则', async () => {
+  mockRecord = record(false);
+  const result = await analyzeChallenge('challenge_test', {settings});
+  const call = request.mock.calls.find(
+    item => task(item[0]) === '挑战科目识别',
+  )!;
+  const payload = JSON.parse(call[0] as string);
+  expect(payload.purpose).toBe('verify_title');
+  expect(payload.titleIdentification).toMatchObject({
+    subject: 'math',
+    courseName: '数学',
+  });
+  expect(result.subjectVerification?.titleVerification).toBe('verified');
+  expect(result.subjectIdentification?.reason).toContain('标题初判数学');
+});
+
+test.each(['resume', 'restart'] as const)(
+  '成功解析后选择%s，是否复用逐页识别由模式决定',
+  async analysisMode => {
+    mockRecord = record();
+    const result = await analyzeChallenge('challenge_test', {
+      settings,
+      analysisMode,
+    });
+    expect(result.status).toBe('analyzed');
+    const pages = request.mock.calls.filter(call => task(call[0]) === 'page');
+    expect(pages).toHaveLength(analysisMode === 'resume' ? 0 : 1);
+    expect(
+      request.mock.calls.filter(call => task(call[0]) === '挑战科目识别'),
+    ).toHaveLength(1);
+  },
+);
+
+test('失败后继续解析保留已完成页面，只重做后续结构与科目核验', async () => {
+  mockRecord = record(false);
+  mockRecord.status = 'failed';
+  mockRecord.pages = [mockClone(page)];
+  await analyzeChallenge('challenge_test', {settings, analysisMode: 'resume'});
+  expect(request.mock.calls.map(call => task(call[0]))).toEqual([
+    '挑战整卷分析',
+    '挑战科目识别',
+  ]);
+});
+
+test('同学科有效识科票据的课程别名和说明差异不再误挡升档', async () => {
+  mockRecord = record();
+  mockRecord.analysis!.subjectIdentification = {
+    ...mockClone(identification),
+    courseName: 'Mathematics',
+    reason: '同一课程的另一份有效核验说明。',
+  };
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(result.status).toBe('completed');
+  expect(result.analysis?.subjectIdentification).toEqual(
+    result.subjectIdentification,
+  );
+  expect(
+    request.mock.calls.filter(call => task(call[0]) === '挑战科目识别'),
+  ).toHaveLength(0);
+});

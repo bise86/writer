@@ -1,3 +1,4 @@
+import {guessSubjectFromTitle, titleSupportsSubject} from './subjectTitle';
 import {
   ChallengeFigure,
   ChallengeLevel,
@@ -462,26 +463,7 @@ export function subjectTitleSupportsCourse(
   if (!CHALLENGE_SUBJECTS.includes(subject)) {
     return false;
   }
-  const titles = verification.titleEvidence.map(ref => ref.quote).join('\n');
-  const aliases: Record<Exclude<ChallengeSubject, 'other'>, RegExp> = {
-    math: /数学|mathematics|\bmath\b/i,
-    english: /英语|英文|english/i,
-    chinese: /语文|chinese/i,
-    physics: /物理|physics/i,
-    chemistry: /化学|chemistry/i,
-    biology: /生物|biology/i,
-    history: /历史|history/i,
-    geography: /地理|geography/i,
-    politics: /政治|道德与法治|思想品德|politics|civics/i,
-    science: /科学|理综|理科综合|理化合卷|物理化学合卷|science/i,
-  };
-  return subject === 'other'
-    ? nonempty(courseName) &&
-        titles
-          .normalize('NFKC')
-          .toLowerCase()
-          .includes(courseName.normalize('NFKC').toLowerCase())
-    : !!aliases[subject]?.test(titles);
+  return titleSupportsSubject(subject, courseName, verification.titleEvidence);
 }
 
 export function validateSubjectVerification(
@@ -565,6 +547,36 @@ export function validateSubjectVerification(
     check.text(data.expansionReason, 'expansionReason');
   }
   if (data.mode === 'progressive') {
+    if (data.titleGuess !== undefined) {
+      check.require(
+        sameJson(
+          data.titleGuess,
+          guessSubjectFromTitle(
+            Array.isArray(data.titleEvidence) ? data.titleEvidence : [],
+          ),
+        ),
+        '标题初判必须只依据真实印刷标题，不能用文件名或样题伪造',
+      );
+    }
+    if (data.titleVerification !== undefined) {
+      check.require(
+        ['unavailable', 'pending', 'verified', 'conflict'].includes(
+          data.titleVerification,
+        ),
+        '标题核验状态无效',
+      );
+      if (data.titleVerification === 'verified') {
+        const consensus = subjectConsensus(data as SubjectVerification);
+        check.require(
+          !!data.titleGuess &&
+            !!consensus &&
+            consensus.subject === data.titleGuess.subject &&
+            (consensus.subject !== 'other' ||
+              consensus.courseName === data.titleGuess.courseName),
+          '标题初判须经抽样一致或多数核验，不能直接加载科目规则',
+        );
+      }
+    }
     check.texts(data.candidateOrder, 'candidateOrder', 1, true);
     check.require(
       Array.isArray(data.samples) &&

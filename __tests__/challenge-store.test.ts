@@ -662,3 +662,13 @@ test('导出写文件时删除记录，迟到导出不能留下孤儿PDF或恢�
   ).toEqual([]);
   expect(mockFiles.has('/camera/paper.png')).toBe(true);
 });
+
+test('每份试卷最多一个PDF，重复PDF在复制文件或建记录前拒绝', async () => {
+  const pdf = {...source, kind: 'pdf' as const, name: '原卷.pdf'};
+  const directoriesBefore = new Set(mockDirectories);
+  await expect(
+    store.createChallenge([pdf, {...pdf, name: '第二份.pdf'}]),
+  ).rejects.toThrow('只允许上传一个');
+  expect(mockDirectories).toEqual(directoriesBefore);
+  expect(mockExecute).not.toHaveBeenCalled();
+});

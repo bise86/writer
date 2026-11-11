@@ -1,3 +1,4 @@
+import PageGallery from '../src/shared/media/PageGallery';
 import React from 'react';
 import {Image, Pressable, Text, View} from 'react-native';
 import {act, create, ReactTestRenderer} from 'react-test-renderer';
@@ -132,13 +133,14 @@ test('原始照片从识别前就显示在标题和页卡之间，切换所有�
   expect(
     photoBlock.findAllByType(Image).map(item => item.props.source.uri),
   ).toEqual(essay.imageUris);
-  const parent = photoBlock.parent!;
+  const gallery = view.root.findByType(PageGallery);
+  const parent = gallery.parent!;
   const nodes = parent.children;
   const titleIndex = nodes.findIndex(
     item =>
       typeof item !== 'string' && item.props.accessibilityLabel === '作文标题',
   );
-  const photoIndex = nodes.indexOf(photoBlock);
+  const photoIndex = nodes.indexOf(gallery);
   const tabIndex = nodes.findIndex(
     item =>
       typeof item !== 'string' && item.props.accessibilityRole === 'tablist',

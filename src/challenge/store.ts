@@ -193,6 +193,9 @@ export async function createChallenge(
   if (!sources.length || sources.some(source => !source.pageUris.length)) {
     throw new Error('请先拍摄或上传完整试卷');
   }
+  if (sources.filter(source => source.kind === 'pdf').length > 1) {
+    throw new Error('每份试卷只允许上传一个 PDF，可以补充多张照片。');
+  }
   const pageCount = sources.reduce(
     (sum, source) => sum + source.pageUris.length,
     0,

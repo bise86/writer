@@ -31,12 +31,7 @@ export type ChallengeStage =
   | 'repair'
   | 'pdf';
 
-export interface ChallengeSource {
-  kind: 'image' | 'pdf';
-  name: string;
-  uri: string;
-  pageUris: string[];
-}
+export type ChallengeSource = import('../shared/media/types').ImportedSource;
 export interface ChallengePage {
   pageIndex: number;
   documentType: 'exam' | 'exam_continuation' | 'not_exam' | 'uncertain';
@@ -129,6 +124,13 @@ export interface SubjectVerification {
   expansionReason?: string;
   candidateOrder?: string[];
   votes?: SubjectSampleVote[];
+  titleGuess?: SubjectTitleGuess;
+  titleVerification?: 'unavailable' | 'pending' | 'verified' | 'conflict';
+}
+export interface SubjectTitleGuess {
+  subject: ChallengeSubject;
+  courseName: string;
+  evidence: SubjectEvidence[];
 }
 export interface SubjectSampleVote {
   questionId: string;
@@ -330,6 +332,7 @@ export interface ChallengeRecord {
 }
 export interface ChallengeRunOptions {
   settings: AppSettings;
+  analysisMode?: 'resume' | 'restart';
   signal?: AbortSignal;
   onUpdate?: (record: ChallengeRecord) => void;
 }

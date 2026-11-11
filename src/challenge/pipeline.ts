@@ -352,7 +352,7 @@ function examDraftInstructions(confirmed?: SubjectIdentification) {
       },
     ],
   })}，示例只展示格式，实际必须涵盖所有题目。不是试卷返回{isExam:false,reason:'真实原因'}，缺页、遮挡导致原印刷题干或图表不完整时保留unresolvedIssues，不能猜补。若印刷原题完整，仅知识点判断、难度或变式可行性存疑，在对应题analysisIssues写明并标upgradeEligibility:retain与retentionReason，不把局部分析不确定升级为整卷阻塞。
-title是实际原卷标题，titleEvidence逐字引用印刷标题并给pageIndex；无可核实标题用空数组，不编造科目标题。majorQuestions按原印刷大题/材料父题组织，每项id/title/sourceRefs；sourceRefs保留母题公共条件及作答说明，不仅标题。复合解答19(1)、19(2)归第19大题，不能把所有解答题并为一组；整组选择/填空按其原大题分组。层级确实无法核实时majorQuestions可空并在warnings说明，后续改全卷识科，不伪造分组。
+title是实际原卷标题，titleEvidence逐字引用印刷标题并给pageIndex；无可核实标题用空数组，不编造科目标题。majorQuestions按原印刷大题/材料父题组织，每项id/title/sourceRefs；sourceRefs保留母题公共条件及作答说明，不仅标题。复合解答19(1)、19(2)归第19大题，不能把所有解答题并为一组；整组选择/填空按其原大题分组。层级确实无法核实时majorQuestions可空并在warnings说明，仍可按原小题与必要上下文抽样识科，不伪造分组。
 questions拆到可独立变种的叶子小题，每题${JSON.stringify(
     QUESTION_EXAMPLE,
   )}全部字段、sourceRefs、difficulty及majorQuestionId。ID稳定唯一，number保留12(1)等原号，type精确，分值/时长不明确用null，缺材料或图用空数组。每题sourceRefs必须逐字引用对应pages.text中实际题干/选项的连续内容；pageIndex从0开始。每叶题归实际majorQuestionId，前问依赖用dependsOnQuestionIds列已存在原题ID，无依赖空数组；明确‘由(1)/前问/上述结果’不可丢失必要前问。大题公共题干、阅读文章、实验条件、对话和作文材料放materials并让有关叶题逐一关联，完整保留共享图与作答说明。
@@ -542,7 +542,9 @@ async function identifyFromTitleAndSamples(
         subjectVerification: verification,
         progress:
           verification.samples.length <= 3
-            ? `先抽${verification.samples.length}题核验科目`
+            ? verification.titleGuess
+              ? `已从标题初判${verification.titleGuess.courseName}，抽${verification.samples.length}题核验`
+              : `标题无法判科，直接抽${verification.samples.length}题识科`
             : `尚未形成多数，追加第${verification.samples.length}题核验科目`,
       },
       options,
@@ -557,6 +559,10 @@ async function identifyFromTitleAndSamples(
         JSON.stringify({
           task: '挑战科目识别',
           phase: 'progressive_vote',
+          purpose: verification.titleGuess
+            ? 'verify_title'
+            : 'identify_subject',
+          titleIdentification: verification.titleGuess,
           titleEvidence: verification.titleEvidence,
           subjects: CHALLENGE_RULES.subjects.map(({subject, label}) => ({
             subject,
@@ -565,7 +571,11 @@ async function identifyFromTitleAndSamples(
           verification: {...verification, votes: undefined},
           samples: inputs,
         }),
-        `你是试卷课程识别教师。${UNTRUSTED}\n只判断本轮samples新增小题，每道给独立的课程票，不进行难度分析或出题。标题仅作线索，要看实际作答任务、母题/作答说明及必要前问；前问是上下文，不另计票。英语文章谈数学/生态仍是英语，物理计算不改判数学。科学/理综只有标题与课程题组确证时才用science，integrated按实际课程判；other只能用于明确而索引未列的具体课程。\n对每个question.id按顺序输出{votes:[{questionId:'实际ID',subject:'math等索引科目或unknown',courseName:'明确课程名，未知时空串',integrated:false,reason:'据本题实际任务说明',evidence:[{pageIndex:0,quote:'该小题sourceRefs中的完整原锚'}]}]}。明确票必须包含该小题自己的sourceRefs原锚，可追加给出的标题/依赖原锚，不可编造；不确定或contextIssue存在时用unknown、说明局限且不猜科。不能因前几题结果或标题强求一致，不要重复对先前已投票题输出。程序自行计票，初抽最多3题全一致即定，之后每次仅追加1题并判断严格多数。仅输出JSON。`,
+        `你是试卷课程识别教师。${UNTRUSTED}\n${
+          verification.titleGuess
+            ? `标题已初判为${verification.titleGuess.courseName}(${verification.titleGuess.subject})，本轮先验证样题是否支持这个课程判断；支持则投对应课程，不支持则据实际任务投另一科或unknown，不能为标题强求通过。科学/理综内部的物理化学子题可支持综合课程，须结合原题组和标题判断。`
+            : '无标题或标题无法明确识科，本轮直接由最多3道样题识别课程，一致后确认。'
+        }只判断本轮samples新增小题，每道给独立的课程票，不进行难度分析或出题。标题仅作线索，要看实际作答任务、母题/作答说明及必要前问；前问是上下文，不另计票。英语文章谈数学/生态仍是英语，物理计算不改判数学。科学/理综只有标题与课程题组确证时才用science，integrated按实际课程判；other只能用于明确而索引未列的具体课程。\n对每个question.id按顺序输出{votes:[{questionId:'实际ID',subject:'math等索引科目或unknown',courseName:'明确课程名，未知时空串',integrated:false,reason:'据本题实际任务说明',evidence:[{pageIndex:0,quote:'该小题sourceRefs中的完整原锚'}]}]}。明确票必须包含该小题自己的sourceRefs原锚，可追加给出的标题/依赖原锚，不可编造；不确定或contextIssue存在时用unknown、说明局限且不猜科。不能因前几题结果或标题强求一致，不要重复对先前已投票题输出。程序自行计票，初抽最多3题全一致即定，之后每次仅追加1题并判断严格多数。仅输出JSON。`,
         options,
         value => validateSubjectVotes(value, pages, verification, inputs),
       );
@@ -588,8 +598,21 @@ async function identifyFromTitleAndSamples(
       {...verification, votes: [...(verification.votes || []), ...votes]},
       pages,
     );
-    await progress(id, runId, {subjectVerification: verification}, options);
     const consensus = subjectConsensus(verification);
+    if (verification.titleGuess && consensus) {
+      const supported =
+        consensus.subject === verification.titleGuess.subject &&
+        (consensus.subject !== 'other' ||
+          consensus.courseName === verification.titleGuess.courseName);
+      verification = validateSubjectVerification(
+        {
+          ...verification,
+          titleVerification: supported ? 'verified' : 'conflict',
+        },
+        pages,
+      );
+    }
+    await progress(id, runId, {subjectVerification: verification}, options);
     if (consensus) {
       const evidence = [
         ...verification.titleEvidence,
@@ -604,11 +627,22 @@ async function identifyFromTitleAndSamples(
         {
           status: 'confirmed',
           subject: consensus.subject,
-          courseName: consensus.courseName,
+          courseName:
+            verification.titleVerification === 'verified'
+              ? verification.titleGuess!.courseName
+              : consensus.courseName,
           integrated: consensus.integrated,
-          reason: `已抽${consensus.total}题，其中${
-            consensus.supportCount
-          }题支持${consensus.courseName}；${
+          reason: `${
+            verification.titleGuess
+              ? `标题初判${verification.titleGuess.courseName}，${
+                  verification.titleVerification === 'verified'
+                    ? '已通过样题核验'
+                    : '样题未支持标题，按实际题目确认课程'
+                }；`
+              : '标题未能识科，直接按样题确认；'
+          }已抽${consensus.total}题，其中${consensus.supportCount}题支持${
+            consensus.courseName
+          }；${
             consensus.total <= 3 ? '初始抽样一致' : '形成超过半数的明确课程票'
           }。`,
           evidence,
@@ -641,7 +675,17 @@ export function analyzeChallenge(
       throw new Error('试卷没有可解析的页面');
     }
     const runId = newRecordId('run');
-    const retained = current.analysis ? [] : current.pages;
+    const restart =
+      options.analysisMode === 'restart' ||
+      (options.analysisMode !== 'resume' && !!current.analysis);
+    const retained = restart
+      ? []
+      : current.pages.filter(
+          page =>
+            (page.documentType === 'exam' ||
+              page.documentType === 'exam_continuation') &&
+            !page.unreadableParts.length,
+        );
     await notify(
       await updateChallenge(id, {
         status: 'analyzing',
@@ -1399,11 +1443,14 @@ export function upgradeChallenge(
       throw new Error('升档难度必须为1、2或3档');
     }
     const current = await requiredRecord(id);
-    const analysis = current.analysis;
-    if (!analysis || analysis.unresolvedIssues.length) {
+    const previousAnalysis = current.analysis;
+    if (!previousAnalysis || previousAnalysis.unresolvedIssues.length) {
       throw new Error('请先完成原试卷解析并解决缺页、题干或图表辨认问题');
     }
-    if (!current.subjectIdentification || !analysis.subjectIdentification) {
+    if (
+      !current.subjectIdentification ||
+      !previousAnalysis.subjectIdentification
+    ) {
       throw new Error(
         '原卷尚无独立科目识别结果，请先重新解析，再按科目加载标准升档',
       );
@@ -1412,20 +1459,31 @@ export function upgradeChallenge(
       current.subjectIdentification,
       current.pages,
     );
+    const analysisIdentification = validateSubjectIdentification(
+      previousAnalysis.subjectIdentification,
+      current.pages,
+    );
     if (
-      identification.subject !== analysis.subject ||
-      JSON.stringify(identification) !==
-        JSON.stringify(
-          validateSubjectIdentification(
-            analysis.subjectIdentification,
-            current.pages,
-          ),
-        )
+      identification.subject !== previousAnalysis.subject ||
+      analysisIdentification.subject !== identification.subject ||
+      analysisIdentification.integrated !== identification.integrated ||
+      (identification.subject === 'other' &&
+        analysisIdentification.courseName !== identification.courseName) ||
+      (identification.verification &&
+        analysisIdentification.verification &&
+        JSON.stringify(identification.verification) !==
+          JSON.stringify(analysisIdentification.verification))
     ) {
       throw new Error(
         '原卷分析与已保存科目识别结果不一致，请重新识科解析，不能套用其它学科规则',
       );
     }
+    // Course names and explanations can differ cosmetically between valid
+    // copies. Use one validated ticket; never disable an analyzed paper for that.
+    const analysis: ExamAnalysis = {
+      ...previousAnalysis,
+      subjectIdentification: identification,
+    };
     if (identification.verification) {
       const savedVerification = validateSubjectVerification(
         current.subjectVerification || identification.verification,
@@ -1464,6 +1522,7 @@ export function upgradeChallenge(
     await notify(
       await updateChallenge(id, {
         status: 'generating',
+        analysis,
         runId,
         policyVersion: CHALLENGE_POLICY_VERSION,
         selectionPolicyVersion: CHALLENGE_SELECTION_POLICY_VERSION,

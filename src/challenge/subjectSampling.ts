@@ -9,6 +9,7 @@ import {
   SubjectVerification,
   SubjectSampleVote,
 } from './types';
+import {guessSubjectFromTitle} from './subjectTitle';
 
 type SamplingAnalysis = Pick<
   ExamAnalysis,
@@ -412,12 +413,16 @@ export function buildProgressiveSubjectVerification(
     const swap = Math.floor(draw * (index + 1));
     [order[index], order[swap]] = [order[swap], order[index]];
   }
+  const titleEvidence = (analysis.titleEvidence || [])
+    .filter(validEvidence)
+    .map(ref => ({...ref}));
+  const titleGuess = guessSubjectFromTitle(titleEvidence);
   return {
     mode: 'progressive',
     candidateOrder: order,
-    titleEvidence: (analysis.titleEvidence || [])
-      .filter(validEvidence)
-      .map(ref => ({...ref})),
+    titleEvidence,
+    titleGuess,
+    titleVerification: titleGuess ? 'pending' : 'unavailable',
     samples: order.slice(0, 3).map(id => progressiveSample(analysis, id)),
     votes: [],
   };
