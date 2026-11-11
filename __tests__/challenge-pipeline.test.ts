@@ -501,6 +501,15 @@ const route = async (input: ModelInput) => {
       return response(page);
     case '挑战科目识别':
       return response(identificationFor(input));
+    case '挑战保留原题定位': {
+      const payload = requestPayload(input);
+      return response({
+        regions: payload.questions.map((question: {questionId: string}) => ({
+          questionId: question.questionId,
+          boxes: [{x: 0.1, y: 0.1, width: 0.8, height: 0.2}],
+        })),
+      });
+    }
     case '挑战整卷分析':
       return response(analysis);
     case '挑战试卷生成':
@@ -1131,19 +1140,147 @@ test('非试卷图片不能命题，失败保留输入以便更换后重试', as
   expect(builder).not.toHaveBeenCalled();
 });
 
-test('未解析或存在被遮挡题干时不能直接升档', async () => {
+test('未解析时需先解析，遮挡题干则原样保留并正常完成', async () => {
   mockRecord = record(false);
   await expect(
     upgradeChallenge('challenge_test', 1, {settings}),
   ).rejects.toThrow('解析');
   mockRecord = record();
   mockRecord.analysis!.unresolvedIssues = ['第1题印刷条件被学生笔迹遮挡'];
-  await expect(
-    upgradeChallenge('challenge_test', 1, {settings}),
-  ).rejects.toThrow('辨认');
-  expect(request).not.toHaveBeenCalled();
-  expect(builder).not.toHaveBeenCalled();
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(result.status).toBe('completed');
+  expect(result.candidate?.questions[0].upgrade.mode).toBe('retained');
+  expect(result.candidate?.answers[0]).toMatchObject({
+    status: 'requires_review',
+    answer: '',
+  });
+  expect(result.analysis?.unresolvedIssues).toHaveLength(1);
+  expect(builder).toHaveBeenCalledTimes(1);
 });
+
+test('旧记录保留题的原图定位失败时回退对应原页，不把局部布局问题判为失败', async () => {
+  mockRecord!.analysis!.unresolvedIssues = ['第1题题干解析失败'];
+  request.mockImplementation(async (input: ModelInput) => {
+    if (task(input) === '挑战保留原题定位') {
+      throw new Error('暂时无法定位原图范围');
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 3, {settings});
+  expect(result).toMatchObject({status: 'completed', error: ''});
+  expect(result.analysis!.questions[0].originalRegions).toEqual([
+    {pageIndex: 0, box: {x: 0, y: 0, width: 1, height: 1}},
+  ]);
+  expect(result.analysis!.warnings.join('')).toContain('无法精确定位');
+  expect(result.candidate!.questions[0].upgrade.mode).toBe('retained');
+  expect(builder).toHaveBeenCalledTimes(1);
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test('解析异常造成比例不可达、模型返回cannotUpgrade时直接保留原题继续评审，不判失败', async () => {
+  const original = mockClone(analysis);
+  original.questions = Array.from({length: 5}, (_, index) => ({
+    ...mockClone(analysis.questions[0]),
+    id: `q${index + 1}`,
+    number: String(index + 1),
+    ...(index ? {analysisIssues: ['题干解析不完整']} : {}),
+  }));
+  original.totalScore = 25;
+  mockRecord!.analysis = original;
+  request.mockImplementation(async (input: ModelInput) => {
+    if (task(input) === '挑战试卷生成') {
+      return response({
+        cannotUpgrade: true,
+        reason: '解析异常过多，不能达到65%',
+      });
+    }
+    if (task(input) === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: original.questions.map(question => question.id),
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 3, {settings});
+  expect(result).toMatchObject({status: 'completed', error: ''});
+  expect(
+    result.candidate!.questions.every(
+      question => question.upgrade.mode === 'retained',
+    ),
+  ).toBe(true);
+  expect(result.analysis!.questions[0].upgradeEligibility).not.toBe('retain');
+  expect(
+    result.candidate!.answers.every(
+      answer => answer.status === 'requires_review',
+    ),
+  ).toBe(true);
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test.each([0, 3, 5] as const)(
+  '九成题解析异常、只有10%%升档时，%s角色流程仍正常发布两份PDF',
+  async size => {
+    const original = mockClone(analysis);
+    original.questions = Array.from({length: 10}, (_, index) => ({
+      ...mockClone(analysis.questions[0]),
+      id: `q${index + 1}`,
+      number: String(index + 1),
+      ...(index
+        ? {
+            analysisIssues: ['本题解析不完整，条件需核实'],
+            upgradeEligibility: 'retain' as const,
+          }
+        : {}),
+    }));
+    original.totalScore = 50;
+    mockRecord!.analysis = original;
+    const generated = paper(3);
+    generated.totalScore = 50;
+    // The model need not rewrite or even return the locked source questions.
+    generated.questions = [generated.questions[0]];
+    generated.answers = [generated.answers[0]];
+    request.mockImplementation(async (input: ModelInput) => {
+      const payload = requestPayload(input);
+      if (payload.task === '挑战试卷生成') {
+        return response(generated);
+      }
+      if (payload.task === '挑战标准一致性校核') {
+        expect(payload.coverage).toMatchObject({
+          total: 10,
+          targetRequired: 7,
+          required: 1,
+          limitedByAnalysis: true,
+        });
+        return response({
+          ...roleReview(input),
+          checkedQuestionIds: original.questions.map(question => question.id),
+        });
+      }
+      return route(input);
+    });
+    const result = await upgradeChallenge('challenge_test', 3, {
+      settings: {...settings, roundtableSize: size},
+    });
+    expect(result).toMatchObject({status: 'completed', error: ''});
+    expect(result.candidate!.questions.map(question => question.id)).toEqual(
+      original.questions.map(question => question.id),
+    );
+    expect(
+      result.candidate!.questions.filter(
+        question => question.upgrade.mode === 'retained',
+      ),
+    ).toHaveLength(9);
+    expect(
+      result.candidate!.answers.filter(
+        answer => answer.status === 'requires_review',
+      ),
+    ).toHaveLength(9);
+    expect(result.reviewRounds[0].reviews).toHaveLength(size || 1);
+    expect(builder).toHaveBeenCalledTimes(1);
+    expect(publisher).toHaveBeenCalledTimes(1);
+  },
+);
 
 test('三档标准尚未经五角色评审定稿时，不能据此生成新卷', async () => {
   mockStandardApproved = false;
@@ -2022,10 +2159,23 @@ test('非听力混合升档卷可完成评审和PDF发布，保留题不被误�
       question => question.upgrade.mode === 'retained',
     ),
   ).toHaveLength(4);
-  expect(result.selectionPolicyVersion).toBe('challenge-selection-v1');
+  expect(result.selectionPolicyVersion).toBe('challenge-selection-v2');
   expect(builder).toHaveBeenCalledWith(
     expect.anything(),
-    expect.objectContaining({questions: generated.questions}),
+    expect.objectContaining({
+      questions: expect.arrayContaining([
+        expect.objectContaining({
+          id: 'q1',
+          stem: original.questions[0].stem,
+          upgrade: expect.objectContaining({mode: 'retained'}),
+        }),
+        expect.objectContaining({
+          id: 'q2',
+          stem: variant.stem,
+          upgrade: expect.objectContaining({mode: 'upgraded'}),
+        }),
+      ]),
+    }),
     expect.anything(),
   );
   expect(publisher).toHaveBeenCalledTimes(1);

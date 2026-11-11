@@ -581,7 +581,9 @@ test('新详情默认1档，下拉改变档次同步方案，不需要到页卡�
   for (const level of [1, 2, 3] as const) {
     await chooseLevel(level);
     expect(text()).toContain(getChallengePolicy('math', level).summary);
-    expect(text()).toContain(`非听力题至少 ${{1: 20, 2: 40, 3: 65}[level]}%`);
+    expect(text()).toContain(
+      `非听力题目标升档 ${{1: 20, 2: 40, 3: 65}[level]}%`,
+    );
   }
   await press('试卷分析');
   await press('升档');
@@ -607,18 +609,60 @@ test('成功解析后升档可点击，说明文字或课程名称副本差异�
   expect(upgradeChallenge).toHaveBeenCalledTimes(1);
 });
 
-test('业务校验仍阻止不完整原卷，升档错误直接可见', async () => {
-  (upgradeChallenge as jest.Mock).mockRejectedValueOnce(
-    new Error('原题条件缺失，请继续解析或补充页面'),
-  );
+test('局部解析异常不禁用升档，提示原位保留与比例不足仍正常完成', async () => {
   await openSaved({
     ...analyzed,
     analysis: {...analysis, unresolvedIssues: ['第1题条件缺失']},
   });
   expect(button('升档').props.disabled).toBe(false);
+  expect(text()).toContain('局部解析异常的题将按原位置保留');
+  expect(text()).not.toContain('升档前需要补充');
   await press('升档');
   await settle();
-  expect(text()).toContain('原题条件缺失，请继续解析或补充页面');
+  expect(upgradeChallenge).toHaveBeenCalledTimes(1);
+});
+
+test('解析异常导致低于比例的已完成结果展示实际值及保留原因', async () => {
+  const questions = Array.from({length: 5}, (_, index) => ({
+    ...analysis.questions[0],
+    id: `q${index + 1}`,
+    number: String(index + 1),
+    ...(index
+      ? {
+          analysisIssues: ['题目解析不完整'],
+          upgradeEligibility: 'retain' as const,
+        }
+      : {}),
+  }));
+  await openSaved({
+    ...completed,
+    analysis: {...analysis, questions},
+    candidate: {
+      ...candidate,
+      level: 3,
+      questions: questions.map((question, index) => ({
+        ...question,
+        upgrade: {
+          ...candidate.questions[0].upgrade,
+          level: 3,
+          mode: index ? 'retained' : 'upgraded',
+          retentionReason: index ? '解析不完整，原位置保留' : undefined,
+        },
+      })),
+    },
+    reviewRounds: completed.reviewRounds.map(round => ({
+      ...round,
+      reviews: round.reviews.map(review => ({
+        ...review,
+        checkedQuestionIds: questions.map(question => question.id),
+      })),
+    })),
+  });
+  await press('升档方案');
+  expect(text()).toContain('已升档 1 / 5 道非听力题（20.0%）');
+  expect(text()).toContain('未达原目标 65%，已正常完成');
+  expect(text()).toContain('解析不完整，原位置保留');
+  expect(text()).toContain('已完成');
 });
 
 test('解析成功再点需要确认，可取消、复用已识别页面或重新识别全部页面', async () => {
@@ -715,7 +759,7 @@ test('方案列出升级题号与保留原因，改变下拉档次不改写已�
   expect(text()).toContain('第 3 题 · 保留原题');
   expect(text()).toContain('由直接计算改为反推条件');
   await chooseLevel(3);
-  expect(text()).toContain('至少升档 4 题');
+  expect(text()).toContain('原目标升档 4 题');
   expect(text()).toContain('本次生成结果 · 升 2 档');
 });
 

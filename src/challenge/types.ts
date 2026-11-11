@@ -39,6 +39,11 @@ export interface ChallengePage {
   hasStudentAnswers: boolean;
   unreadableParts: string[];
   figures: SourceFigure[];
+  questionRegions?: {number: string; box: SourceFigure['box']}[];
+}
+export interface OriginalQuestionRegion {
+  pageIndex: number;
+  box: SourceFigure['box'];
 }
 export interface SourceFigure {
   id: string;
@@ -94,12 +99,17 @@ export interface PaperQuestion {
 }
 export interface SourceQuestion extends PaperQuestion {
   sourceRefs: {pageIndex: number; quote: string}[];
-  difficulty: {rating: number; reasoningSteps: number; explanation: string};
+  difficulty: {
+    rating: number | null;
+    reasoningSteps: number | null;
+    explanation: string;
+  };
   majorQuestionId?: string;
   dependsOnQuestionIds?: string[];
   analysisIssues?: string[];
   upgradeEligibility?: 'eligible' | 'retain';
   retentionReason?: string;
+  originalRegions?: OriginalQuestionRegion[];
 }
 export interface SubjectEvidence {
   pageIndex: number;

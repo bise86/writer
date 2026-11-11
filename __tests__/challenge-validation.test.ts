@@ -2,7 +2,10 @@ import {guessSubjectFromTitle} from '../src/challenge/subjectTitle';
 import {
   challengeCoverage,
   minimumUpgradeCount,
+  preserveRequiredOriginals,
+  requiredRetentionIds,
 } from '../src/challenge/selection';
+import {prepareRetainedAnalysis} from '../src/challenge/retention';
 import {
   applicableChallengeDirections,
   applicableChallengeMetrics,
@@ -720,25 +723,84 @@ test('不是试卷、未识别内容和不存在的原文引用不会被当作�
   expect(() =>
     validateExamAnalysis(analysis, [{...page, documentType: 'not_exam'}]),
   ).toThrow(/非试卷|实际试卷/);
-  expect(() =>
-    validateExamAnalysis(analysis, [
-      {...page, unreadableParts: ['题干被遮挡']},
-    ]),
-  ).toThrow('保留unresolvedIssues');
+  const pending = validateExamAnalysis(analysis, [
+    {...page, unreadableParts: ['第1题题干被遮挡']},
+  ]);
+  expect(pending.unresolvedIssues).toContain('第1页：第1题题干被遮挡');
+  expect(pending.questions[0].upgradeEligibility).toBe('retain');
   const wrongQuote = clone(analysis);
   wrongQuote.questions[0].sourceRefs[0].quote = '模型补出的文字';
   expect(() => validateExamAnalysis(wrongQuote, [page])).toThrow('连续文字');
 });
 
-test('可保存缺页阻塞说明，但未解决内容不得进入新卷生成', () => {
+test('未识别内容保存为待核与原图保留，仍可生成而不强行变式', () => {
   const {page, analysis} = fixture();
   const pending = validateExamAnalysis(
     {...analysis, unresolvedIssues: ['题干被遮挡']},
     [{...page, unreadableParts: ['题干被遮挡']}],
   );
-  expect(() => validateChallengePaper(generated(pending), pending, 1)).toThrow(
-    '尚有未解决',
+  const result = preserveRequiredOriginals(
+    generated(pending),
+    pending,
+    1,
+  ) as ChallengePaper;
+  expect(validateChallengePaper(result, pending, 1)).toEqual(result);
+  expect(result.questions[0].upgrade.mode).toBe('retained');
+  expect(result.answers[0].status).toBe('requires_review');
+  expect(pending.questions[0].originalRegions).toEqual([
+    {pageIndex: 0, box: {x: 0, y: 0, width: 1, height: 1}},
+  ]);
+});
+
+test('局部题文无法识别或辅助题框无效时保留来源，不将整页判解析失败', () => {
+  const {page} = fixture();
+  const parsed = validateChallengePage(
+    {
+      ...page,
+      text: '',
+      unreadableParts: ['第1题文字模糊'],
+      questionRegions: [
+        {number: '1', box: {x: 0.9, y: 0.1, width: 0.9, height: 0.2}},
+      ],
+    },
+    0,
   );
+  expect(parsed.text).toBe('');
+  expect(parsed.unreadableParts).toEqual(['第1题文字模糊']);
+  expect(parsed.questionRegions).toEqual([]);
+});
+
+test('仅保留原图且没有可读引文的小题可继续参与递进识科，只能记未知票', () => {
+  const {analysis, page} = fixture();
+  analysis.questions[0] = {
+    ...analysis.questions[0],
+    stem: '',
+    sourceRefs: [],
+    analysisIssues: ['题干未识别'],
+    originalRegions: [{pageIndex: 0, box: {x: 0, y: 0, width: 1, height: 1}}],
+  };
+  const verification = buildProgressiveSubjectVerification(analysis);
+  expect(() => validateSubjectVerification(verification, [page])).not.toThrow();
+  const samples = subjectVerificationSamples(analysis, verification);
+  expect(samples[0].contextIssue).toContain('仅保留原图');
+  const votes = validateSubjectVotes(
+    {
+      votes: [
+        {
+          questionId: 'q1',
+          subject: 'unknown',
+          courseName: '',
+          integrated: false,
+          reason: '原题文字不可读，不能猜科',
+          evidence: [],
+        },
+      ],
+    },
+    [page],
+    verification,
+    samples,
+  );
+  expect(subjectConsensus({...verification, votes})).toBeUndefined();
 });
 
 test.each([1, 2, 3] as const)(
@@ -2674,6 +2736,247 @@ test('单题分析存疑可保留，不能强行改题；其答案不可靠时�
   expect(() => validateChallengePaper(upgraded, analysis, 1)).toThrow(
     '不得强行升档',
   );
+});
+
+test.each([1, 2, 3] as const)(
+  '解析异常过多时升%s档允许低于原目标，分母和单题标准保持',
+  level => {
+    const {analysis, paper} = retainedPaper(10, level, 1);
+    for (const question of analysis.questions.slice(1)) {
+      question.analysisIssues = ['知识点与难度解析待核'];
+    }
+    expect(validateChallengePaper(paper, analysis, level)).toEqual(paper);
+    expect(challengeCoverage(analysis, level, paper)).toMatchObject({
+      total: 10,
+      targetRequired: minimumUpgradeCount(10, level),
+      required: 1,
+      eligible: 1,
+      analysisRetained: 9,
+      upgraded: 1,
+      percent: 10,
+      limitedByAnalysis: true,
+    });
+    paper.questions[0].upgrade.metrics = {};
+    expect(() => validateChallengePaper(paper, analysis, level)).toThrow();
+  },
+);
+
+test('全部小题待核时可以原样保留整卷，明确零升档和答案待核', () => {
+  const {analysis, paper} = retainedPaper(7, 3, 0);
+  analysis.questions.forEach(question => {
+    question.analysisIssues = ['原题解析未完成'];
+  });
+  const preserved = preserveRequiredOriginals(
+    paper,
+    analysis,
+    3,
+  ) as ChallengePaper;
+  expect(validateChallengePaper(preserved, analysis, 3)).toEqual(preserved);
+  expect(challengeCoverage(analysis, 3, preserved)).toMatchObject({
+    total: 7,
+    targetRequired: 5,
+    required: 0,
+    upgraded: 0,
+    percent: 0,
+    eligible: 0,
+  });
+  expect(
+    preserved.answers.every(
+      answer => answer.status === 'requires_review' && !answer.answer,
+    ),
+  ).toBe(true);
+});
+
+test('历史记录只在保留原因注明解析异常时也能识别并正常降低可达题数', () => {
+  const {analysis, paper} = retainedPaper(7, 3, 1);
+  analysis.questions.slice(1).forEach(question => {
+    question.upgradeEligibility = 'retain';
+    question.retentionReason = '题干解析不完整，保持原题';
+  });
+  expect(challengeCoverage(analysis, 3, paper)).toMatchObject({
+    total: 7,
+    targetRequired: 5,
+    required: 1,
+    analysisRetained: 6,
+  });
+  expect(() => validateChallengePaper(paper, analysis, 3)).not.toThrow();
+});
+
+test('旧记录的异常按题号定位，1不会误伤11，复合题号和原图范围按原顺序保留', () => {
+  const {analysis, page} = fixture();
+  analysis.questions = ['1', '11', '12(1)', '12(2)'].map((number, index) => ({
+    ...clone(analysis.questions[0]),
+    id: `source_${index}`,
+    number,
+  }));
+  analysis.unresolvedIssues = ['第1题选项不清', '第12（2）题图表缺失'];
+  const box = {x: 0.1, y: 0.7, width: 0.8, height: 0.2};
+  page.questionRegions = [{number: '12(2)', box}];
+  const prepared = prepareRetainedAnalysis(analysis, [page]);
+  expect(prepared.questions.map(question => question.number)).toEqual([
+    '1',
+    '11',
+    '12(1)',
+    '12(2)',
+  ]);
+  expect(
+    prepared.questions.map(question => question.upgradeEligibility),
+  ).toEqual(['retain', undefined, undefined, 'retain']);
+  expect(prepared.questions[3].originalRegions).toEqual([{pageIndex: 0, box}]);
+  expect(analysis.questions[0].analysisIssues).toBeUndefined();
+});
+
+test('跨页共用材料识别不完整时，保留母题材料页及原小题页，避免仅留题干', () => {
+  const {analysis} = fixture();
+  analysis.questions[0].sourceRefs = [{pageIndex: 1, quote: stem}];
+  analysis.questions[0].materialIds = ['reading'];
+  analysis.questions[0].analysisIssues = ['共用阅读材料识别不完整'];
+  analysis.majorQuestions![0].sourceRefs = [{pageIndex: 0, quote: '阅读材料'}];
+  const prepared = prepareRetainedAnalysis(analysis);
+  expect(
+    prepared.questions[0].originalRegions?.map(region => region.pageIndex),
+  ).toEqual([0, 1]);
+});
+
+test('题干、选项、知识点与难度解析不完整时不造数据，保留原图即可保存分析', () => {
+  const {analysis, page} = fixture();
+  page.text = '数学练习试卷\n一、基础题';
+  page.questionRegions = [
+    {number: '1', box: {x: 0.05, y: 0.1, width: 0.9, height: 0.3}},
+  ];
+  analysis.subjectIdentification!.evidence = [{pageIndex: 0, quote: page.text}];
+  analysis.questions[0] = {
+    ...analysis.questions[0],
+    stem: '',
+    options: [],
+    knowledgePoints: [],
+    sourceRefs: [],
+    difficulty: {rating: null, reasoningSteps: null, explanation: ''},
+  };
+  analysis.knowledgePoints = [];
+  const pending = validateExamAnalysis(analysis, [page]);
+  expect(pending.questions[0]).toMatchObject({
+    stem: '',
+    options: [],
+    knowledgePoints: [],
+    upgradeEligibility: 'retain',
+    difficulty: {rating: null, reasoningSteps: null},
+  });
+  expect(pending.questions[0].originalRegions).toHaveLength(1);
+  const preserved = preserveRequiredOriginals(
+    generated(pending),
+    pending,
+    1,
+  ) as ChallengePaper;
+  expect(() => validateChallengePaper(preserved, pending, 1)).not.toThrow();
+});
+
+test('解析异常造成覆盖受限时即使其余题也不宜变式，零升档也正常输出原卷', () => {
+  const {analysis, paper} = retainedPaper(10, 3, 0);
+  analysis.questions.slice(1).forEach(question => {
+    question.analysisIssues = ['知识范围解析待核'];
+  });
+  expect(challengeCoverage(analysis, 3, paper)).toMatchObject({
+    limitedByAnalysis: true,
+    upgraded: 0,
+    targetRequired: 7,
+  });
+  expect(() => validateChallengePaper(paper, analysis, 3)).not.toThrow();
+});
+
+test('解析异常的依赖链也保留，防止改前问或依赖不可靠结果生成新题', () => {
+  const {analysis} = retainedPaper(7, 3);
+  analysis.questions[1].dependsOnQuestionIds = ['q1'];
+  analysis.questions[1].analysisIssues = ['难度基线待核'];
+  analysis.questions[2].dependsOnQuestionIds = ['q2'];
+  expect([...requiredRetentionIds(analysis)].sort()).toEqual([
+    'q1',
+    'q2',
+    'q3',
+  ]);
+});
+
+test('只共用可读前问的其它小题继续升档，不被异常题的依赖保留连带冻结', () => {
+  const {analysis} = retainedPaper(5, 3);
+  analysis.questions[1].dependsOnQuestionIds = ['q1'];
+  analysis.questions[1].analysisIssues = ['第2题题干解析不完整'];
+  analysis.questions[2].dependsOnQuestionIds = ['q1'];
+  analysis.questions[3].dependsOnQuestionIds = ['q2'];
+  expect([...requiredRetentionIds(analysis)].sort()).toEqual([
+    'q1',
+    'q2',
+    'q4',
+  ]);
+  expect(challengeCoverage(analysis, 3)).toMatchObject({
+    eligible: 2,
+    analysisRetained: 3,
+  });
+});
+
+test('生成模型误改或遗漏异常题时程序恢复原题和原位置，拒绝猜测答案', () => {
+  const {analysis, paper} = retainedPaper(7, 1, 2);
+  analysis.questions[2].analysisIssues = ['参考条件解析待核'];
+  paper.questions.splice(2, 1);
+  paper.answers[2].answer = '模型猜测的答案';
+  const preserved = preserveRequiredOriginals(
+    paper,
+    analysis,
+    1,
+  ) as ChallengePaper;
+  expect(preserved.questions.map(question => question.id)).toEqual(
+    analysis.questions.map(question => question.id),
+  );
+  expect(preserved.questions[2].stem).toBe(analysis.questions[2].stem);
+  expect(preserved.questions[2].upgrade.mode).toBe('retained');
+  expect(
+    preserved.answers.find(answer => answer.questionId === 'q3'),
+  ).toMatchObject({status: 'requires_review', answer: ''});
+  expect(() => validateChallengePaper(preserved, analysis, 1)).not.toThrow();
+});
+
+test('模型遗漏保留题的题组、共享材料与原图时也从原卷恢复，不形成新的解析门槛', () => {
+  const {analysis, paper} = retainedPaper(7, 1, 2);
+  analysis.sections.push({
+    id: 'original-section',
+    title: '二、原题',
+    instructions: '',
+  });
+  analysis.materials = [
+    {
+      id: 'original-material',
+      title: '原公共材料',
+      text: '按原来的四个整数进行分组。',
+      isListening: false,
+      figureIds: ['original-figure'],
+    },
+  ];
+  analysis.figures = [
+    {
+      id: 'original-figure',
+      kind: 'source',
+      pageIndex: 0,
+      box: {x: 0.1, y: 0.1, width: 0.8, height: 0.3},
+      caption: '原图',
+      containsStudentMarks: true,
+    },
+  ];
+  analysis.questions[6] = {
+    ...analysis.questions[6],
+    sectionId: 'original-section',
+    materialIds: ['original-material'],
+    analysisIssues: ['题干识别不完整'],
+  };
+  paper.questions.splice(6, 1);
+  const restored = preserveRequiredOriginals(
+    paper,
+    analysis,
+    1,
+  ) as ChallengePaper;
+  expect(restored.sections).toEqual(analysis.sections);
+  expect(restored.materials).toEqual(analysis.materials);
+  expect(restored.figures).toEqual(analysis.figures);
+  expect(restored.questions[6].id).toBe('q7');
+  expect(() => validateChallengePaper(restored, analysis, 1)).not.toThrow();
 });
 
 test('首次只取3道不同小题，追加沿固定题池每次一题，不因缺标题送整卷', () => {

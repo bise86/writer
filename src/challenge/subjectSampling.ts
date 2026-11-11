@@ -10,6 +10,7 @@ import {
   SubjectSampleVote,
 } from './types';
 import {guessSubjectFromTitle} from './subjectTitle';
+import {validOriginalRegion} from './retention';
 
 type SamplingAnalysis = Pick<
   ExamAnalysis,
@@ -372,7 +373,17 @@ export function subjectVerificationSamples(
 
 function progressiveSample(analysis: SamplingAnalysis, id: string) {
   const question = analysis.questions.find(item => item.id === id);
-  if (!question || !completeEvidence(question.sourceRefs)) {
+  const originalImageOnly =
+    !!question &&
+    Array.isArray(question.sourceRefs) &&
+    question.sourceRefs.length === 0 &&
+    !!question.analysisIssues?.length &&
+    !!question.originalRegions?.length &&
+    question.originalRegions.every(validOriginalRegion);
+  if (
+    !question ||
+    (!completeEvidence(question.sourceRefs) && !originalImageOnly)
+  ) {
     throw new Error('递进抽样题号或原题证据不完整');
   }
   const major = analysis.majorQuestions?.find(
@@ -486,6 +497,9 @@ function progressiveSampleInputs(
       question: copyQuestion(question),
     };
     try {
+      if (!completeEvidence(question.sourceRefs)) {
+        throw new Error('本题仅保留原图，文字证据未完整识别，识科记unknown');
+      }
       if (!section) {
         throw new Error('缺少题组作答说明');
       }

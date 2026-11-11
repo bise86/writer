@@ -14,6 +14,7 @@ import {
   PaperQuestion,
   PaperSection,
   SourceFigure,
+  SourceQuestion,
   SubjectIdentification,
   SubjectVerification,
   ChallengeSubject,
@@ -27,10 +28,12 @@ import {
   isWritingQuestion,
 } from './rules';
 import {validateLearningGuides} from './mastery';
+import {prepareRetainedAnalysis, validOriginalRegion} from './retention';
 import {
   challengeCoverage,
   isRetainedQuestion,
   sourceRequiresRetention,
+  requiredRetentionIds,
 } from './selection';
 import {
   subjectConsensus,
@@ -336,14 +339,16 @@ function question(
   materialIds: string[],
   figureIds: string[],
   check: Check,
+  allowIncomplete = false,
 ) {
   if (!object(value)) {
     check.require(false, `${field} 必须为题目对象`);
     return;
   }
-  for (const key of ['id', 'number', 'sectionId', 'type', 'stem']) {
+  for (const key of ['id', 'number', 'sectionId', 'type']) {
     check.text(value[key], `${field}.${key}`);
   }
+  check.text(value.stem, `${field}.stem`, allowIncomplete);
   check.require(
     sectionIds.includes(value.sectionId),
     `${field}.sectionId 必须对应已有题组`,
@@ -366,7 +371,7 @@ function question(
     check.texts(
       value[key],
       `${field}.${key}`,
-      key === 'knowledgePoints' ? 1 : 0,
+      key === 'knowledgePoints' && !allowIncomplete ? 1 : 0,
       true,
     );
   }
@@ -436,7 +441,9 @@ export function validateChallengePage(
   check.text(
     data.text,
     'text',
-    data.documentType === 'not_exam' || data.documentType === 'uncertain',
+    data.documentType === 'not_exam' ||
+      data.documentType === 'uncertain' ||
+      (strings(data.unreadableParts) && data.unreadableParts.length > 0),
   );
   check.require(
     typeof data.hasStudentAnswers === 'boolean',
@@ -451,6 +458,20 @@ export function validateChallengePage(
       unique(data.figures.map((item: any) => item?.id)),
       'figures.id 不得重复',
     );
+  }
+  if (data.questionRegions !== undefined) {
+    // Optional layout hints must never invalidate usable OCR. Invalid boxes
+    // are discarded; retained questions can fall back to the original page.
+    data.questionRegions = Array.isArray(data.questionRegions)
+      ? data.questionRegions
+          .slice(0, 300)
+          .filter(
+            (region: any) =>
+              object(region) &&
+              nonempty(region.number) &&
+              validOriginalRegion({pageIndex, box: region.box}),
+          )
+      : [];
   }
   return check.finish(data as ChallengePage);
 }
@@ -531,7 +552,11 @@ export function validateSubjectVerification(
           sample.candidateQuestionIds.includes(sample.selectedQuestionId),
         `${path} 抽中小题必须来自该大题完整候选集合`,
       );
-      refs(sample.sourceRefs, `${path}.sourceRefs`, 1);
+      refs(
+        sample.sourceRefs,
+        `${path}.sourceRefs`,
+        data.mode === 'progressive' ? 0 : 1,
+      );
       groups.push(
         data.mode === 'progressive'
           ? sample.selectedQuestionId
@@ -859,10 +884,13 @@ function validateExamContent(
   samplingDraft: boolean,
 ): ExamAnalysis | ExamDraft {
   const parsed = root(value);
-  const data: Record<string, any> = {
-    ...parsed,
-    subjectIdentification: undefined,
-  };
+  const data: Record<string, any> = prepareRetainedAnalysis(
+    {
+      ...parsed,
+      subjectIdentification: undefined,
+    } as ExamAnalysis,
+    pages,
+  );
   const check = new Check();
   check.require(
     data.isExam === true,
@@ -900,7 +928,18 @@ function validateExamContent(
     ['blank', 'answered', 'mixed'].includes(data.answerState),
     'answerState 必须区分空白、已作答或混合',
   );
-  check.texts(data.knowledgePoints, 'knowledgePoints', 1, true);
+  check.texts(
+    data.knowledgePoints,
+    'knowledgePoints',
+    Array.isArray(data.questions) &&
+      data.questions.every(
+        (item: any) =>
+          object(item) && sourceRequiresRetention(item as SourceQuestion),
+      )
+      ? 0
+      : 1,
+    true,
+  );
   check.texts(data.warnings, 'warnings');
   check.texts(data.unresolvedIssues, 'unresolvedIssues');
   if (pages.some(page => page.unreadableParts.length)) {
@@ -962,6 +1001,7 @@ function validateExamContent(
         parsedMaterials.map(material => material?.id),
         sourceFigures.map(sourceImage => sourceImage?.id),
         check,
+        object(item) && sourceRequiresRetention(item as SourceQuestion),
       );
       if (!object(item)) {
         return;
@@ -977,6 +1017,25 @@ function validateExamContent(
       }
       if (item.upgradeEligibility === 'retain') {
         check.text(item.retentionReason, `${field}.retentionReason`);
+      }
+      if (
+        item.originalRegions !== undefined &&
+        check.array(item.originalRegions, `${field}.originalRegions`, 0, 50)
+      ) {
+        item.originalRegions.forEach((region: any, regionIndex: number) => {
+          check.require(
+            validOriginalRegion(region) &&
+              pages.some(page => page.pageIndex === region.pageIndex),
+            `${field}.originalRegions[${regionIndex}] 必须对应原页内的有效原题范围`,
+          );
+        });
+      }
+      if (!nonempty(item.stem)) {
+        check.require(
+          sourceRequiresRetention(item as SourceQuestion) &&
+            item.originalRegions?.length,
+          `${field} 未识别完整题干时必须保留原图范围，不能生成空题`,
+        );
       }
       if (item.dependsOnQuestionIds !== undefined) {
         check.texts(
@@ -1020,11 +1079,15 @@ function validateExamContent(
         check.require(false, `${field}.difficulty 必须有估计难度及依据`);
       } else {
         check.require(
-          integer(item.difficulty.rating, 1, 10),
+          integer(item.difficulty.rating, 1, 10) ||
+            (sourceRequiresRetention(item as SourceQuestion) &&
+              item.difficulty.rating === null),
           `${field}.difficulty.rating 必须为1..10估计等级`,
         );
         check.require(
-          integer(item.difficulty.reasoningSteps, 0, 50),
+          integer(item.difficulty.reasoningSteps, 0, 50) ||
+            (sourceRequiresRetention(item as SourceQuestion) &&
+              item.difficulty.reasoningSteps === null),
           `${field}.difficulty.reasoningSteps 必须为0..50整数`,
         );
         check.text(
@@ -1032,7 +1095,17 @@ function validateExamContent(
           `${field}.difficulty.explanation`,
         );
       }
-      if (check.array(item.sourceRefs, `${field}.sourceRefs`, 1, 50)) {
+      if (
+        check.array(
+          item.sourceRefs,
+          `${field}.sourceRefs`,
+          sourceRequiresRetention(item as SourceQuestion) &&
+            item.originalRegions?.length
+            ? 0
+            : 1,
+          50,
+        )
+      ) {
         item.sourceRefs.forEach((reference: unknown, refIndex: number) => {
           if (!object(reference)) {
             check.require(false, `${field}.sourceRefs[${refIndex}] 必须为对象`);
@@ -1469,6 +1542,7 @@ function figure(
   index: number,
   analysis: ExamAnalysis,
   check: Check,
+  preservedInOriginal = false,
 ): void {
   const field = `figures[${index}]`;
   if (!object(value)) {
@@ -1489,7 +1563,7 @@ function figure(
       `${field} 不得修改原图来源、裁剪位置或隐瞒学生标记`,
     );
     check.require(
-      source?.containsStudentMarks === false,
+      source?.containsStudentMarks === false || preservedInOriginal,
       `${field} 原图含学生作答标记，必须用drawing重建干净图形，不能把学生答案印进新试卷`,
     );
   } else if (value.kind === 'drawing') {
@@ -1504,6 +1578,7 @@ export function validateChallengePaper(
   analysis: ExamAnalysis,
   level: ChallengeLevel,
 ): ChallengePaper {
+  analysis = prepareRetainedAnalysis(analysis);
   if (
     analysis.subjectIdentification?.status !== 'confirmed' ||
     analysis.subjectIdentification.subject !== analysis.subject
@@ -1514,10 +1589,7 @@ export function validateChallengePaper(
   }
   const data = root(value);
   const check = new Check();
-  check.require(
-    analysis.isExam === true && analysis.unresolvedIssues.length === 0,
-    '原试卷尚有未解决内容，必须先补齐或重新解析，不能生成新卷',
-  );
+  check.require(analysis.isExam === true, '原卷必须确认为试卷');
   check.require(
     [1, 2, 3].includes(level) && data.level === level,
     'level 必须与用户选择的1..3档完全一致',
@@ -1536,6 +1608,7 @@ export function validateChallengePaper(
           .map((item: any) => item.id)
       : [],
   );
+  const mandatoryRetentionIds = requiredRetentionIds(analysis);
   const parsedSections = sections(data.sections, check);
   check.require(
     sameList(
@@ -1563,7 +1636,27 @@ export function validateChallengePaper(
     : [];
   if (check.array(data.figures, 'figures', 0, 300)) {
     generatedFigures.forEach((item, index) =>
-      figure(item, index, analysis, check),
+      figure(
+        item,
+        index,
+        analysis,
+        check,
+        analysis.questions
+          .filter(
+            sourceItem =>
+              sourceItem.figureIds.includes(item?.id) ||
+              analysis.materials.some(
+                material =>
+                  sourceItem.materialIds.includes(material.id) &&
+                  material.figureIds.includes(item?.id),
+              ),
+          )
+          .every(
+            sourceItem =>
+              retainedQuestionIds.has(sourceItem.id) &&
+              !!sourceItem.originalRegions?.length,
+          ),
+      ),
     );
     check.require(
       unique(generatedFigures.map(item => item?.id)),
@@ -1625,6 +1718,8 @@ export function validateChallengePaper(
         parsedMaterials.map(material => material?.id),
         generatedFigures.map(itemFigure => itemFigure?.id),
         check,
+        !!analysis.questions[index] &&
+          sourceRequiresRetention(analysis.questions[index]),
       );
       const source = analysis.questions[index];
       if (!object(item) || !source) {
@@ -1684,7 +1779,7 @@ export function validateChallengePaper(
         `${field} 听力不能标为升档`,
       );
       check.require(
-        !sourceRequiresRetention(source) || source.isListening || retained,
+        !mandatoryRetentionIds.has(source.id) || source.isListening || retained,
         `${field} 原题分析存疑或标记保留，不得强行升档`,
       );
       check.require(
@@ -1905,7 +2000,7 @@ export function validateChallengePaper(
     });
     const coverage = challengeCoverage(analysis, level, data as ChallengePaper);
     check.require(
-      coverage.upgraded >= coverage.required,
+      coverage.limitedByAnalysis || coverage.upgraded >= coverage.required,
       `整卷升${level}档至少${coverage.minimumPercent}%题实质升档：共${coverage.total}道非听力题须至少${coverage.required}题，实际${coverage.upgraded}题；听力及保留题不计入升档`,
     );
   }

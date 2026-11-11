@@ -7,7 +7,10 @@ import {
   challengeCoverage,
   CHALLENGE_SELECTION_POLICY_VERSION,
   requiredRetentionIds,
+  preserveRequiredOriginals,
+  retainEntirePaper,
 } from './selection';
+import {prepareRetainedAnalysis, validOriginalRegion} from './retention';
 import {buildChallengePdfs} from './pdf';
 import {
   CHALLENGE_REVIEW_PROTOCOL_VERSION,
@@ -48,6 +51,7 @@ import {
   SubjectIdentification,
   SubjectVerification,
   SubjectSampleVote,
+  OriginalQuestionRegion,
 } from './types';
 import {
   buildSubjectVerification,
@@ -84,6 +88,9 @@ const PAGE_EXAMPLE: ChallengePage = {
   hasStudentAnswers: false,
   unreadableParts: [],
   figures: [],
+  questionRegions: [
+    {number: '1', box: {x: 0.05, y: 0.15, width: 0.9, height: 0.2}},
+  ],
 };
 const QUESTION_EXAMPLE = {
   id: 'q1',
@@ -240,6 +247,7 @@ async function requestJson<T>(
   instructions: string,
   options: ChallengeRunOptions,
   validate: (value: unknown) => T,
+  onCannotUpgrade?: () => T,
 ): Promise<T> {
   const history: HistoryMessage[] = [];
   for (let attempt = 0; attempt < MAX_CORRECTIONS; attempt += 1) {
@@ -278,6 +286,9 @@ async function requestJson<T>(
           );
         }
         if (result.cannotUpgrade === true) {
+          if (onCannotUpgrade) {
+            return onCannotUpgrade();
+          }
           throw new ChallengeBlockedError(
             typeof result.reason === 'string'
               ? result.reason
@@ -332,6 +343,121 @@ async function clearPreviousFiles(record: ChallengeRecord) {
     }
   }
 }
+
+async function locateRetainedOriginals(
+  id: string,
+  runId: string,
+  analysis: ExamAnalysis,
+  pageUris: string[],
+  options: ChallengeRunOptions,
+): Promise<ExamAnalysis> {
+  const wholePage = (region: OriginalQuestionRegion) =>
+    region.box.x === 0 &&
+    region.box.y === 0 &&
+    region.box.width === 1 &&
+    region.box.height === 1;
+  const questions = analysis.questions.map(question => ({...question}));
+  const warnings = [...analysis.warnings];
+  for (let pageIndex = 0; pageIndex < pageUris.length; pageIndex += 1) {
+    const targets = questions.filter(question =>
+      question.originalRegions?.some(
+        region => region.pageIndex === pageIndex && wholePage(region),
+      ),
+    );
+    if (!targets.length) {
+      continue;
+    }
+    try {
+      const image = await imageAsDataUri(pageUris[pageIndex]);
+      const regions = await requestJson(
+        id,
+        runId,
+        'analysis',
+        `定位第${pageIndex + 1}页保留题`,
+        [
+          {
+            role: 'user',
+            content: [
+              {
+                type: 'input_text',
+                text: JSON.stringify({
+                  task: '挑战保留原题定位',
+                  pageIndex,
+                  questions: targets.map(question => ({
+                    questionId: question.id,
+                    number: question.number,
+                    sourceRefs: question.sourceRefs,
+                  })),
+                }),
+              },
+              {type: 'input_image', image_url: image, detail: 'high'},
+            ],
+          },
+        ],
+        '只定位原图范围，不重新解析或修改任何题。输出{regions:[{questionId:"给定ID",boxes:[{x:0.05,y:0.1,width:0.9,height:0.2}]}]}。框相对左上角归一化，必须完整覆盖该题在本页的原题干、选项、材料图示和答题位置；不要裁掉模糊、遮挡或已作答的部分，不删笔迹、不补字。跨页只框本页片段，依赖共同母题时包含必要共同条件。无法可靠定位的题boxes为空或省略，不猜框；程序将保留对应原页。不得因为解析异常或无法定位拒绝其它题生成。',
+        options,
+        value => {
+          const result = value as {
+            regions?: {
+              questionId: string;
+              boxes: OriginalQuestionRegion['box'][];
+            }[];
+          };
+          if (
+            !Array.isArray(result?.regions) ||
+            result.regions.length > targets.length ||
+            new Set(result.regions.map(region => region?.questionId)).size !==
+              result.regions.length ||
+            result.regions.some(
+              region =>
+                !targets.some(question => question.id === region?.questionId) ||
+                !Array.isArray(region.boxes) ||
+                region.boxes.length > 10 ||
+                region.boxes.some(
+                  box => !validOriginalRegion({pageIndex, box}),
+                ),
+            )
+          ) {
+            throw new ChallengeValidationError([
+              '保留题定位必须只引用给定题ID及本页内有效矩形，不能猜补题文',
+            ]);
+          }
+          return result.regions;
+        },
+      );
+      for (const target of targets) {
+        const boxes = regions.find(
+          region => region.questionId === target.id,
+        )?.boxes;
+        if (boxes?.length) {
+          target.originalRegions = target.originalRegions!.flatMap(region =>
+            region.pageIndex === pageIndex && wholePage(region)
+              ? boxes.map(box => ({pageIndex, box: {...box}}))
+              : [region],
+          );
+        }
+      }
+    } catch (_) {
+      ensureRunning(options.signal);
+      await requiredRecord(id);
+      // Failure to improve layout must not become a new parsing gate.
+    }
+    if (
+      targets.some(question =>
+        question.originalRegions?.some(
+          region => region.pageIndex === pageIndex && wholePage(region),
+        ),
+      )
+    ) {
+      warnings.push(
+        `第${
+          pageIndex + 1
+        }页部分保留题无法精确定位，按原题位置附对应原页，不影响其余题升档。`,
+      );
+    }
+  }
+  return {...analysis, questions, warnings: [...new Set(warnings)]};
+}
 function examDraftInstructions(confirmed?: SubjectIdentification) {
   return `挑战整卷草稿解析。依据完整逐页印刷文字提取原卷标题、大小题层级、全部叶子题、材料、图和实际核心知识与难度估计；此时不加载任何学科升档标准，不把草稿科目当已确认，不提前生成新题。${UNTRUSTED}
 输出完整JSON，结构如${JSON.stringify({
@@ -351,11 +477,11 @@ function examDraftInstructions(confirmed?: SubjectIdentification) {
         dependsOnQuestionIds: [],
       },
     ],
-  })}，示例只展示格式，实际必须涵盖所有题目。不是试卷返回{isExam:false,reason:'真实原因'}，缺页、遮挡导致原印刷题干或图表不完整时保留unresolvedIssues，不能猜补。若印刷原题完整，仅知识点判断、难度或变式可行性存疑，在对应题analysisIssues写明并标upgradeEligibility:retain与retentionReason，不把局部分析不确定升级为整卷阻塞。
+  })}，示例只展示格式，实际必须涵盖所有题目。不是试卷返回{isExam:false,reason:'真实原因'}，缺页、遮挡、识别失败或题干/选项/图表不完整时保留unresolvedIssues，同时在对应题analysisIssues写明并标upgradeEligibility:retain与retentionReason，局部异常绝不阻塞其余题升档。任何不能可靠还原的题保留在原数组位置，originalRegions采用原页questionRegions中对应题号的pageIndex与box，跨页逐段列出；无法定位题框时保留对应原页完整范围{x:0,y:0,width:1,height:1}，不能省题或猜补文字。确实无法识别的stem可为空、knowledgePoints可空、difficulty.rating/reasoningSteps可为null，必须有明确保留原因及原图范围，不能用猜测补齐结构。
 title是实际原卷标题，titleEvidence逐字引用印刷标题并给pageIndex；无可核实标题用空数组，不编造科目标题。majorQuestions按原印刷大题/材料父题组织，每项id/title/sourceRefs；sourceRefs保留母题公共条件及作答说明，不仅标题。复合解答19(1)、19(2)归第19大题，不能把所有解答题并为一组；整组选择/填空按其原大题分组。层级确实无法核实时majorQuestions可空并在warnings说明，仍可按原小题与必要上下文抽样识科，不伪造分组。
 questions拆到可独立变种的叶子小题，每题${JSON.stringify(
     QUESTION_EXAMPLE,
-  )}全部字段、sourceRefs、difficulty及majorQuestionId。ID稳定唯一，number保留12(1)等原号，type精确，分值/时长不明确用null，缺材料或图用空数组。每题sourceRefs必须逐字引用对应pages.text中实际题干/选项的连续内容；pageIndex从0开始。每叶题归实际majorQuestionId，前问依赖用dependsOnQuestionIds列已存在原题ID，无依赖空数组；明确‘由(1)/前问/上述结果’不可丢失必要前问。大题公共题干、阅读文章、实验条件、对话和作文材料放materials并让有关叶题逐一关联，完整保留共享图与作答说明。
+  )}全部字段、sourceRefs、difficulty及majorQuestionId。ID稳定唯一，number保留12(1)等原号，type精确，分值/时长不明确用null，缺材料或图用空数组。每题sourceRefs必须逐字引用对应pages.text中实际题干/选项的连续内容；仅原图保留且确实没有可读题文时sourceRefs可空，必须提供有效originalRegions，后续该抽样题只能记unknown，不能伪造引文；pageIndex从0开始。每叶题归实际majorQuestionId，前问依赖用dependsOnQuestionIds列已存在原题ID，无依赖空数组；明确‘由(1)/前问/上述结果’不可丢失必要前问。大题公共题干、阅读文章、实验条件、对话和作文材料放materials并让有关叶题逐一关联，完整保留共享图与作答说明。
 materials的title/text逐字保留原页可见印刷内容，不改写或伪造‘听力原文/转写’标识；听力问题和学生答案不能当录音转写。sections保留印刷题组/作答指示；figures只能逐字采用逐页图形信息、坐标、caption和containsStudentMarks，不丢图。原学生填写、辅助线、批改不作条件或真值。
 subject使用科目索引，subjectLabel是原卷课程初判，只依据原印刷标题和实际题型/任务，英语文章谈数理不改英语，不能按文件名或学生笔迹推科；任何题真实无法归属、明显不相关混科都在unresolvedIssues指出，不因标题或多数题而忽略。${
     confirmed
@@ -751,7 +877,8 @@ export function analyzeChallenge(
           })}。
 documentType只能exam/exam_continuation/not_exam/uncertain；非试卷图片必须如实标not_exam，试卷材料续页可标exam_continuation，无法判断时标uncertain，不能凭用户名称当试卷。
 完整录入印刷题号、题干、题型说明、选项、分值、共用材料和图表文字。无论学生已写/空白，hasStudentAnswers如实记录，但text不得混入学生勾选、填答、解题步骤和教师批改；不能把学生答案当参考答案。数学公式用清楚可读的Unicode或ASCII，如x^2、(a+b)/c，不能改条件或忽略符号。
-无法辨认/缺页/学生字迹遮住关键印刷内容时，unreadableParts逐一写清，不能猜补。图表必须识别所有标题、坐标、单位、标签、数值与关系。
+questionRegions逐题记录原印刷题号number和覆盖完整题干、选项、图表及答题区的归一化box，按原顺序，不要把部分不清的题丢掉。跨页题在各页记录同一题号的本页片段，难以拆分的小题可共用完整母题框，不臆造被遮住的内容。
+无法辨认/缺页/学生字迹遮住关键印刷内容时，unreadableParts逐一写清具体题号或材料及异常，不以一题的问题笼统标记整页；不能猜补。图表必须识别所有标题、坐标、单位、标签、数值与关系。
 figures为实际必要图表，每项{id:'p${pageIndex}-f1',kind:'source',pageIndex:${pageIndex},box:{x:0.1,y:0.2,width:0.5,height:0.3},caption:'详细转述图中全部条件/数值/标签关系，不包含作答',containsStudentMarks:false}。box是相对原页左上角的0..1矩形，只框图；若图框含学生答题/标记或无法确定干净，containsStudentMarks必须true，后续不得直接复用。没有图时为空。`,
           options,
           value => validateChallengePage(value, pageIndex),
@@ -895,7 +1022,7 @@ figures为实际必要图表，每项{id:'p${pageIndex}-f1',kind:'source',pageIn
           analysis,
           title: analysis.title,
           progress: analysis.unresolvedIssues.length
-            ? '原卷已解析，请补齐所列关键信息后再升档'
+            ? '原卷已解析，局部待核题将按原位置保留，其余题可继续升档'
             : '原卷解析完成，可选择1～3档升难',
         },
         options,
@@ -919,6 +1046,7 @@ function paperExample(analysis: ExamAnalysis, level: ChallengeLevel) {
           'analysisIssues',
           'upgradeEligibility',
           'retentionReason',
+          'originalRegions',
         ].includes(key),
     ),
   );
@@ -1104,6 +1232,7 @@ function generationInstructions(
       masteryFramework: CHALLENGE_RULES.masteryFramework,
       selectionPolicy: CHALLENGE_RULES.selectionPolicy,
       coverage: challengeCoverage(analysis, level),
+      requiredRetentionIds: [...requiredRetentionIds(analysis)],
       sources: CHALLENGE_RULES.sources.filter(source =>
         policy.sourceIds.includes(source.id),
       ),
@@ -1133,8 +1262,8 @@ function generationInstructions(
     challengeCoverage(analysis, level).required
   }/${
     challengeCoverage(analysis, level).total
-  }道非听力题实质升档。保留题和听力不计入分子。优先选可可靠命题、有提升空间的题，难以提高或分析不准确但原印刷完整的题可以原样保留，不为凑数超纲或只改标点。
-每题upgrade.mode为upgraded或retained；retained必须给具体retentionReason，保留原stem、options、answerLines、核心集合、材料和图形条件，changes/pitfalls为空、所有metrics为0、方向/连接/深挖证据为空。任何保留题共用的材料、作答说明与图不能被其它升档题暗改；保留题依赖的前问也应保留。analysisIssues非空或upgradeEligibility=retain的题必须保留。保留题不强加本档深度/学习说明配额，仍独立核验原题答案；若确实无法可靠求解，答案status=requires_review，answer留空或明确待核、explanation具体说明原因，不能猜测；已升档题必须给verified答案并满足全部本档标准。听力继续沿用requires_audio协议。所有变化说明只概述条件/设问怎样增强，不泄露正确选项、数值答案或完整解法。
+  }道非听力题实质升档。保留题和听力不计入分子。以上20%/40%/65%仍是原目标，coverage.targetRequired保留原目标题数，coverage.required是扣除解析异常及其依赖后本次可达的参考题数。coverage.limitedByAnalysis=true时，不足原目标是允许的正常结果，不得返回cannotUpgrade或把此事判成失败；如没有可靠可升档题，全部原样保留并如实说明。优先选可可靠命题、有提升空间的题，难以提高、解析失败或内容不完整的题均可原样保留，不为凑数超纲或只改标点。
+每题upgrade.mode为upgraded或retained；retained必须给具体retentionReason，保留原stem、options、answerLines、核心集合、材料和图形条件，changes/pitfalls为空、所有metrics为0、方向/连接/深挖证据为空。任何保留题共用的材料、作答说明与图不能被其它升档题暗改；保留题依赖的前问也应保留。analysisIssues非空、upgradeEligibility=retain或requiredRetentionIds要求保留的题必须保留；originalRegions只供程序在该题原位置输出原图，不允许凭空补全这些题。保留的原图可含原来已写的笔迹，忠实保留而不当作真值；此例外仅适用于保留题，升档题不得混入学生作答。保留题不强加本档深度/学习说明配额，仍独立核验原题答案；若确实无法可靠求解，答案status=requires_review，answer留空或明确待核、explanation具体说明原因，不能猜测；已升档题必须给verified答案并满足全部本档标准。听力继续沿用requires_audio协议。所有变化说明只概述条件/设问怎样增强，不泄露正确选项、数值答案或完整解法。
 知识范围逐题固定，不新增概念、定理、单词语法考点或教材范围。数学强化奥数式策略思维和探究深度，允许用原核心知识重组出原参考解法没有使用的新策略，不能锁死原解法或默认未给出的竞赛定理。逆向、结构、构造、分类、对称、等价、极端、不变量等按原任务实际选择，巧解可以更短；新增步骤与表征数量在数学仅据实记录，不作为深度达标的替代。英语听力完全不变，非听力按语篇、推断、语用、证据等实际任务深化，作文强化任务/论证/语体或情节逻辑；语文及其它科按本学科deepDirections新增实质提升。
 完整保持原题ID、number、顺序、题型、选项label及数量、分值、节次/材料/图关系和总分/时长。仅选中升档的非听力题必须有可解且实质性的局部变种，不能只改空格/标点、增大数字、冗长表述或换题型。所有适用metric必须有实际题文支撑，changes、pitfalls列真实且不同的内容，不虚报数字。难度rating是估计，不能当真实正确率。
 按当前科目的subjectBlueprint落实本档difficultyProgression质性目标、原题型questionTypeGuidance和masteryAcceptance：必须体现本科实际难点与错误机制，不能只达到通用计数。coreDomains仅作导航，蓝图并列目标及设计仅取原题已有维度，scopeExclusions优先；不因目录或蓝图列出某章，就向本题加入兄弟知识、数值验算、实验、证明或写作任务。只接收与原题相符的科目模块，不能借其它学科标准补难。
@@ -1147,14 +1276,14 @@ function generationInstructions(
 三档masteryRequirements的minMisconceptions、minTransferLinks、minSelfChecks按每题整体累计：每核心仍须五维完整，不机械强加每核心三个错因。错因须是不同错误来源，形成错误推理→具体错因→正确做法。每条transferLinks给kind、originalCondition、changedCondition、invariant、adaptation、sourceQuote、problemQuote、solutionQuote；source_to_variant解释真实原题→本变式的变化及不变原理，每题至少一项；升3档还须condition_contrast，解释当前条件改变/去掉时结论的真实限度，只在学习解析作对比，不另出题。仅把数换大或复述原条件不计迁移。跨核心共享同一错因或同一变化只计一次。
 每条selfChecks给kind(conditions/reasoning/result)、method、expected、solutionQuote；全题升1/2/3档至少1/2/3类不同自检，分别可检查条件完整、推理合法、结果是否满足约束。必须给实际操作与可验证预期，不能只写“检查无误”或把正确结论原样当自检。写作、阅读等按原任务检查范围/证据/交际效果，不强套数值验算。所有引文逐字引用本题原题、新题及对应答案explanation/scoringPoints，不能以learningGuide自身作证或借用别题。听力learningGuide必须空，不能借此新增听力训练或猜答案。
 史料的直接引文、人物、年代与事实不得为制造难点伪改，优先改变设问、选项或对既有信息的组织；假设条件须明确标为假设，不能伪装史实。英语续写与语文叙事可在原事实、人物动机、线索、段首和文体约束内合理发展新细节，不机械禁止合理想象。开放阅读与写作的自检预期给可核查的证据范围、逻辑和任务完成判据，不要求唯一措辞或唯一情节。
-图题引文可逐字取自本题稳定figureIds或原关联材料图所对应的已核实caption：原引文用原图的纯印刷条件转述，新题引文用合法复用/重绘图的真实条件转述；不能借别题图、新图倒推原条件或把学生辅助线当已知。原图含笔迹但印刷条件清楚时可据核实caption重建，遮挡不明则须补拍；引文可定位仍须由原图综合校核验证学科含义。
+图题引文可逐字取自本题稳定figureIds或原关联材料图所对应的已核实caption：原引文用原图的纯印刷条件转述，新题引文用合法复用/重绘图的真实条件转述；不能借别题图、新图倒推原条件或把学生辅助线当已知。原图含笔迹但印刷条件清楚时可据核实caption重建，遮挡不明则原题原图保留，不阻塞其它题；引文可定位仍须由原图综合校核验证学科含义。
 独立求解、自检及图文一致性一律按本变式实际条件、数据与同步新图进行，源卷旧值仅用于知识范围及原→新比较，不能当成新答案真值。other只是已确认课程的路由分类，必须按analysis.subjectIdentification.courseName选该实际课程的适用分支，不能让美术、音乐等借信息技术/通用技术目录新增知识。
 英语听力题及选项、材料、图完全保留；没有原录音或明确原文转写时答案只能requires_audio、明确待原录音核验，不能猜选项或拿学生作答当真值。其它已升档题答案status为verified并独立求解；保留题无法可靠求解时明确requires_review待核，给出解析和评分点；选择答案用原选项label表示，多选不重复，作文给高要求下的范文/要点和评分参考，不能只有泛化建议。
-材料变种不能破坏关联小题可解性，保持听力共享材料不动。图形不能丢掉：只可原框复用已确认不含学生作答的source图，坐标/标记不得伪改；含学生标记的图须按原几何关系/数据重绘为drawing（左上坐标系，width/height及line/circle/rect/text元素），新条件不得与图矛盾。无法安全重建时不得输出带原作答的图。
+材料变种不能破坏关联小题可解性，保持听力共享材料不动。图形不能丢掉：只可原框复用已确认不含学生作答的source图，坐标/标记不得伪改；含学生标记的图须按原几何关系/数据重绘为drawing（左上坐标系，width/height及line/circle/rect/text元素），新条件不得与图矛盾。无法安全重建时原题原图保留；原图保留题可忠实带原有笔迹，其它升档题仍不得输出原作答。
 输出完整JSON，字段结构例如${JSON.stringify(
     paperExample(analysis, level),
   )}。示例只展示一道题的字段结构，实际必须按原顺序输出全部题与恰好匹配的全部答案，保留空数组/明确null；示例占位文字不是可用题目或证据，必须替换为真实变种与解答。新卷stem/material不得夹带答案、学生原作答、评审文字或模型指令。数学表示使用可直接阅读的Unicode或ASCII，不使用待渲染LaTeX/HTML。不要仅返回改动差异。
-允许个别题原样保留，不因单题无法升档拒绝整卷；只有保留不宜升档题后，符合本档难度要求的非听力升档题数仍不足最低覆盖比例，才返回{cannotUpgrade:true,reason:'说明可升档数、所需题数与具体局限并建议降低档位'}，不得伪造升档或超纲凑指标。`;
+允许个别题原样保留，不因单题解析异常、内容不完整或无法升档拒绝整卷。因解析异常而不足原目标时正常输出完整试卷与答案，待核题原图按原位置保留，答案明确待核；存在解析异常且coverage.limitedByAnalysis=true时coverage.required也仅作参考，不再因比例拒绝输出；优先尽量升档可靠题，不得因低于coverage.targetRequired返回cannotUpgrade，不得伪造升档或超纲凑指标。`;
 }
 function qualityInstructions(
   paper: ChallengePaper,
@@ -1170,9 +1299,9 @@ function qualityInstructions(
     difficulty:
       '主审所选三档的真实增量、易错难点、策略依赖和五维掌握训练；识别数字/术语/重复计数凑难度，验证迁移、自检能发现真实错误。',
     answers:
-      '独立求解全部题，核对答案、可解性、唯一性或开放题判据和评分点；3角色时同时主审图文一致、作答空间和题卷答案隔离。',
+      '独立求解已升档题，核对答案、可解性、唯一性或开放题判据和评分点；待核保留题核对原样呈现与明确待核，不要求猜补原条件；3角色时同时主审图文一致、作答空间和题卷答案隔离。',
     presentation:
-      '核对题面完整、图形与数据/标记一致、材料关联及原作答格式、版面和答案侧内容隔离，不能把学生笔迹或答案印入新卷。',
+      '核对题面完整、图形与数据/标记一致、材料关联及原作答格式、版面和答案侧内容隔离，升档题不能混入学生笔迹或原作答；原图保留题忠实保留，不能因此判失败。',
   };
   return `挑战标准一致性校核。${
     roundtableSize === 0
@@ -1181,16 +1310,16 @@ function qualityInstructions(
           role,
           roundtableSize,
         )}”角色，只给自己的role:${role}报告，不代替其它角色或凭多数意见投票`
-  }，必须先独立求解，不能只复述候选答案。${UNTRUSTED}
+  }，已升档题必须先独立求解，不能只复述候选答案；解析异常的保留题核对原样、原位置与明确待核，不要求补齐或猜测原条件。${UNTRUSTED}
 本席职责：${
     roundtableSize === 0
       ? '综合承担全部学科、范围、难度、答案与图文检查。'
       : focus[role]
   } 每位仍须覆盖全部题目并报告发现的实质问题，不能因别的角色负责而放过明确错误；同一候选版本须全部角色通过才发布，任何反对均会汇总修复并全员重审。
 当前提供结构化新卷、绘图数据及本次附带的原图，题面呈现检查针对内容、材料图形关系与作答空间规划；最终PDF尚待通过后渲染，不得假称已看到或逐页验收最终PDF。
-按已定稿标准检查：逐题同类型与原顺序/分值、知识点实际内容不超原题（不能只看自报标签）、所选档位指标有真实增量、题目可解且答案唯一/评分点成立、作文要求更高而文体不变、听力题与材料完全不动、缺音频答案必须待核、新卷不含学生作答、图文与版式可用。
+按已定稿标准检查：逐题同类型与原顺序/分值、知识点实际内容不超原题（不能只看自报标签）、所选档位指标有真实增量、题目可解且答案唯一/评分点成立、作文要求更高而文体不变、听力题与材料完全不动、缺音频答案必须待核、升档题不含学生作答、图文与版式可用；原图保留题允许忠实包含原有笔迹，不能据此当参考答案。
 独立核对本科学科蓝图：本档质性目标、典型错误机制、题型设计和掌握验收是否在新题及答案中有实际落点，不能仅满足通用数量；全部导航和并列要求须按原题实际维度择用，不允许全章/兄弟子点或其它科目混入。
-先按整卷非听力叶子题为分母核查1/2/3档至少20%/40%/65%题实质升档且向上取整，听力与retained题不计升档。保留题逐字复现原题、原条件及关联材料图，依赖前问也保持；不能一边标保留一边暗改共享材料。保留题只要求可靠原答案或明确requires_review待核，不强加变式迁移配额；已升档题仍必须满足全部本档深度、指标和五维掌握要求。不可为凑比例削弱单题质量或超纲。下面的深化和v3学习说明要求仅用于upgraded题。
+先按整卷非听力叶子题为分母记录原目标1/2/3档20%/40%/65%，听力与retained题不计升档。无解析异常造成的覆盖限制时仍按coverage.required检查最低题数；存在coverage.limitedByAnalysis=true时它仅作参考，不构成失败门槛；解析异常及其依赖需原样保留，coverage.limitedByAnalysis=true时低于原目标属于正常完成，不能因此判revise或拒绝输出。全部题均待核时也允许全卷原样保留，不伪造升档。原题识别不完整、原图模糊和保留题答案待核是已声明的来源局限，只核对是否保留在原位置与是否明确待核，不能要求补拍/补齐后才通过，也不能编造条件修复。保留题逐字复现原题、原条件及关联材料图，依赖前问也保持；不能一边标保留一边暗改共享材料。保留题只要求可靠原答案或明确requires_review待核，不强加变式迁移配额；已升档题仍必须满足全部本档深度、指标和五维掌握要求。不可为凑比例削弱单题质量或超纲。下面的深化和v3学习说明要求仅用于upgraded题。
 重点独立核查深化证据：方向符合原任务且相对原题新增或加强，引用确实支持所称思路和解题步骤，必要性是所给有效解法的实际作用而非声称唯一解法；多个方法共同推进且整体连通，不能同一步换名、并列标签凑档。数学允许由原知识形成新策略或更短巧解，不以新增步骤数替代深度；focused路线须逐项验证不同关键决策与真实边界，普通代入/移项/重复配对或例行验算不能充数。检查不变量对全部允许操作成立、端点对全局的控制依据、反例确属定义域、图形已知没有取自外观或学生作答。其它学科逐项验证模型适用、证据限度、因果链/反事实或任务语体等方向在本题中实际起作用，拒绝只换术语。选择/填空不许新增独立证明任务，完整推理可在答案解析中。正式来源用于确定方向，三档阈值是项目规则而非官方评分线。
 再逐原核心审查v3五维掌握训练：题目是否实际触发所称易错难点，答案是否讲清原理与适用条件、错误推理/错因/纠正、原题→变式的不变关系及调整、可执行自检及真实预期；不能让题目仍浅而只把解析加长。目录命中不授予整章知识或另一学段许可，source_specific必须有原题引文和合理缺项/不适用说明。learningGuide的引用存在只是结构证据，必须独立判断引文是否实质支持本知识点，纠错是否真纠正，反事实是否真改变可行性/结论，自检能否暴露具体错解，不能同义重写凑数。每核心五维完整，但数量按全题不同错误来源/迁移对照/自检种类累计，跨核心共用只计一次；3档须原→新和条件反事实两种迁移以及条件/推理/结果三类自检。阅读/作文按原文体和任务深化，不套不相干公式验算或另出试题。masteryStatus只可training_only；没有学生后续新作答，不得从生成成功、旧卷填写或详解内容推断其已经完全掌握、具体缺陷或个人正确率，需审查学习说明中此类无依据结论并要求修复。原阅读材料中的人物叙述不当作对当前用户的能力认证。
 额外核对史料原引文和事实未被伪改，假设没有冒充史实；续写与叙事的合理新细节是否遵守原事实/动机/线索，不能误禁有据想象。开放题按合理答案和证据判据审查，不强加唯一措辞。
@@ -1226,7 +1355,13 @@ async function checkPaper(
     ...new Set(
       analysis.figures
         .filter(figure => paper.figures.some(item => item.id === figure.id))
-        .map(figure => figure.pageIndex),
+        .map(figure => figure.pageIndex)
+        .concat(
+          analysis.questions.flatMap(
+            question =>
+              question.originalRegions?.map(region => region.pageIndex) || [],
+          ),
+        ),
     ),
   ];
   const results: ChallengeReview[] = [];
@@ -1245,6 +1380,8 @@ async function checkPaper(
       metricDefinitions: CHALLENGE_RULES.metricDefinitions,
       depthPolicy: CHALLENGE_RULES.depthPolicy,
       masteryFramework: CHALLENGE_RULES.masteryFramework,
+      coverage: challengeCoverage(analysis, paper.level),
+      requiredRetentionIds: [...requiredRetentionIds(analysis)],
       sources: CHALLENGE_RULES.sources.filter(source =>
         policy.sourceIds.includes(source.id),
       ),
@@ -1444,8 +1581,8 @@ export function upgradeChallenge(
     }
     const current = await requiredRecord(id);
     const previousAnalysis = current.analysis;
-    if (!previousAnalysis || previousAnalysis.unresolvedIssues.length) {
-      throw new Error('请先完成原试卷解析并解决缺页、题干或图表辨认问题');
+    if (!previousAnalysis) {
+      throw new Error('请先解析原试卷，局部解析异常的题将原样保留');
     }
     if (
       !current.subjectIdentification ||
@@ -1480,10 +1617,13 @@ export function upgradeChallenge(
     }
     // Course names and explanations can differ cosmetically between valid
     // copies. Use one validated ticket; never disable an analyzed paper for that.
-    const analysis: ExamAnalysis = {
-      ...previousAnalysis,
-      subjectIdentification: identification,
-    };
+    let analysis: ExamAnalysis = prepareRetainedAnalysis(
+      {
+        ...previousAnalysis,
+        subjectIdentification: identification,
+      },
+      current.pages,
+    );
     if (identification.verification) {
       const savedVerification = validateSubjectVerification(
         current.subjectVerification || identification.verification,
@@ -1544,16 +1684,62 @@ export function upgradeChallenge(
     );
     return managedRun(id, runId, options, async () => {
       await clearPreviousFiles(current);
-      let paper = await requestJson(
+      analysis = await locateRetainedOriginals(
         id,
         runId,
-        'generation',
-        `生成升${level}档试卷`,
-        JSON.stringify({task: '挑战试卷生成', analysis, level}),
-        generationInstructions(analysis, level, false, roundtableSize),
+        analysis,
+        current.pageUris,
         options,
-        value => validateChallengePaper(value, analysis, level),
       );
+      await progress(id, runId, {analysis}, options);
+      const retainAll = () => {
+        analysis = {
+          ...analysis,
+          questions: analysis.questions.map(question => ({
+            ...question,
+            originalRegions: question.originalRegions?.length
+              ? question.originalRegions
+              : [...new Set(question.sourceRefs.map(ref => ref.pageIndex))].map(
+                  pageIndex => ({
+                    pageIndex,
+                    box: {x: 0, y: 0, width: 1, height: 1},
+                  }),
+                ),
+          })),
+          warnings: [
+            ...analysis.warnings,
+            '解析异常使目标不可达，本次未形成可可靠发布的变式，全部原题保留；零升档也正常完成。',
+          ],
+        };
+        return validateChallengePaper(
+          retainEntirePaper(analysis, level),
+          analysis,
+          level,
+        );
+      };
+      let paper =
+        coverage.eligible === 0
+          ? validateChallengePaper(
+              retainEntirePaper(analysis, level),
+              analysis,
+              level,
+            )
+          : await requestJson(
+              id,
+              runId,
+              'generation',
+              `生成升${level}档试卷`,
+              JSON.stringify({task: '挑战试卷生成', analysis, level}),
+              generationInstructions(analysis, level, false, roundtableSize),
+              options,
+              value =>
+                validateChallengePaper(
+                  preserveRequiredOriginals(value, analysis, level),
+                  analysis,
+                  level,
+                ),
+              coverage.limitedByAnalysis ? retainAll : undefined,
+            );
       for (let round = 1; round <= MAX_REVIEW_ROUNDS; round += 1) {
         const snapshot = JSON.stringify(paper);
         const frozenPaper = JSON.parse(snapshot) as ChallengePaper;
@@ -1562,6 +1748,7 @@ export function upgradeChallenge(
           runId,
           {
             status: 'reviewing',
+            analysis,
             candidate: JSON.parse(snapshot) as ChallengePaper,
             progress:
               roundtableSize === 0
@@ -1686,7 +1873,13 @@ export function upgradeChallenge(
           }),
           generationInstructions(analysis, level, true, roundtableSize),
           options,
-          value => validateChallengePaper(value, analysis, level),
+          value =>
+            validateChallengePaper(
+              preserveRequiredOriginals(value, analysis, level),
+              analysis,
+              level,
+            ),
+          coverage.limitedByAnalysis ? retainAll : undefined,
         );
       }
       throw new Error('试卷尚未通过标准校核');

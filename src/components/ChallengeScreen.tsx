@@ -57,6 +57,7 @@ import {
   minimumUpgradePercent,
   sourceRequiresRetention,
 } from '../challenge/selection';
+import {prepareRetainedAnalysis} from '../challenge/retention';
 type ChallengeTab = 'analysis' | 'plan' | 'paper' | 'answers' | 'usage';
 import ChallengeManager from './ChallengeManager';
 import ChallengeUsageDetails from './ChallengeUsageDetails';
@@ -743,7 +744,9 @@ export default function ChallengeScreen({
     }
   };
 
-  const analysis = record?.analysis;
+  const analysis = record?.analysis
+    ? prepareRetainedAnalysis(record.analysis, record.pages)
+    : undefined;
   const identification = record?.subjectIdentification;
   const confirmedSubject =
     analysis &&
@@ -945,8 +948,8 @@ export default function ChallengeScreen({
             />
           </View>
           {!!analysis?.unresolvedIssues.length && (
-            <Text style={styles.error}>
-              原卷仍有待核信息，升档前需要补充或继续解析。
+            <Text style={styles.notice}>
+              局部解析异常的题将按原位置保留，其余题可继续升档；因解析异常未达比例不计为失败。
             </Text>
           )}
           <View style={styles.tabs} accessibilityRole="tablist">
@@ -1078,6 +1081,7 @@ export default function ChallengeScreen({
                       const count = analysis.questions.filter(
                         question =>
                           !question.analysisIssues?.length &&
+                          question.difficulty.rating !== null &&
                           question.difficulty.rating >= band.min &&
                           question.difficulty.rating <= band.max,
                       ).length;
@@ -1131,11 +1135,11 @@ export default function ChallengeScreen({
                     ))}
                     {!!analysis.unresolvedIssues.length && (
                       <View>
-                        <Text style={styles.error}>
-                          以下信息尚未核实，请补充原卷或重新解析后再生成：
+                        <Text style={styles.notice}>
+                          以下信息尚未核实，对应题将原样保留，不阻止其余题升档：
                         </Text>
                         {analysis.unresolvedIssues.map((issue, index) => (
-                          <Text key={index} style={styles.error}>
+                          <Text key={index} style={styles.notice}>
                             • {issue}
                           </Text>
                         ))}
@@ -1156,7 +1160,9 @@ export default function ChallengeScreen({
                         {question.stem}
                       </Text>
                       <Text style={styles.muted}>
-                        知识点：{question.knowledgePoints.join('、')}
+                        知识点：
+                        {question.knowledgePoints.join('、') ||
+                          '待核，保留原题'}
                       </Text>
                       <Text style={styles.muted}>
                         {question.analysisIssues?.length
@@ -1172,7 +1178,7 @@ export default function ChallengeScreen({
                       {sourceRequiresRetention(question) &&
                         !question.isListening && (
                           <Text style={styles.notice}>
-                            建议保留原题：
+                            按原位置保留原题：
                             {question.retentionReason ||
                               '逐题分析尚不能可靠支持变式命题'}
                           </Text>
@@ -1188,17 +1194,23 @@ export default function ChallengeScreen({
               <Card>
                 <Text style={styles.heading}>升档方案</Text>
                 <Text style={styles.label}>
-                  升 {level} 档 · 非听力题至少 {minimumUpgradePercent(level)}%
-                  升档
+                  升 {level} 档 · 非听力题目标升档{' '}
+                  {minimumUpgradePercent(level)}%
                 </Text>
                 <Text style={styles.muted}>
-                  按非听力小题总数计算，题数向上取整；听力保持不变。不好升档或分析存疑的题可原样保留并说明原因。
+                  按非听力小题总数计算目标，题数向上取整；听力保持不变。解析异常或不完整的题原样保留；因此达不到原目标时仍正常完成，并如实展示实际比例。
                 </Text>
                 {!!coverage && (
                   <Text style={styles.body}>
-                    本卷 {coverage.total} 道非听力小题，至少升档{' '}
-                    {coverage.required} 题；当前可可靠选用 {coverage.eligible}{' '}
-                    题。
+                    本卷 {coverage.total} 道非听力小题，原目标升档{' '}
+                    {coverage.targetRequired} 题；当前可可靠选用{' '}
+                    {coverage.eligible} 题。
+                  </Text>
+                )}
+                {!!coverage?.limitedByAnalysis && (
+                  <Text style={styles.notice}>
+                    {coverage.analysisRetained}{' '}
+                    道题因解析待核或依赖关系保留，本次按可靠题完成升档，低于原目标不计为失败。
                   </Text>
                 )}
                 {!!coverage && coverage.eligible < coverage.required && (
@@ -1248,6 +1260,14 @@ export default function ChallengeScreen({
                     道非听力题（{finalCoverage.percent.toFixed(1)}%）；其余{' '}
                     {finalCoverage.retained} 题保留原题。
                   </Text>
+                  {finalCoverage.upgraded < finalCoverage.targetRequired &&
+                    finalCoverage.analysisRetained > 0 && (
+                      <Text style={styles.notice}>
+                        因解析异常及其依赖保留 {finalCoverage.analysisRetained}{' '}
+                        题，未达原目标 {finalCoverage.minimumPercent}
+                        %，已正常完成；保留题不计入升档。
+                      </Text>
+                    )}
                   {record.candidate.questions.map(question => (
                     <View key={question.id} style={styles.question}>
                       <Text style={styles.label}>

@@ -3,6 +3,8 @@ import RNFS from 'react-native-fs';
 import {PDFDocument, PDFFont, PDFImage, PDFPage, rgb} from 'pdf-lib';
 import {createPdfWithFont} from '../shared/pdf/core';
 import {wrapPdfText} from '../shared/pdf/text';
+import {prepareRetainedAnalysis, validOriginalRegion} from './retention';
+import {requiredRetentionIds} from './selection';
 import {
   ChallengeFigure,
   ChallengeLearningGuide,
@@ -10,6 +12,7 @@ import {
   DrawingFigure,
   ExamAnalysis,
   SourceFigure,
+  OriginalQuestionRegion,
 } from './types';
 
 const PAGE_WIDTH = 595.28;
@@ -176,8 +179,12 @@ class PaperWriter {
     }
   }
 
-  image(image: PDFImage) {
-    const scale = Math.min(CONTENT_WIDTH / image.width, 310 / image.height, 1);
+  image(image: PDFImage, maxHeight = 310) {
+    const scale = Math.min(
+      CONTENT_WIDTH / image.width,
+      maxHeight / image.height,
+      1,
+    );
     const width = image.width * scale;
     const height = image.height * scale;
     this.ensure(height + 12);
@@ -355,7 +362,19 @@ async function croppedSourceImage(
       '图示不能直接复用：图框未确认、缺少源页或包含学生作答，请重建图示',
     );
   }
-  const uri = pageUris[figure.pageIndex];
+  return cropOriginalRegion(writer, figure, pageUris);
+}
+
+async function cropOriginalRegion(
+  writer: PaperWriter,
+  region: OriginalQuestionRegion,
+  pageUris: string[],
+) {
+  if (!validOriginalRegion(region) || !pageUris[region.pageIndex]) {
+    throw new Error('保留原题缺少对应原图或有效范围，请恢复原卷图片');
+  }
+  const box = region.box;
+  const uri = pageUris[region.pageIndex];
   const sourcePath = localPath(uri);
   const size = await new Promise<{width: number; height: number}>(
     (resolve, reject) => {
@@ -486,13 +505,9 @@ export async function buildChallengePdfs(
   pageUris: string[],
   fontData?: string | Uint8Array,
 ): Promise<{paperBase64: string; answersBase64: string}> {
-  if (
-    !analysis.isExam ||
-    analysis.unresolvedIssues.length ||
-    !paper.title.trim() ||
-    !paper.questions.length
-  ) {
-    throw new Error('试卷尚未完整解析，不能生成 PDF');
+  analysis = prepareRetainedAnalysis(analysis);
+  if (!analysis.isExam || !paper.title.trim() || !paper.questions.length) {
+    throw new Error('尚无可用的试卷解析，不能生成 PDF');
   }
   if (
     paper.subject !== analysis.subject ||
@@ -511,6 +526,17 @@ export async function buildChallengePdfs(
     )
   ) {
     throw new Error('新试卷题号、顺序或答案对应不完整，不能生成 PDF');
+  }
+  const mandatoryRetention = requiredRetentionIds(analysis);
+  if (
+    paper.questions.some(
+      question =>
+        !question.isListening &&
+        mandatoryRetention.has(question.id) &&
+        question.upgrade.mode !== 'retained',
+    )
+  ) {
+    throw new Error('解析异常题必须原样保留，不得把待核题当作已升档题输出');
   }
   const writer = await newWriter(analysis, paper, false, fontData);
   writer.text(paper.title, 18, 26);
@@ -582,6 +608,7 @@ export async function buildChallengePdfs(
       writer.gap(5);
       sectionId = section.id;
     }
+    const source = analysis.questions.find(item => item.id === question.id)!;
     for (const id of question.materialIds) {
       if (materialIds.has(id)) {
         continue;
@@ -600,11 +627,75 @@ export async function buildChallengePdfs(
       writer.setContext(label);
       writer.text(material.text);
       for (const idOfFigure of material.figureIds) {
+        const item = paper.figures.find(value => value.id === idOfFigure);
+        if (
+          question.upgrade.mode === 'retained' &&
+          source.originalRegions?.length &&
+          item?.kind === 'source' &&
+          item.containsStudentMarks
+        ) {
+          continue;
+        }
         await figure(idOfFigure);
       }
       writer.setContext('');
       writer.gap();
       materialIds.add(id);
+    }
+    if (
+      question.upgrade.mode === 'retained' &&
+      source.originalRegions?.length
+    ) {
+      const label = `第 ${question.number} 题`;
+      writer.ensure(55);
+      writer.text(`${label} · 原题保留（原图）`, 12, 21);
+      writer.setContext(label);
+      const regions = [...source.originalRegions];
+      const relatedFigures = new Set([
+        ...source.figureIds,
+        ...analysis.materials
+          .filter(material => source.materialIds.includes(material.id))
+          .flatMap(material => material.figureIds),
+      ]);
+      for (const original of analysis.figures.filter(item =>
+        relatedFigures.has(item.id),
+      )) {
+        if (
+          !regions.some(
+            region =>
+              region.pageIndex === original.pageIndex &&
+              region.box.x <= original.box.x &&
+              region.box.y <= original.box.y &&
+              region.box.x + region.box.width >=
+                original.box.x + original.box.width &&
+              region.box.y + region.box.height >=
+                original.box.y + original.box.height,
+          )
+        ) {
+          regions.push({pageIndex: original.pageIndex, box: original.box});
+        }
+      }
+      for (const region of regions) {
+        if (
+          region.box.x === 0 &&
+          region.box.y === 0 &&
+          region.box.width === 1 &&
+          region.box.height === 1
+        ) {
+          writer.text(
+            `本题保留原卷第 ${region.pageIndex + 1} 页，请按原题号作答。`,
+            10,
+            17,
+            MUTED,
+          );
+        }
+        // This explicitly retained original may include the learner's writing.
+        // It is never interpreted as an answer or reused by an upgraded item.
+        writer.image(await cropOriginalRegion(writer, region, pageUris), 640);
+      }
+      writer.setContext('');
+      writer.gap(13);
+      continue;
     }
     writer.ensure(60);
     const label = `第 ${question.number} 题`;
@@ -703,7 +794,7 @@ export async function buildChallengePdfs(
       throw new Error('答案核验状态无效');
     }
     answers.text(
-      `知识点：${question.knowledgePoints.join('；')}`,
+      `知识点：${question.knowledgePoints.join('；') || '待核（原题保留）'}`,
       10,
       17,
       MUTED,

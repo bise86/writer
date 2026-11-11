@@ -6,6 +6,8 @@ import {writeFileSync} from 'fs';
 import {join} from 'path';
 import {tmpdir} from 'os';
 import {buildChallengePdfs} from '../src/challenge/pdf';
+import {prepareRetainedAnalysis} from '../src/challenge/retention';
+import {preserveRequiredOriginals} from '../src/challenge/selection';
 import {
   ChallengeLearningGuide,
   ChallengePaper,
@@ -593,12 +595,12 @@ test.each(['DO_NOT_PUBLISH_GUESSED_KEY', ''])(
   },
 );
 
-test('不完整解析、题号顺序失配、答案重复或缺图时不输出伪完整试卷', async () => {
+test('异常题不得伪称升档，题号顺序失配、答案重复或缺图时不输出伪完整试卷', async () => {
   const unresolved = fixture();
   unresolved.analysis.unresolvedIssues = ['图中文字不清'];
   await expect(
     buildChallengePdfs(unresolved.analysis, unresolved.paper, []),
-  ).rejects.toThrow('尚未完整解析');
+  ).rejects.toThrow('解析异常题必须原样保留');
   const swapped = fixture();
   swapped.paper.questions.reverse();
   await expect(
@@ -614,6 +616,85 @@ test('不完整解析、题号顺序失配、答案重复或缺图时不输出�
   await expect(
     buildChallengePdfs(absentFigure.analysis, absentFigure.paper, []),
   ).rejects.toThrow('缺少题目引用的图示');
+});
+
+test('题干与选项不完整时按原题顺序嵌入原图片段，答案明确待核，仍导出两份PDF', async () => {
+  const {analysis, paper} = fixture();
+  analysis.questions[0].stem = '';
+  analysis.questions[0].options = [];
+  analysis.questions[0].analysisIssues = ['题干与选项识别不完整'];
+  analysis.questions[0].originalRegions = [
+    {pageIndex: 0, box: {x: 0.1, y: 0.2, width: 0.8, height: 0.3}},
+  ];
+  analysis.unresolvedIssues = ['第1题部分公式辨认不清'];
+  const prepared = prepareRetainedAnalysis(analysis);
+  const candidate = preserveRequiredOriginals(
+    paper,
+    prepared,
+    2,
+  ) as ChallengePaper;
+  const draw = jest.spyOn(PDFPage.prototype, 'drawText');
+  const image = jest.spyOn(PDFPage.prototype, 'drawImage');
+  const result = await buildChallengePdfs(prepared, candidate, [
+    'file:///original.png',
+  ]);
+  const body = textFor(draw, '· 试卷');
+  expect(body.indexOf(analysis.materials[0].text)).toBeLessThan(
+    body.indexOf('第 1 题 · 原题保留（原图）'),
+  );
+  expect(body.indexOf('第 1 题 · 原题保留（原图）')).toBeGreaterThanOrEqual(0);
+  expect(body.indexOf('第 1 题 · 原题保留（原图）')).toBeLessThan(
+    body.indexOf('第 2(1) 题'),
+  );
+  expect(ImageEditor.cropImage).toHaveBeenCalledWith(
+    'file:///original.png',
+    expect.objectContaining({
+      offset: {x: 200, y: 200},
+      size: {width: 1600, height: 300},
+    }),
+  );
+  expect(image).toHaveBeenCalledTimes(1);
+  expect(textFor(draw, '· 答案与解析')).toContain('原题保留，参考答案待核');
+  expect(textFor(draw, '· 答案与解析')).not.toContain('ANSWER_ONLY_SECRET');
+  for (const base64 of [result.paperBase64, result.answersBase64]) {
+    expect(
+      (await PDFDocument.load(Buffer.from(base64, 'base64'))).getPageCount(),
+    ).toBeGreaterThan(0);
+  }
+});
+
+test('原图保留题的共用材料先于题目，题框外带笔迹的材料图也按原图保留', async () => {
+  const {analysis, paper} = fixture();
+  analysis.questions[0].analysisIssues = ['题干辨认不完整'];
+  analysis.questions[0].originalRegions = [
+    {pageIndex: 0, box: {x: 0.1, y: 0.7, width: 0.8, height: 0.2}},
+  ];
+  const originalFigure = {...cleanFigure, containsStudentMarks: true};
+  analysis.figures = [originalFigure];
+  paper.figures = [originalFigure];
+  analysis.materials[0].figureIds = ['f1'];
+  paper.questions[1].materialIds = [];
+  analysis.questions[1].materialIds = [];
+  const prepared = prepareRetainedAnalysis(analysis);
+  const candidate = preserveRequiredOriginals(
+    paper,
+    prepared,
+    2,
+  ) as ChallengePaper;
+  const draw = jest.spyOn(PDFPage.prototype, 'drawText');
+  await buildChallengePdfs(prepared, candidate, ['file:///original.png']);
+  const body = textFor(draw, '· 试卷');
+  expect(body.indexOf(analysis.materials[0].text)).toBeLessThan(
+    body.indexOf('第 1 题 · 原题保留（原图）'),
+  );
+  expect(ImageEditor.cropImage).toHaveBeenCalledTimes(2);
+  expect(ImageEditor.cropImage).toHaveBeenLastCalledWith(
+    'file:///original.png',
+    expect.objectContaining({
+      offset: {x: 400, y: 200},
+      size: {width: 800, height: 400},
+    }),
+  );
 });
 
 test('原样保留的题面进入试卷PDF，存疑答案在答案PDF明确待核，不猜答案', async () => {
