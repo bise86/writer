@@ -7,6 +7,7 @@ import {
   SourceQuestion,
   SubjectEvidence,
   SubjectVerification,
+  SubjectSampleVote,
 } from './types';
 
 type SamplingAnalysis = Pick<
@@ -26,6 +27,7 @@ type SampleQuestion = Pick<
 >;
 
 export interface SubjectVerificationSampleInput {
+  contextIssue?: string;
   majorQuestionId: string;
   majorQuestionTitle: string;
   majorQuestionSourceRefs: SubjectEvidence[];
@@ -256,6 +258,9 @@ export function subjectVerificationSamples(
   analysis: SamplingAnalysis,
   verification: SubjectVerification,
 ): SubjectVerificationSampleInput[] {
+  if (verification.mode === 'progressive') {
+    return progressiveSampleInputs(analysis, verification);
+  }
   if (
     verification.mode !== 'title_sample' &&
     verification.mode !== 'expanded'
@@ -362,4 +367,192 @@ export function subjectVerificationSamples(
       })),
     };
   });
+}
+
+function progressiveSample(analysis: SamplingAnalysis, id: string) {
+  const question = analysis.questions.find(item => item.id === id);
+  if (!question || !completeEvidence(question.sourceRefs)) {
+    throw new Error('递进抽样题号或原题证据不完整');
+  }
+  const major = analysis.majorQuestions?.find(
+    item => item.id === question.majorQuestionId,
+  );
+  const section = analysis.sections.find(
+    item => item.id === question.sectionId,
+  );
+  const candidates = analysis.questions.filter(item =>
+    major
+      ? item.majorQuestionId === major.id
+      : item.sectionId === question.sectionId,
+  );
+  return {
+    majorQuestionId: major?.id || question.sectionId,
+    majorQuestionTitle: major?.title || section?.title || '原卷题组',
+    candidateQuestionIds: candidates.map(item => item.id),
+    selectedQuestionId: question.id,
+    selectedQuestionNumber: question.number,
+    sourceRefs: copyEvidence(question.sourceRefs),
+  };
+}
+
+/** Shuffle once, then reveal a fixed prefix: three first, one per later round. */
+export function buildProgressiveSubjectVerification(
+  analysis: SamplingAnalysis,
+  random: () => number = Math.random,
+): SubjectVerification {
+  const order = analysis.questions.map(question => question.id);
+  if (!order.length || new Set(order).size !== order.length) {
+    throw new Error('原卷没有完整且不重复的抽样题池');
+  }
+  for (let index = order.length - 1; index > 0; index -= 1) {
+    const draw = random();
+    if (!Number.isFinite(draw) || draw < 0 || draw >= 1) {
+      throw new RangeError('科目抽样随机值必须是[0,1)内的有限数');
+    }
+    const swap = Math.floor(draw * (index + 1));
+    [order[index], order[swap]] = [order[swap], order[index]];
+  }
+  return {
+    mode: 'progressive',
+    candidateOrder: order,
+    titleEvidence: (analysis.titleEvidence || [])
+      .filter(validEvidence)
+      .map(ref => ({...ref})),
+    samples: order.slice(0, 3).map(id => progressiveSample(analysis, id)),
+    votes: [],
+  };
+}
+
+export function appendSubjectSample(
+  analysis: SamplingAnalysis,
+  verification: SubjectVerification,
+): SubjectVerification {
+  progressiveSampleInputs(analysis, verification);
+  const next = verification.candidateOrder?.[verification.samples.length];
+  if (!next) {
+    throw new Error('抽样题池已耗尽，仍未形成明确多数');
+  }
+  return {
+    ...verification,
+    samples: [...verification.samples, progressiveSample(analysis, next)],
+  };
+}
+
+function progressiveSampleInputs(
+  analysis: SamplingAnalysis,
+  verification: SubjectVerification,
+): SubjectVerificationSampleInput[] {
+  const order = verification.candidateOrder;
+  if (
+    !order ||
+    order.length !== analysis.questions.length ||
+    new Set(order).size !== order.length ||
+    order.some(
+      id => !analysis.questions.some(question => question.id === id),
+    ) ||
+    verification.samples.length > order.length ||
+    verification.samples.length < Math.min(3, order.length)
+  ) {
+    throw new Error('递进抽样的完整题池或已抽题数不一致，不能换题或缩小题池');
+  }
+  return verification.samples.map((sample, index) => {
+    const expected = progressiveSample(analysis, order[index]);
+    if (JSON.stringify(sample) !== JSON.stringify(expected)) {
+      throw new Error('递进抽样题号、原锚或顺序被更换');
+    }
+    const question = analysis.questions.find(
+      item => item.id === sample.selectedQuestionId,
+    )!;
+    const section = analysis.sections.find(
+      item => item.id === question.sectionId,
+    );
+    const major = analysis.majorQuestions?.find(
+      item => item.id === question.majorQuestionId,
+    );
+    const base = {
+      majorQuestionId: sample.majorQuestionId,
+      majorQuestionTitle: sample.majorQuestionTitle,
+      majorQuestionSourceRefs: major?.sourceRefs || sample.sourceRefs,
+      section: section || {
+        id: question.sectionId,
+        title: sample.majorQuestionTitle,
+        instructions: '',
+      },
+      question: copyQuestion(question),
+    };
+    try {
+      if (!section) {
+        throw new Error('缺少题组作答说明');
+      }
+      const dependencies = questionDependencies(question, analysis.questions);
+      const questions = [question, ...dependencies];
+      const materials = referencedItems(
+        analysis.materials,
+        questions.flatMap(item => item.materialIds),
+        '共用材料',
+      );
+      const figures = referencedItems(
+        analysis.figures,
+        [
+          ...questions.flatMap(item => item.figureIds),
+          ...materials.flatMap(item => item.figureIds),
+        ],
+        '图表',
+      );
+      return {
+        ...base,
+        dependencyQuestions: dependencies.map(copyQuestion),
+        dependencyContexts: [],
+        sourceLinks: questions.map(item => ({
+          questionId: item.id,
+          materialIds: [...item.materialIds],
+          figureIds: [...item.figureIds],
+        })),
+        materials,
+        figures,
+      };
+    } catch (error) {
+      return {
+        ...base,
+        contextIssue: error instanceof Error ? error.message : String(error),
+        dependencyQuestions: [],
+        dependencyContexts: [],
+        sourceLinks: [],
+        materials: [],
+        figures: [],
+      };
+    }
+  });
+}
+
+export function subjectConsensus(verification: SubjectVerification) {
+  const votes = verification.votes || [];
+  if (
+    verification.mode !== 'progressive' ||
+    votes.length !== verification.samples.length ||
+    !votes.length
+  ) {
+    return undefined;
+  }
+  const groups = new Map<string, SubjectSampleVote[]>();
+  for (const vote of votes) {
+    if (vote.subject === 'unknown') {
+      continue;
+    }
+    const key = `${vote.subject}:${vote.integrated}:${
+      vote.subject === 'other'
+        ? vote.courseName.normalize('NFKC').replace(/\s+/gu, '')
+        : ''
+    }`;
+    groups.set(key, [...(groups.get(key) || []), vote]);
+  }
+  const initial = Math.min(3, verification.candidateOrder?.length || 3);
+  const winner = [...groups.values()].find(group =>
+    votes.length === initial
+      ? group.length === votes.length
+      : group.length > votes.length / 2,
+  );
+  return winner
+    ? {...winner[0], supportCount: winner.length, total: votes.length}
+    : undefined;
 }

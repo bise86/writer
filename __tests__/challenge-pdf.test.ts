@@ -615,3 +615,45 @@ test('不完整解析、题号顺序失配、答案重复或缺图时不输出�
     buildChallengePdfs(absentFigure.analysis, absentFigure.paper, []),
   ).rejects.toThrow('缺少题目引用的图示');
 });
+
+test('原样保留的题面进入试卷PDF，存疑答案在答案PDF明确待核，不猜答案', async () => {
+  const {analysis, paper} = fixture();
+  paper.questions[0] = {
+    ...paper.questions[0],
+    stem: analysis.questions[0].stem,
+    upgrade: {
+      mode: 'retained',
+      retentionReason: '原题条件可复现，参考解法尚需核验。',
+      level: 1,
+      metrics: {},
+      changes: [],
+      pitfalls: [],
+      scopeExplanation: '原题保留。',
+    },
+  };
+  paper.answers[0] = {
+    ...paper.answers[0],
+    status: 'requires_review',
+    answer: '',
+    explanation: '参考答案待核：请核实本题实际条件与推理边界。',
+    scoringPoints: [],
+  };
+  const draw = jest.spyOn(PDFPage.prototype, 'drawText');
+  const result = await buildChallengePdfs(analysis, paper, []);
+  expect(textFor(draw, '· 答案与解析', 12)).toContain(
+    '原题保留，参考答案待核。',
+  );
+  expect(textFor(draw, '· 答案与解析', 11)).toContain(
+    '请核实本题实际条件与推理边界',
+  );
+  expect(
+    (
+      await PDFDocument.load(Buffer.from(result.paperBase64, 'base64'))
+    ).getPageCount(),
+  ).toBeGreaterThan(0);
+  expect(
+    (
+      await PDFDocument.load(Buffer.from(result.answersBase64, 'base64'))
+    ).getPageCount(),
+  ).toBeGreaterThan(0);
+});

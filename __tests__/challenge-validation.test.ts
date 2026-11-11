@@ -1,4 +1,8 @@
 import {
+  challengeCoverage,
+  minimumUpgradeCount,
+} from '../src/challenge/selection';
+import {
   applicableChallengeDirections,
   applicableChallengeMetrics,
   applicableMasteryChallenges,
@@ -17,9 +21,13 @@ import {
   validateExamDraft,
   validateSubjectIdentification,
   validateSubjectVerification,
+  validateSubjectVotes,
 } from '../src/challenge/validation';
 import {
   buildSubjectVerification,
+  buildProgressiveSubjectVerification,
+  appendSubjectSample,
+  subjectConsensus,
   subjectVerificationSamples,
 } from '../src/challenge/subjectSampling';
 import {
@@ -35,6 +43,7 @@ import {
   SourceQuestion,
   SubjectIdentification,
   SubjectVerification,
+  SubjectSampleVote,
 } from '../src/challenge/types';
 
 const clone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
@@ -2502,5 +2511,280 @@ test('别题图caption即使真实存在，也不能作本题策略或学习证�
   paper.questions[0].upgrade.directionEvidence![0].problemQuote = '每组和相等';
   expect(() => validateChallengePaper(paper, analysis, 1)).toThrow(
     'learningGuide[0].problemQuote',
+  );
+});
+
+function retainedPaper(
+  total = 7,
+  level: ChallengeLevel = 1,
+  count = minimumUpgradeCount(total, level),
+) {
+  const {analysis} = fixture();
+  analysis.questions = Array.from({length: total}, (_, index) => ({
+    ...clone(analysis.questions[0]),
+    id: `q${index + 1}`,
+    number: String(index + 1),
+  }));
+  analysis.totalScore = total * 5;
+  const paper = generated(analysis, level);
+  for (let index = count; index < total; index += 1) {
+    retainQuestion(paper, analysis, index);
+  }
+  return {analysis, paper};
+}
+function retainQuestion(
+  paper: ChallengePaper,
+  analysis: ExamAnalysis,
+  index: number,
+) {
+  const original = clone(analysis.questions[index]);
+  Reflect.deleteProperty(original, 'sourceRefs');
+  Reflect.deleteProperty(original, 'difficulty');
+  paper.questions[index] = {
+    ...original,
+    upgrade: {
+      mode: 'retained',
+      retentionReason: '该题原条件窄，当前档位缺少可靠的同范围提升空间。',
+      level: paper.level,
+      metrics: {},
+      changes: [],
+      pitfalls: [],
+      scopeExplanation: '按原印刷题文原样保留，不计升档。',
+    },
+  };
+  paper.answers[index] = {
+    questionId: original.id,
+    status: 'verified',
+    answer: '{1,4}和{2,3}',
+    explanation: '两组各有两个数，两组的和都为5。',
+    scoringPoints: ['按原条件给出等和分组'],
+  };
+}
+
+test.each([
+  {level: 1 as const, count: 2},
+  {level: 2 as const, count: 3},
+  {level: 3 as const, count: 5},
+])(
+  '7道非听力题升$level档至少$count题，保留题不强加深度配额',
+  ({level, count}) => {
+    const {analysis, paper} = retainedPaper(7, level);
+    expect(minimumUpgradeCount(7, level)).toBe(count);
+    expect(validateChallengePaper(paper, analysis, level)).toEqual(paper);
+    expect(challengeCoverage(analysis, level, paper)).toMatchObject({
+      total: 7,
+      upgraded: count,
+      required: count,
+    });
+    retainQuestion(paper, analysis, count - 1);
+    expect(() => validateChallengePaper(paper, analysis, level)).toThrow(
+      '至少',
+    );
+  },
+);
+
+test('听力不参与覆盖率分母，非听力保留题仍参与分母', () => {
+  const {analysis, paper} = retainedPaper(5, 2, 2);
+  const listening = {
+    ...clone(analysis.questions[0]),
+    id: 'audio',
+    number: '6',
+    isListening: true,
+  };
+  analysis.questions.push(listening);
+  paper.questions.push({
+    ...listening,
+    upgrade: {
+      mode: 'retained',
+      retentionReason: '听力保持不变',
+      level: 2,
+      metrics: {},
+      changes: [],
+      pitfalls: [],
+      scopeExplanation: '沿用原录音',
+    },
+  });
+  expect(challengeCoverage(analysis, 2, paper)).toMatchObject({
+    total: 5,
+    required: 2,
+    upgraded: 2,
+    retained: 3,
+    percent: 40,
+  });
+});
+
+test.each(['stem', 'options', 'answerLines'] as const)(
+  '保留题不能暗改%s或伪报升档指标',
+  field => {
+    const {analysis, paper} = retainedPaper();
+    const question = paper.questions[6];
+    if (field === 'stem') {
+      question.stem += '增加一项条件。';
+    }
+    if (field === 'options') {
+      question.options.push({label: 'A', text: '新增选项'});
+    }
+    if (field === 'answerLines') {
+      question.answerLines += 1;
+    }
+    expect(() => validateChallengePaper(paper, analysis, 1)).toThrow('保留题');
+  },
+);
+
+test('保留题共享材料与依赖前问都被冻结，升档不能间接修改原题', () => {
+  const {analysis, paper} = retainedPaper();
+  analysis.materials = [
+    {
+      id: 'm1',
+      title: '原共享材料',
+      text: '四个整数依次为1、2、3、4。',
+      isListening: false,
+      figureIds: [],
+    },
+  ];
+  paper.materials = clone(analysis.materials);
+  analysis.questions[6].materialIds = ['m1'];
+  paper.questions[6].materialIds = ['m1'];
+  paper.materials[0].text += '新增第五个整数。';
+  expect(() => validateChallengePaper(paper, analysis, 1)).toThrow(
+    '保留题共享材料',
+  );
+  paper.materials = clone(analysis.materials);
+  analysis.questions[6].dependsOnQuestionIds = ['q1'];
+  expect(() => validateChallengePaper(paper, analysis, 1)).toThrow(
+    '依赖的前问',
+  );
+});
+
+test('单题分析存疑可保留，不能强行改题；其答案不可靠时明确待核', () => {
+  const {analysis, paper} = retainedPaper();
+  analysis.questions[6].analysisIssues = ['具体考点归属尚需教师核实'];
+  paper.answers[6] = {
+    ...paper.answers[6],
+    status: 'requires_review',
+    answer: '',
+    explanation: '参考答案待核：原题条件的适用边界尚需核实。',
+    scoringPoints: [],
+  };
+  expect(() => validateChallengePaper(paper, analysis, 1)).not.toThrow();
+  paper.answers[6].answer = '未经核验的确定答案';
+  expect(() => validateChallengePaper(paper, analysis, 1)).toThrow('明确待核');
+  const upgraded = generated(analysis);
+  expect(() => validateChallengePaper(upgraded, analysis, 1)).toThrow(
+    '不得强行升档',
+  );
+});
+
+test('首次只取3道不同小题，追加沿固定题池每次一题，不因缺标题送整卷', () => {
+  const {analysis, pages} = samplingFixture();
+  analysis.titleEvidence = [];
+  const initial = buildProgressiveSubjectVerification(analysis, () => 0.5);
+  expect(initial.samples).toHaveLength(3);
+  expect(
+    new Set(initial.samples.map(sample => sample.selectedQuestionId)).size,
+  ).toBe(3);
+  expect(subjectVerificationSamples(analysis, initial)).toHaveLength(3);
+  expect(validateSubjectVerification(initial, pages).mode).toBe('progressive');
+  const fourth = appendSubjectSample(analysis, initial);
+  const fifth = appendSubjectSample(analysis, fourth);
+  expect(fourth.samples).toHaveLength(4);
+  expect(fifth.samples).toHaveLength(5);
+  expect(fifth.samples.slice(0, 3)).toEqual(initial.samples);
+  expect(() => appendSubjectSample(analysis, fifth)).toThrow('耗尽');
+});
+
+function sampleVotes(
+  verification: SubjectVerification,
+  subjects: SubjectSampleVote['subject'][],
+): SubjectSampleVote[] {
+  return subjects.map((subject, index) => ({
+    questionId: verification.samples[index].selectedQuestionId,
+    subject,
+    courseName:
+      subject === 'math'
+        ? '数学'
+        : subject === 'english'
+        ? '英语'
+        : subject === 'physics'
+        ? '物理'
+        : '',
+    integrated: false,
+    reason: '依据该小题实际印刷任务独立判断课程。',
+    evidence:
+      subject === 'unknown' ? [] : verification.samples[index].sourceRefs,
+  }));
+}
+
+test('初抽3题需一致，初始2:1也先追加，追加后才按严格多数确认', () => {
+  const {analysis} = samplingFixture();
+  const initial = buildProgressiveSubjectVerification(analysis, () => 0.1);
+  expect(
+    subjectConsensus({
+      ...initial,
+      votes: sampleVotes(initial, ['math', 'math', 'math']),
+    }),
+  ).toMatchObject({subject: 'math', supportCount: 3});
+  expect(
+    subjectConsensus({
+      ...initial,
+      votes: sampleVotes(initial, ['math', 'math', 'english']),
+    }),
+  ).toBeUndefined();
+  const fourth = appendSubjectSample(analysis, initial);
+  expect(
+    subjectConsensus({
+      ...fourth,
+      votes: sampleVotes(fourth, ['math', 'math', 'english', 'math']),
+    }),
+  ).toMatchObject({subject: 'math', supportCount: 3, total: 4});
+  expect(
+    subjectConsensus({
+      ...fourth,
+      votes: sampleVotes(fourth, ['math', 'math', 'english', 'english']),
+    }),
+  ).toBeUndefined();
+  const fifth = appendSubjectSample(analysis, fourth);
+  expect(
+    subjectConsensus({
+      ...fifth,
+      votes: sampleVotes(fifth, ['math', 'math', 'english', 'english', 'math']),
+    }),
+  ).toMatchObject({subject: 'math', supportCount: 3, total: 5});
+});
+
+test('未知票留在分母，每次响应只能为本轮新增题投票且引用真实原锚', () => {
+  const {analysis, pages} = samplingFixture();
+  const initial = buildProgressiveSubjectVerification(analysis);
+  const inputs = subjectVerificationSamples(analysis, initial);
+  const votes = sampleVotes(initial, ['math', 'unknown', 'unknown']);
+  expect(subjectConsensus({...initial, votes})).toBeUndefined();
+  expect(validateSubjectVotes({votes}, pages, initial, inputs)).toEqual(votes);
+  votes[0].questionId = 'not_selected';
+  expect(() => validateSubjectVotes({votes}, pages, initial, inputs)).toThrow(
+    '新增题',
+  );
+});
+
+test('递进抽样不能替换已抽题、删减完整题池或伪造多数确认', () => {
+  const {analysis, pages} = samplingFixture();
+  const initial = buildProgressiveSubjectVerification(analysis);
+  const tampered = clone(initial);
+  tampered.candidateOrder!.pop();
+  expect(() => subjectVerificationSamples(analysis, tampered)).toThrow(
+    '完整题池',
+  );
+  const mixed = {
+    ...initial,
+    votes: sampleVotes(initial, ['math', 'math', 'unknown']),
+  };
+  const identified = {
+    ...analysis.subjectIdentification!,
+    evidence: [
+      ...initial.titleEvidence,
+      ...mixed.votes.flatMap(vote => vote.evidence),
+    ],
+  };
+  expect(() => validateSubjectIdentification(identified, pages, mixed)).toThrow(
+    '超过半数',
   );
 });

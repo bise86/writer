@@ -24,8 +24,6 @@ import {
   ChallengeRecord,
   ChallengeReviewRound,
   ChallengeSource,
-  ChallengeSubject,
-  ExamAnalysis,
   SubjectVerification,
 } from '../challenge/types';
 import {
@@ -40,10 +38,7 @@ import {
   startChallengeTask,
   subscribeChallengeTasks,
 } from '../challenge/tasks';
-import {
-  CHALLENGE_STATUS_LABELS as STATUS_LABELS,
-  CHALLENGE_RUNNING_STATUSES as RUNNING_STATUSES,
-} from '../challenge/presentation';
+import {CHALLENGE_STATUS_LABELS as STATUS_LABELS} from '../challenge/presentation';
 import {
   challengeReviewRoleLabel,
   getChallengeReviewRoles,
@@ -54,16 +49,21 @@ import {
   pickChallengePdf,
   saveChallengePdf,
 } from '../challenge/documents';
-import {
-  CHALLENGE_RULES,
-  CHALLENGE_POLICY_VERSION,
-  ChallengeMetric,
-  ChallengeSubjectBlueprint,
-  applicableMasteryChallenges,
-  getChallengePolicy,
-  loadChallengeSubjectRules,
-} from '../challenge/rules';
+import {getChallengePolicy} from '../challenge/rules';
 import ImageViewer from './ImageViewer';
+import {
+  challengeCoverage,
+  isRetainedQuestion,
+  minimumUpgradePercent,
+  sourceRequiresRetention,
+} from '../challenge/selection';
+type ChallengeTab =
+  | 'original'
+  | 'analysis'
+  | 'plan'
+  | 'paper'
+  | 'answers'
+  | 'usage';
 import ChallengeManager from './ChallengeManager';
 import ChallengeUsageDetails from './ChallengeUsageDetails';
 
@@ -74,277 +74,46 @@ function errorText(error: unknown) {
   return String(error);
 }
 
-function metricScope(
-  metric: Pick<ChallengeMetric, 'appliesTo' | 'taskCondition'>,
-) {
-  const task =
-    metric.appliesTo === 'writing'
-      ? '写作题'
-      : metric.appliesTo === 'reasoning'
-      ? '推理题'
-      : '非听力题';
-  const conditions: Record<string, string> = {
-    quantitative: '原题含数量或表征任务',
-    experimental: '原题涉及实验',
-    scientific_conditions: '原题有规律或实验条件',
-    evidence: '原题有材料或数据证据',
-    spatial: '原题含空间关系',
-    comparison: '原题涉及比较或因果',
-    geometric: '原题含几何关系',
-    discrete: '原题含计数或整数结构',
-    relations: '原题含函数、方程或关系',
-    invariant: '原题存在操作变换或量的保持',
-    argument: '原题含论证、解释或比较判断',
-    finite_objects: '原题涉及有限对象或分组分配',
-  };
-  return `（${task}${
-    metric.taskCondition
-      ? `，${conditions[metric.taskCondition] || '原题具备相应条件'}时`
-      : ''
-  }）`;
-}
-
-function DepthSummary({
-  requirements,
-}: {
-  requirements?: {
-    minDirections: number;
-    minConnections: number;
-    requireNecessityExplanation: boolean;
-    focusedRoute?: {
-      minDirections: number;
-      minDecisions: number;
-      minBoundaryChecks: number;
-    };
-  };
-}) {
-  if (!requirements) {
-    return null;
-  }
-  return (
-    <View style={styles.depthPanel}>
-      <Text style={styles.label}>思维深度要求</Text>
-      {!!requirements.focusedRoute && (
-        <Text style={styles.label}>可选路线一：组合深化</Text>
-      )}
-      <Text style={styles.body}>
-        至少采用 {requirements.minDirections} 个适用思路
-      </Text>
-      <Text style={styles.body}>
-        {requirements.minConnections > 0
-          ? `思路之间至少形成 ${requirements.minConnections} 处有效联系；多选思路时，也要连成完整解法。`
-          : '一个思路也要真正改变判断或解法；不是多算一步、换个名称。'}
-      </Text>
-      {!!requirements.focusedRoute && (
-        <View style={styles.review}>
-          <Text style={styles.label}>可选路线二：单策略深挖</Text>
-          <Text
-            style={
-              styles.body
-            }>{`围绕 ${requirements.focusedRoute.minDirections} 个核心策略，至少完成 ${requirements.focusedRoute.minDecisions} 个关键决策和 ${requirements.focusedRoute.minBoundaryChecks} 项实际边界检查。`}</Text>
-          <Text style={styles.muted}>
-            两条路线任选其一。关键决策要影响解法，边界检查要避免误判或漏解；例行计算、重复验算不算深挖。
-          </Text>
-        </View>
-      )}
-      {requirements.requireNecessityExplanation && (
-        <Text style={styles.muted}>
-          说明原题怎样做、这些思路在新题解法中起什么关键作用，以及少了哪一步会产生什么错误或漏解。
-        </Text>
-      )}
-    </View>
-  );
-}
-
-function savedPolicyLabel(version?: string) {
-  if (version === CHALLENGE_POLICY_VERSION) {
-    return `当前深度与掌握训练标准 v${CHALLENGE_RULES.version}`;
-  }
-  const number = version?.match(/:(\d+)$/)?.[1];
-  return number ? `历史标准 v${number}` : '历史标准（版本未记录）';
-}
-
 function SubjectVerificationSummary({
   verification,
 }: {
   verification: SubjectVerification;
 }) {
+  const votes = verification.votes || [];
+  const counts = new Map<string, number>();
+  for (const vote of votes) {
+    counts.set(
+      vote.subject === 'unknown' ? '待确认' : vote.courseName,
+      (counts.get(vote.subject === 'unknown' ? '待确认' : vote.courseName) ||
+        0) + 1,
+    );
+  }
   return (
     <View style={styles.review}>
-      <Text style={styles.label}>识科核验方式</Text>
+      <Text style={styles.label}>识科核验</Text>
       <Text style={styles.body}>
-        {verification.mode === 'title_sample'
-          ? '标题识科，每大题随机1题佐证'
-          : `扩大核验：${
-              verification.expansionReason || '结合整卷进一步确认科目。'
-            }`}
+        {verification.mode === 'progressive'
+          ? '先抽3题；不一致时每次追加1题，形成严格多数后停止。'
+          : '历史识科记录'}
       </Text>
-      {verification.samples.length > 0 && (
-        <>
-          <Text style={styles.label}>本轮抽中的题目</Text>
-          {verification.samples.map(sample => (
-            <Text key={sample.majorQuestionId} style={styles.muted}>
-              {sample.majorQuestionTitle} · 题号 {sample.selectedQuestionNumber}
-            </Text>
-          ))}
-          <Text style={styles.muted}>抽样题号与原页依据已随识科记录保存。</Text>
-        </>
-      )}
-    </View>
-  );
-}
-
-function MasterySummary({
-  requirements,
-  level,
-}: {
-  requirements?: ReturnType<typeof getChallengePolicy>['masteryRequirements'];
-  level: ChallengeLevel;
-}) {
-  const framework = CHALLENGE_RULES.masteryFramework;
-  const tierIntent = framework.tierIntent[level];
-  return (
-    <View style={styles.depthPanel}>
-      <Text style={styles.label}>原知识点的掌握训练目标</Text>
-      <Text style={styles.body}>{framework.goal}</Text>
-      {(!requirements || requirements.requireEveryCore) && (
-        <Text style={styles.body}>每个原题核心知识点都安排以下五维训练：</Text>
-      )}
-      {framework.dimensions
-        .filter(
-          dimension =>
-            !requirements ||
-            requirements.requiredDimensions.some(id => id === dimension.id),
-        )
-        .map(dimension => (
-          <View key={dimension.id} style={styles.review}>
-            <Text style={styles.label}>{dimension.name}</Text>
-            <Text style={styles.muted}>
-              {Object.entries(tierIntent).find(
-                ([id]) => id === dimension.id,
-              )?.[1] || dimension.description}
-            </Text>
-          </View>
-        ))}
-      {requirements && (
-        <Text style={styles.body}>
-          {`每题合计至少辨析 ${requirements.minMisconceptions} 类不同易错点、建立 ${requirements.minTransferLinks} 处同核迁移联系，并安排 ${requirements.minSelfChecks} 种有效自检。`}
+      <Text style={styles.muted}>
+        已抽 {verification.samples.length} 题
+        {votes.length
+          ? ` · ${[...counts]
+              .map(([name, count]) => `${name} ${count}票`)
+              .join(' · ')}`
+          : ''}
+      </Text>
+      {!!verification.samples.length && (
+        <Text style={styles.muted}>
+          抽中题号：
+          {verification.samples
+            .map(sample => sample.selectedQuestionNumber)
+            .join('、')}
         </Text>
       )}
-      <Text style={styles.muted}>{framework.claimBoundary}</Text>
-      <Text style={styles.muted}>
-        题型与作答方式保持；选择、判断、填空题不另加说明小问，依据、纠错与自检过程在答案侧核对。
-      </Text>
-    </View>
-  );
-}
-
-function SubjectBlueprint({
-  blueprint,
-  level,
-  expanded,
-}: {
-  blueprint?: ChallengeSubjectBlueprint;
-  level: ChallengeLevel;
-  expanded: boolean;
-}) {
-  if (!blueprint) {
-    return null;
-  }
-  return (
-    <View style={styles.depthPanel}>
-      <Text style={styles.label}>本学科的学习与提升重点</Text>
-      {blueprint.difficultyProgression
-        .find(tier => tier.level === level)
-        ?.qualityTargets.map((target, index) => (
-          <Text key={index} style={styles.body}>
-            • {target}
-          </Text>
-        ))}
-      {expanded && (
-        <>
-          <Text style={styles.label}>科内范围索引</Text>
-          <Text style={styles.muted}>{blueprint.coreDomains.join('、')}</Text>
-          <Text style={styles.muted}>
-            这些是这门学科的参考范围；本次只选原卷实际考查的核心子点。
-          </Text>
-          <Text style={styles.label}>可关注的易错机制</Text>
-          {blueprint.misconceptionMechanisms.map((item, index) => (
-            <Text key={index} style={styles.body}>
-              • {item}
-            </Text>
-          ))}
-          <Text style={styles.label}>训练题与答案讲解的验收要求</Text>
-          {blueprint.masteryAcceptance.map((item, index) => (
-            <Text key={index} style={styles.body}>
-              • {item}
-            </Text>
-          ))}
-          <Text style={styles.label}>按原题型安排训练</Text>
-          {blueprint.questionTypeGuidance.map((item, index) => (
-            <View key={index} style={styles.review}>
-              <Text style={styles.label}>{item.questionType}</Text>
-              <Text style={styles.body}>{item.design}</Text>
-            </View>
-          ))}
-          <Text style={styles.label}>知识范围边界</Text>
-          {blueprint.scopeExclusions.map((item, index) => (
-            <Text key={index} style={styles.muted}>
-              • {item}
-            </Text>
-          ))}
-        </>
-      )}
-    </View>
-  );
-}
-
-function MatchedMasteryCatalog({
-  analysis,
-  level,
-}: {
-  analysis: ExamAnalysis;
-  level: ChallengeLevel;
-}) {
-  const byKnowledge = new Map<string, Map<string, string>>();
-  for (const question of analysis.questions) {
-    if (question.isListening) {
-      continue;
-    }
-    for (const knowledgePoint of question.knowledgePoints) {
-      const matched =
-        byKnowledge.get(knowledgePoint) || new Map<string, string>();
-      for (const challenge of applicableMasteryChallenges(
-        analysis.subject,
-        level,
-        question,
-        analysis.materials,
-        knowledgePoint,
-        analysis.educationLevel,
-      )) {
-        matched.set(challenge.id, challenge.name);
-      }
-      byKnowledge.set(knowledgePoint, matched);
-    }
-  }
-  return (
-    <View style={styles.question}>
-      <Text style={styles.label}>按原知识点匹配的易错与难点目录</Text>
-      <Text style={styles.muted}>
-        以下是可选择的训练方向，实际采用情况以本卷题目与答案讲解为准；不表示你已经出现这些错误或已经掌握。
-      </Text>
-      {Array.from(byKnowledge, ([knowledgePoint, matched]) => (
-        <View key={knowledgePoint} style={styles.review}>
-          <Text style={styles.label}>{knowledgePoint}</Text>
-          <Text style={styles.body}>
-            {matched.size
-              ? `候选方向：${Array.from(matched.values()).join('、')}`
-              : '尚无匹配目录；需要在本知识点范围内安排训练，不套用其它考点。'}
-          </Text>
-        </View>
-      ))}
-      {!byKnowledge.size && (
-        <Text style={styles.muted}>听力保持原卷，不参与升档训练。</Text>
+      {verification.mode === 'expanded' && (
+        <Text style={styles.muted}>{verification.expansionReason}</Text>
       )}
     </View>
   );
@@ -378,8 +147,28 @@ function Button({
   );
 }
 
-function Card({children}: {children: React.ReactNode}) {
-  return <View style={styles.card}>{children}</View>;
+function Card({
+  children,
+  fill = false,
+}: {
+  children: React.ReactNode;
+  fill?: boolean;
+}) {
+  return <View style={[styles.card, fill && styles.fill]}>{children}</View>;
+}
+
+function TabContent({
+  fixed,
+  children,
+}: {
+  fixed: boolean;
+  children: React.ReactNode;
+}) {
+  return fixed ? (
+    <View style={styles.previewContent}>{children}</View>
+  ) : (
+    <ScrollView contentContainerStyle={styles.container}>{children}</ScrollView>
+  );
 }
 
 function draftUsesRecord(sources: ChallengeSource[], record: ChallengeRecord) {
@@ -529,13 +318,11 @@ export default function ChallengeScreen({
   const [record, setRecord] = useState<ChallengeRecord>();
   const [sources, setSources] = useState<ChallengeSource[]>([]);
   const [level, setLevel] = useState<ChallengeLevel>(1);
-  const [policySubject, setPolicySubject] = useState<ChallengeSubject>();
-  const [showPolicies, setShowPolicies] = useState(false);
-  const [showQuestions, setShowQuestions] = useState(false);
+  const [activeTab, setActiveTab] = useState<ChallengeTab>('original');
   const [localBusy, setBusy] = useState<
     'import' | 'analysis' | 'upgrade' | 'save' | 'open'
   >();
-  const [panel, setPanel] = useState<'main' | 'manage' | 'usage'>('main');
+  const [panel, setPanel] = useState<'main' | 'manage'>('main');
   const [, setTaskVersion] = useState(0);
   const task = record ? getChallengeTask(record.id) : undefined;
   const busy = localBusy || task?.kind;
@@ -543,7 +330,6 @@ export default function ChallengeScreen({
   const [error, setError] = useState('');
   const [listError, setListError] = useState('');
   const [notice, setNotice] = useState('');
-  const [preview, setPreview] = useState<'paper' | 'answers'>('paper');
   const [previewError, setPreviewError] = useState('');
   const [previewAttempt, setPreviewAttempt] = useState(0);
   const [pdfPage, setPdfPage] = useState('');
@@ -599,6 +385,13 @@ export default function ChallengeScreen({
             selectedId.current = latest.id;
             setRecord(latest);
             setLevel(latest.level);
+            setActiveTab(
+              hasReadyPdfs(latest)
+                ? 'paper'
+                : latest.analysis
+                ? 'analysis'
+                : 'original',
+            );
           }
         })
         .catch(reason => {
@@ -790,7 +583,8 @@ export default function ChallengeScreen({
       return;
     }
     let signal: AbortSignal | undefined;
-    setPreview('paper');
+    setActiveTab(upgrade ? 'plan' : 'analysis');
+    setPreviewError('');
     try {
       let active = record;
       if (!active) {
@@ -824,7 +618,7 @@ export default function ChallengeScreen({
       const result = await promise;
       if (current(request)) {
         setRecord(result);
-        setPreview('paper');
+        setPreviewError('');
         setPreviewError('');
         setPdfPage('');
         if (result.error) {
@@ -867,10 +661,11 @@ export default function ChallengeScreen({
         onSelectionChange?.(value.id);
         setLevel(value.level);
         setSources([]);
-        setPreview('paper');
+        setPreviewError('');
         setPreviewError('');
         setPdfPage('');
         setPanel('main');
+        setActiveTab(value.analysis ? 'analysis' : 'original');
       }
     } catch (reason) {
       if (current(request)) {
@@ -936,6 +731,7 @@ export default function ChallengeScreen({
           onSelectionChange?.(undefined);
           if (mounted.current) {
             setRecord(undefined);
+            setActiveTab('original');
           }
         }
       }
@@ -951,6 +747,7 @@ export default function ChallengeScreen({
     epoch.current += 1;
     selectedId.current = undefined;
     setRecord(undefined);
+    setActiveTab('original');
     onSelectionChange?.(undefined);
     setSources([]);
     setLevel(1);
@@ -1009,69 +806,72 @@ export default function ChallengeScreen({
   };
 
   const analysis = record?.analysis;
-  const subjectIdentification = record?.subjectIdentification;
-  const subjectVerification =
-    record?.subjectVerification ||
-    subjectIdentification?.verification ||
-    analysis?.subjectIdentification?.verification;
-  const identifiedRulesLoaded =
-    subjectIdentification?.status === 'confirmed' &&
-    record?.loadedSubjectRules?.subject === subjectIdentification.subject &&
-    record.loadedSubjectRules.policyVersion === CHALLENGE_POLICY_VERSION;
+  const identification = record?.subjectIdentification;
   const confirmedSubject =
     analysis &&
-    subjectIdentification?.status === 'confirmed' &&
+    identification?.status === 'confirmed' &&
     analysis.subjectIdentification?.status === 'confirmed' &&
-    subjectIdentification.subject === analysis.subject &&
+    identification.subject === analysis.subject &&
     analysis.subjectIdentification.subject === analysis.subject &&
-    subjectIdentification.courseName ===
-      analysis.subjectIdentification.courseName
+    identification.courseName === analysis.subjectIdentification.courseName
       ? analysis.subject
       : undefined;
-  const selectedPolicySubject =
-    confirmedSubject || (!analysis && showPolicies ? policySubject : undefined);
-  let subjectRules: ReturnType<typeof loadChallengeSubjectRules> | undefined;
   let policy: ReturnType<typeof getChallengePolicy> | undefined;
   let policyError = '';
-  if (selectedPolicySubject) {
+  if (confirmedSubject) {
     try {
-      subjectRules = loadChallengeSubjectRules(selectedPolicySubject);
-      policy = getChallengePolicy(selectedPolicySubject, level);
+      policy = getChallengePolicy(confirmedSubject, level);
     } catch (reason) {
-      policyError = `对应科目标准读取失败：${errorText(reason)}`;
+      policyError = errorText(reason);
     }
   }
-  const pageUris =
-    record?.pageUris || sources.flatMap(source => source.pageUris);
+  const coverage = analysis ? challengeCoverage(analysis, level) : undefined;
   const canUpgrade =
     !!analysis &&
     !!confirmedSubject &&
     !!policy &&
-    analysis.questions.length > 0 &&
-    analysis.unresolvedIssues.length === 0;
+    !analysis.unresolvedIssues.length &&
+    !!coverage?.total &&
+    coverage.eligible >= coverage.required;
+  const pageUris =
+    record?.pageUris || sources.flatMap(source => source.pageUris);
   const pdfReady = hasReadyPdfs(record);
-  const showAnswerDetails = pdfReady && preview === 'answers' && !busy;
   const pdfUri =
-    preview === 'paper' ? record?.paperPdfUri : record?.answersPdfUri;
-  const pdfKey = `${pdfUri}-${previewAttempt}`;
+    activeTab === 'answers' ? record?.answersPdfUri : record?.paperPdfUri;
+  const pdfKey = `${record?.id}-${activeTab}-${pdfUri}-${previewAttempt}`;
   const activePdfKey = useRef(pdfKey);
   activePdfKey.current = pdfKey;
+  const finalCoverage =
+    analysis && record?.candidate
+      ? challengeCoverage(analysis, record.candidate.level, record.candidate)
+      : undefined;
+  const tabs: [ChallengeTab, string][] = [
+    ['original', '原卷'],
+    ['analysis', '试卷分析'],
+    ['plan', '升档方案'],
+    ['paper', '试卷预览'],
+    ['answers', '答案预览'],
+    ...(record?.calls.length
+      ? [['usage', '消耗详情'] as [ChallengeTab, string]]
+      : []),
+  ];
+  const visibleTab =
+    activeTab === 'usage' && !record?.calls.length ? 'original' : activeTab;
   const questionTypes = analysis
-    ? Object.entries(
-        analysis.questions.reduce<Record<string, number>>(
-          (counts, question) => {
-            counts[question.type] = (counts[question.type] || 0) + 1;
-            return counts;
-          },
-          {},
+    ? [
+        ...analysis.questions.reduce(
+          (counts, question) =>
+            counts.set(question.type, (counts.get(question.type) || 0) + 1),
+          new Map<string, number>(),
         ),
-      )
+      ]
     : [];
-  const pendingAudio = record?.candidate?.answers.some(
-    answer => answer.status === 'requires_audio',
-  );
-  const historicalPolicy =
-    !!record?.candidate && record.policyVersion !== CHALLENGE_POLICY_VERSION;
+  const difficultyBands = [
+    {label: '基础（1～3）', min: 1, max: 3},
+    {label: '中等（4～6）', min: 4, max: 6},
+    {label: '较难（7～8）', min: 7, max: 8},
+    {label: '难题（9～10）', min: 9, max: 10},
+  ];
 
   if (panel === 'manage') {
     return (
@@ -1092,28 +892,9 @@ export default function ChallengeScreen({
       />
     );
   }
-  if (panel === 'usage' && record) {
-    return (
-      <SafeAreaView style={styles.safe}>
-        <ScrollView contentContainerStyle={styles.container}>
-          <View style={styles.header}>
-            <Pressable
-              accessibilityRole="button"
-              onPress={() => setPanel('main')}>
-              <Text style={styles.back}>‹ 返回挑战</Text>
-            </Pressable>
-            <Text style={styles.heading}>模型消耗详情</Text>
-          </View>
-          <Text style={styles.label}>{record.title || '未命名试卷'}</Text>
-          <ChallengeUsageDetails record={record} />
-        </ScrollView>
-      </SafeAreaView>
-    );
-  }
-
   return (
     <SafeAreaView style={styles.safe}>
-      <ScrollView contentContainerStyle={styles.container}>
+      <View style={styles.top}>
         <View style={styles.header}>
           <Pressable accessibilityRole="button" onPress={leave}>
             <Text style={styles.back}>‹ 返回首页</Text>
@@ -1138,25 +919,70 @@ export default function ChallengeScreen({
             />
           </View>
         </View>
-        {!!record?.calls.length && (
-          <Button
-            title="模型消耗详情"
-            secondary
-            onPress={() => setPanel('usage')}
-          />
+        <Text style={styles.title}>{record?.title || '挑战'}</Text>
+        <Text style={styles.muted}>
+          {record
+            ? `${STATUS_LABELS[record.status]} · ${record.pageUris.length} 页`
+            : '上传试卷，分析后按所选档次生成挑战卷。'}
+        </Text>
+        {!!record && (
+          <View style={styles.actions}>
+            <Button
+              title="新建挑战"
+              secondary
+              disabled={!!localBusy}
+              onPress={newChallenge}
+            />
+            <Button
+              title="重新解析"
+              secondary
+              disabled={!!busy}
+              onPress={() => {
+                run(false);
+              }}
+            />
+            <Button
+              title="补充页面"
+              secondary
+              disabled={!!busy}
+              onPress={() => {
+                setSources(record.sources);
+                setRecord(undefined);
+                selectedId.current = undefined;
+                onSelectionChange?.(undefined);
+                setActiveTab('original');
+                setError('');
+                setNotice('原卷已放回待解析列表，可补拍或添加缺少的页面。');
+              }}
+            />
+          </View>
         )}
-        <Text style={styles.eyebrow}>CHALLENGE</Text>
-        <Text style={styles.title}>挑战</Text>
-        <Text style={styles.subtitle}>
-          保留题型与知识范围，让每道题更有挑战。
-        </Text>
-        <Text style={styles.muted}>
-          支持空白或已作答的试卷照片、PDF。先解析原卷，再选择升档；学生原来的作答不会作为标准答案。
-        </Text>
-        <Text style={styles.muted}>
-          目标是练透原卷知识点；这里展示训练目标与题目覆盖，个人掌握情况需结合后续作答与订正判断。
-        </Text>
-
+        <View style={styles.tabs} accessibilityRole="tablist">
+          {tabs.map(([key, label]) => (
+            <Pressable
+              key={key}
+              accessibilityRole="tab"
+              accessibilityState={{selected: visibleTab === key}}
+              onPress={() => {
+                setActiveTab(key);
+                setPreviewError('');
+                setPdfPage('');
+              }}
+              style={[styles.tab, visibleTab === key && styles.activeTab]}>
+              <Text
+                style={[
+                  styles.tabText,
+                  visibleTab === key && styles.activeTabText,
+                ]}>
+                {label}
+              </Text>
+            </Pressable>
+          ))}
+        </View>
+      </View>
+      <TabContent
+        key={visibleTab}
+        fixed={visibleTab === 'paper' || visibleTab === 'answers'}>
         {!!error && (
           <Text selectable accessibilityRole="alert" style={styles.error}>
             {error}
@@ -1167,170 +993,11 @@ export default function ChallengeScreen({
             {notice}
           </Text>
         )}
-        {!!listError && (
-          <Card>
-            <Text style={styles.error}>{listError}</Text>
-            <Button
-              title="重新读取记录"
-              secondary
-              disabled={!!busy}
-              onPress={() => {
-                refresh();
-              }}
-            />
-          </Card>
+        {!!record?.error && record.error !== error && (
+          <Text selectable style={styles.error}>
+            {record.error}
+          </Text>
         )}
-
-        {!record ? (
-          <Card>
-            <Text style={styles.heading}>上传一份试卷</Text>
-            <Text style={styles.muted}>
-              按页码顺序添加，可多次拍照，也可混合添加图片和 PDF。
-            </Text>
-            <View style={styles.actions}>
-              <Button
-                title="拍照"
-                disabled={!!busy}
-                onPress={() => {
-                  addImages(true);
-                }}
-              />
-              <Button
-                title="上传照片"
-                secondary
-                disabled={!!busy}
-                onPress={() => {
-                  addImages(false);
-                }}
-              />
-              <Button
-                title="上传 PDF"
-                secondary
-                disabled={!!busy}
-                onPress={() => {
-                  addPdf();
-                }}
-              />
-            </View>
-            {sources.map((source, index) => (
-              <View key={`${index}-${source.uri}`} style={styles.sourceRow}>
-                <View style={styles.grow}>
-                  <Text style={styles.body}>
-                    {index + 1}. {source.name}
-                  </Text>
-                  <Text style={styles.muted}>
-                    {source.kind === 'pdf' ? 'PDF' : '照片'} ·{' '}
-                    {source.pageUris.length} 页
-                  </Text>
-                </View>
-                <Button
-                  title={`移除第${index + 1}项`}
-                  secondary
-                  disabled={!!busy}
-                  onPress={() => {
-                    removeSource(index);
-                  }}
-                />
-                {index > 0 && (
-                  <Button
-                    title={`第${index + 1}项上移`}
-                    secondary
-                    disabled={!!busy}
-                    onPress={() =>
-                      setSources(values => {
-                        const reordered = [...values];
-                        [reordered[index - 1], reordered[index]] = [
-                          reordered[index],
-                          reordered[index - 1],
-                        ];
-                        return reordered;
-                      })
-                    }
-                  />
-                )}
-              </View>
-            ))}
-            <Text style={styles.muted}>
-              已选 {sources.length} 项，共 {pageUris.length} 页
-            </Text>
-            <Button
-              title="解析试卷"
-              disabled={!sources.length || !!busy}
-              onPress={() => {
-                run(false);
-              }}
-            />
-          </Card>
-        ) : (
-          <Card>
-            <Text style={styles.heading}>{record.title || '未命名试卷'}</Text>
-            <Text style={styles.status}>
-              {STATUS_LABELS[record.status]} · {record.pageUris.length} 页
-            </Text>
-            <View style={styles.actions}>
-              <Button
-                title="新建挑战"
-                secondary
-                disabled={!!localBusy}
-                onPress={newChallenge}
-              />
-              <Button
-                title="重新解析"
-                secondary
-                disabled={!!busy}
-                onPress={() => {
-                  run(false);
-                }}
-              />
-              <Button
-                title="补充页面"
-                secondary
-                disabled={!!busy}
-                onPress={() => {
-                  setSources(record.sources);
-                  setRecord(undefined);
-                  onSelectionChange?.(undefined);
-                  setError('');
-                  setNotice('原卷已放回待解析列表，可补拍或添加缺少的页面。');
-                }}
-              />
-            </View>
-            {RUNNING_STATUSES.has(record.status) && !busy && (
-              <Text style={styles.muted}>
-                上次处理未完成，可以重新解析或继续升档。
-              </Text>
-            )}
-            {!!record.error && record.error !== error && (
-              <Text selectable style={styles.error}>
-                {record.error}
-              </Text>
-            )}
-          </Card>
-        )}
-
-        {pageUris.length > 0 && (
-          <Card>
-            <Text style={styles.heading}>原卷页面</Text>
-            <ScrollView horizontal showsHorizontalScrollIndicator>
-              {pageUris.map((uri, index) => (
-                <Pressable
-                  key={`${uri}-${index}`}
-                  accessibilityRole="button"
-                  accessibilityLabel={`查看原卷第${index + 1}页`}
-                  onPress={() => setImagePreview({uris: pageUris, index})}
-                  style={styles.pageThumb}>
-                  <Image
-                    source={{uri}}
-                    style={styles.thumb}
-                    resizeMode="contain"
-                  />
-                  <Text style={styles.muted}>第 {index + 1} 页</Text>
-                </Pressable>
-              ))}
-            </ScrollView>
-          </Card>
-        )}
-
         {!!busy && (
           <Card>
             <ActivityIndicator color="#A55B17" />
@@ -1342,550 +1009,533 @@ export default function ChallengeScreen({
                 : record?.progress || '正在处理试卷…'}
             </Text>
             {!!task && (
-              <Text style={styles.muted}>
-                返回首页或切换页面后会继续处理，再次打开可查看进度。
-              </Text>
-            )}
-            {(busy === 'analysis' || busy === 'upgrade') && (
-              <Button
-                title="停止处理"
-                secondary
-                disabled={!task}
-                onPress={() => {
-                  if (record) {
-                    cancelChallengeTask(record.id);
-                  }
-                }}
-              />
-            )}
-          </Card>
-        )}
-
-        <Card>
-          <Text style={styles.heading}>科目与标准</Text>
-          {confirmedSubject ? (
-            <>
-              <Text style={styles.body}>
-                识别科目：{subjectIdentification!.courseName}
-              </Text>
-              {policy ? (
-                <Text style={styles.status}>
-                  已加载对应科目标准 · {policy.subjectLabel} · v
-                  {CHALLENGE_RULES.version}
-                </Text>
-              ) : (
-                <Text style={styles.error}>{policyError}</Text>
-              )}
-            </>
-          ) : analysis ? (
-            <Text style={styles.notice}>
-              请重新解析以确认本卷科目，再按当前标准升档；已有 PDF 可继续浏览。
-            </Text>
-          ) : subjectIdentification ? (
-            <>
-              <Text style={styles.body}>
-                已识别科目：{subjectIdentification.courseName}
-              </Text>
-              {identifiedRulesLoaded ? (
-                <>
-                  <Text style={styles.status}>已加载对应科目标准</Text>
-                  <Text style={styles.muted}>
-                    {record?.status === 'analyzing'
-                      ? '正在核实整卷，解析完成后展示本卷的训练范围与提升要求。'
-                      : '完成整卷解析后，可使用对应科目标准升档。'}
-                  </Text>
-                </>
-              ) : (
+              <>
                 <Text style={styles.muted}>
-                  正在加载对应科目标准，随后核实整卷。
+                  返回首页或切换页卡后继续处理，再次打开可查看进度。
                 </Text>
-              )}
-            </>
-          ) : (
-            <Text style={styles.muted}>
-              先识别并确认原卷科目，再加载该科标准。科目不明或混合多科时，请补充清晰、完整的单科原卷。
-            </Text>
-          )}
-          {subjectVerification && (
-            <SubjectVerificationSummary verification={subjectVerification} />
-          )}
-        </Card>
-
-        {!!analysis && (
-          <Card>
-            <Text style={styles.heading}>原卷解析</Text>
-            <Text style={styles.body}>
-              {analysis.subjectLabel} ·{' '}
-              {analysis.educationLevel === 'high'
-                ? '高中'
-                : analysis.educationLevel === 'middle'
-                ? '初中'
-                : '学段待确认'}{' '}
-              · {analysis.questions.length} 道题
-            </Text>
-            <Text style={styles.muted}>
-              原卷
-              {analysis.answerState === 'blank'
-                ? '空白'
-                : analysis.answerState === 'answered'
-                ? '已作答'
-                : '部分已作答'}
-              {analysis.totalScore !== null
-                ? ` · ${analysis.totalScore} 分`
-                : ''}
-              {analysis.timeLimitMinutes !== null
-                ? ` · ${analysis.timeLimitMinutes} 分钟`
-                : ''}
-            </Text>
-            <Text style={styles.label}>难度预估</Text>
-            <Text style={styles.body}>{analysis.difficultySummary}</Text>
-            <Text style={styles.muted}>
-              依据题目要求预估，不等同于实测难度系数。
-            </Text>
-            <Text style={styles.label}>知识范围</Text>
-            <Text selectable style={styles.body}>
-              {analysis.knowledgePoints.join('、')}
-            </Text>
-            <Text style={styles.label}>题型分布</Text>
-            <Text style={styles.body}>
-              {questionTypes
-                .map(([type, count]) => `${type} ${count}题`)
-                .join(' · ')}
-            </Text>
-            {analysis.warnings.map((warning, index) => (
-              <Text key={index} style={styles.muted}>
-                {warning}
-              </Text>
-            ))}
-            {analysis.unresolvedIssues.length > 0 && (
-              <View>
-                <Text style={styles.error}>
-                  以下内容还不能确认，补充清晰、完整的页面后再升档：
-                </Text>
-                {analysis.unresolvedIssues.map((issue, index) => (
-                  <Text key={index} style={styles.error}>
-                    • {issue}
-                  </Text>
-                ))}
-              </View>
-            )}
-            <Button
-              title={showQuestions ? '收起逐题分析' : '查看逐题分析'}
-              secondary
-              onPress={() => setShowQuestions(value => !value)}
-            />
-            {showQuestions &&
-              analysis.questions.map(question => (
-                <View key={question.id} style={styles.question}>
-                  <Text style={styles.label}>
-                    {question.number}. {question.type}
-                    {question.score !== null ? ` · ${question.score}分` : ''}
-                    {question.isListening ? ' · 听力保留' : ''}
-                  </Text>
-                  <Text selectable style={styles.body}>
-                    {question.stem}
-                  </Text>
-                  <Text style={styles.muted}>
-                    知识点：{question.knowledgePoints.join('、')}
-                  </Text>
-                  <Text style={styles.muted}>
-                    难度预估 {question.difficulty.rating} · 推理步骤约{' '}
-                    {question.difficulty.reasoningSteps}：
-                    {question.difficulty.explanation}
-                  </Text>
-                  {showAnswerDetails &&
-                    record?.candidate?.questions
-                      .filter(variant => variant.id === question.id)
-                      .map(variant => (
-                        <View key={variant.id} style={styles.review}>
-                          <Text style={styles.label}>本次变种微调</Text>
-                          {variant.upgrade.changes.map((change, index) => (
-                            <Text key={index} style={styles.body}>
-                              • {change}
-                            </Text>
-                          ))}
-                          {variant.upgrade.directionEvidence?.map(evidence => (
-                            <View
-                              key={evidence.directionId}
-                              style={styles.review}>
-                              <Text style={styles.label}>
-                                {policy?.deepDirections.find(
-                                  direction =>
-                                    direction.id === evidence.directionId,
-                                )?.name || '深化思路'}
-                              </Text>
-                              <Text style={styles.body}>
-                                原要求：{evidence.originalDemand}
-                              </Text>
-                              <Text style={styles.body}>
-                                新要求：{evidence.newDemand}
-                              </Text>
-                            </View>
-                          ))}
-                          <Text style={styles.muted}>
-                            {variant.upgrade.scopeExplanation}
-                          </Text>
-                        </View>
-                      ))}
-                </View>
-              ))}
-          </Card>
-        )}
-
-        <Card>
-          <Text style={styles.heading}>选择升档难度</Text>
-          <Text style={styles.muted}>
-            当前使用深度与掌握训练标准 v{CHALLENGE_RULES.version}
-            ，以下要求用于本次重新升档。
-          </Text>
-          {historicalPolicy && (
-            <Text style={styles.notice}>
-              此卷按旧版标准生成，重新升档可使用当前深度与掌握训练标准。
-            </Text>
-          )}
-          <View style={styles.actions}>
-            {([1, 2, 3] as const).map(value => (
-              <Button
-                key={value}
-                title={`升 ${value} 档`}
-                disabled={!!busy}
-                secondary={level !== value}
-                onPress={() => setLevel(value)}
-              />
-            ))}
-          </View>
-          {!confirmedSubject && !!policy && (
-            <Text style={styles.notice}>
-              正在参考所选科目的标准；本卷仍需独立识别并确认科目。
-            </Text>
-          )}
-          {!!policyError && <Text style={styles.error}>{policyError}</Text>}
-          {policy && (
-            <>
-              <Text style={styles.label}>
-                {policy.subjectLabel} · {policy.label}
-              </Text>
-              <Text style={styles.body}>{policy.summary}</Text>
-              <DepthSummary requirements={policy.depthRequirements} />
-              <SubjectBlueprint
-                blueprint={policy.subjectBlueprint}
-                level={level}
-                expanded={showPolicies}
-              />
-            </>
-          )}
-          <MasterySummary
-            requirements={policy?.masteryRequirements}
-            level={level}
-          />
-          {analysis && confirmedSubject && policy && (
-            <MatchedMasteryCatalog analysis={analysis} level={level} />
-          )}
-          {!!policy?.deepDirections.length && (
-            <Text style={styles.muted}>
-              可深化的思路：
-              {policy.deepDirections
-                .map(direction => direction.name)
-                .join('、')}
-              。按原题条件选用，不能靠罗列方法名升档。
-            </Text>
-          )}
-          {policy?.aspects.map((aspect, index) => (
-            <Text key={index} style={styles.body}>
-              • {aspect}
-            </Text>
-          ))}
-          {policy?.metrics.map(metric => (
-            <Text key={metric.key} style={styles.muted}>
-              {metric.label}：{metric.min}
-              {metric.max !== undefined ? `—${metric.max}` : ' 起'}
-              {metricScope(metric)}
-            </Text>
-          ))}
-          <Text style={styles.muted}>
-            题型、题量和知识范围保持；英语听力沿用原题与原录音，不另造听力内容。每道非听力题按所选档位作变种微调。
-          </Text>
-          <Button
-            title={showPolicies ? '收起各科标准' : '查看各科三档提升标准'}
-            secondary
-            disabled={!!busy}
-            onPress={() => setShowPolicies(value => !value)}
-          />
-          {showPolicies && (
-            <View>
-              {!analysis && (
-                <>
-                  <Text style={styles.muted}>
-                    选择一科查看参考标准；生成始终以原卷识别确认的科目为准。
-                  </Text>
-                  <View style={styles.actions}>
-                    {CHALLENGE_RULES.subjects.map(item => (
-                      <Button
-                        key={item.subject}
-                        title={item.label}
-                        secondary={policySubject !== item.subject}
-                        onPress={() => setPolicySubject(item.subject)}
-                      />
-                    ))}
-                  </View>
-                </>
-              )}
-              {(subjectRules ? [subjectRules] : []).map(item => (
-                <View key={item.subject}>
-                  <Text style={styles.label}>{item.label}三档标准</Text>
-                  {!analysis && !!item.masteryChallenges?.length && (
-                    <View style={styles.question}>
-                      <Text style={styles.label}>可选易错与难点训练目录</Text>
-                      <Text style={styles.muted}>
-                        解析后按学段、原知识点和题型筛选，以下目录不是本卷已覆盖的项目。
-                      </Text>
-                      {item.masteryChallenges.map(challenge => (
-                        <Text key={challenge.id} style={styles.body}>
-                          • {challenge.name}
-                          {challenge.educationLevels?.length
-                            ? `（${challenge.educationLevels
-                                .map(grade =>
-                                  grade === 'high' ? '高中' : '初中',
-                                )
-                                .join('、')}原题适用）`
-                            : ''}
-                        </Text>
-                      ))}
-                    </View>
-                  )}
-                  {!!item.deepDirections?.length && (
-                    <View style={styles.question}>
-                      <Text style={styles.label}>可用深化方向</Text>
-                      {item.deepDirections.map(direction => (
-                        <View key={direction.id} style={styles.review}>
-                          <Text style={styles.label}>{direction.name}</Text>
-                          <Text style={styles.body}>
-                            {direction.description}
-                          </Text>
-                          <Text style={styles.muted}>
-                            {metricScope(direction)}
-                          </Text>
-                        </View>
-                      ))}
-                      <Text style={styles.muted}>
-                        只在原题核心知识和题型内深化，可以重新组织条件与解法。不能承载所选档位时，会说明原因，不增加新知识硬升档。
-                      </Text>
-                    </View>
-                  )}
-                  {item.tiers.map(tier => (
-                    <View key={tier.level} style={styles.question}>
-                      <Text style={styles.label}>{tier.label}</Text>
-                      <Text style={styles.body}>{tier.summary}</Text>
-                      <DepthSummary requirements={tier.depthRequirements} />
-                      <MasterySummary
-                        requirements={tier.masteryRequirements}
-                        level={tier.level}
-                      />
-                      {tier.aspects.map((aspect, index) => (
-                        <Text key={index} style={styles.muted}>
-                          • {aspect}
-                        </Text>
-                      ))}
-                      {tier.metrics.map(metric => (
-                        <Text key={metric.key} style={styles.muted}>
-                          {metric.label}：{metric.min}
-                          {metric.max !== undefined ? `—${metric.max}` : ' 起'}
-                          {metricScope(metric)}
-                        </Text>
-                      ))}
-                    </View>
-                  ))}
-                </View>
-              ))}
-            </View>
-          )}
-          <Button
-            title="升档"
-            disabled={!canUpgrade || !!busy}
-            onPress={() => {
-              run(true);
-            }}
-          />
-          <Text style={styles.label}>
-            下一次生成评审：{reviewModeLabel(settings.roundtableSize)}
-          </Text>
-          <Text style={styles.muted}>
-            可在模型设置中调整人数；生成开始时保存本次选择，历史评审按各卷记录显示。
-          </Text>
-          {!analysis && (
-            <Text style={styles.muted}>先解析并核对原卷，之后可以升档。</Text>
-          )}
-        </Card>
-
-        {!!record &&
-          (record.reviewRounds.length > 0 ||
-            record.reviewRoundtableSize !== undefined) && (
-            <Card>
-              <Text style={styles.heading}>生成校核</Text>
-              <Text style={styles.label}>
-                本次采用：
-                {reviewModeLabel(
-                  record.reviewRoundtableSize ??
-                    record.reviewRounds[record.reviewRounds.length - 1]
-                      ?.roundtableSize,
-                )}
-              </Text>
-              <Text style={styles.muted}>
-                按对应科目标准逐角色核对；本轮全部通过后输出试卷与答案，有修订意见则先修复，再由全部角色重新评审。
-              </Text>
-              {!record.reviewRounds.length && (
-                <Text style={styles.muted}>新卷生成后开始本次评审。</Text>
-              )}
-              {record.reviewRounds.map(round => (
-                <ReviewRoundSummary
-                  key={round.round}
-                  round={round}
-                  record={record}
-                  showDetails={showAnswerDetails}
-                />
-              ))}
-            </Card>
-          )}
-
-        {pdfReady && (
-          <Card>
-            <Text style={styles.heading}>新试卷与答案</Text>
-            <Text style={styles.status}>
-              试卷校核已完成 · 升 {record!.level} 档
-            </Text>
-            <Text style={styles.muted}>
-              本卷生成标准：{savedPolicyLabel(record?.policyVersion)}
-            </Text>
-            {historicalPolicy && (
-              <Text style={styles.muted}>
-                此卷按旧版标准生成，重新升档可使用当前深度与掌握训练标准。
-              </Text>
-            )}
-            {pendingAudio && (
-              <Text style={styles.muted}>
-                听力保持原卷内容。未提供原录音或完整转写的题目，答案已标为待核，需配合原录音使用。
-              </Text>
-            )}
-            {!showAnswerDetails && (
-              <Text style={styles.muted}>
-                具体解法、错因诊断与修订说明在答案侧查看，先完成试卷再核对。
-              </Text>
-            )}
-            <View style={styles.actions}>
-              <Button
-                title="试卷 PDF"
-                secondary={preview !== 'paper'}
-                onPress={() => {
-                  setPreview('paper');
-                  setPreviewError('');
-                  setPdfPage('');
-                }}
-              />
-              <Button
-                title="答案 PDF"
-                secondary={preview !== 'answers'}
-                onPress={() => {
-                  setPreview('answers');
-                  setPreviewError('');
-                  setPdfPage('');
-                }}
-              />
-            </View>
-            <View style={styles.actions}>
-              <Button
-                title="下载试卷"
-                disabled={!!busy}
-                onPress={() => {
-                  download(false);
-                }}
-              />
-              <Button
-                title="下载答案"
-                secondary
-                disabled={!!busy}
-                onPress={() => {
-                  download(true);
-                }}
-              />
-            </View>
-            <Text style={styles.muted}>可在下方浏览、双指缩放 {pdfPage}</Text>
-            {previewError ? (
-              <View>
-                <Text style={styles.error}>PDF 预览失败：{previewError}</Text>
                 <Button
-                  title="重新打开 PDF"
+                  title="停止处理"
                   secondary
                   onPress={() => {
-                    setPreviewError('');
-                    setPreviewAttempt(value => value + 1);
+                    if (record) {
+                      cancelChallengeTask(record.id);
+                    }
                   }}
                 />
-              </View>
-            ) : (
-              <Pdf
-                key={pdfKey}
-                source={{
-                  uri:
-                    (Platform.OS as string) === 'harmony'
-                      ? pdfUri!.replace(/^file:\/\//, '')
-                      : pdfUri!,
-                  cache: false,
-                }}
-                style={styles.pdf}
-                fitPolicy={0}
-                trustAllCerts={false}
-                onPageChanged={(page, count) => {
-                  if (activePdfKey.current === pdfKey) {
-                    setPdfPage(`${page}/${count}`);
-                  }
-                }}
-                onError={reason => {
-                  if (activePdfKey.current === pdfKey) {
-                    setPreviewError(String(reason));
-                  }
-                }}
-              />
+              </>
             )}
           </Card>
         )}
-
-        <Text style={styles.sectionTitle}>最近挑战</Text>
-        {loading ? (
-          <ActivityIndicator color="#A55B17" />
-        ) : records.length === 0 ? (
-          <Card>
-            <Text style={styles.muted}>还没有挑战，先上传一份试卷。</Text>
-          </Card>
-        ) : (
-          records.map(value => (
-            <Card key={value.id}>
-              <Pressable
-                accessibilityRole="button"
-                accessibilityLabel={`打开挑战${value.title || '未命名试卷'}`}
-                disabled={!!localBusy}
-                onPress={() => {
-                  open(value.id);
-                }}>
-                <Text style={styles.label}>{value.title || '未命名试卷'}</Text>
+        {visibleTab === 'original' && (
+          <>
+            {!record && (
+              <Card>
+                <Text style={styles.heading}>上传一份试卷</Text>
                 <Text style={styles.muted}>
-                  {new Date(value.createdAt).toLocaleString()} ·{' '}
-                  {value.pageUris.length} 页 · {STATUS_LABELS[value.status]}
+                  支持空白或已作答的照片、PDF，按页码添加；学生作答不会作为标准答案。
                 </Text>
-              </Pressable>
-              <View style={styles.actions}>
+                <View style={styles.actions}>
+                  <Button
+                    title="拍照"
+                    disabled={!!busy}
+                    onPress={() => {
+                      addImages(true);
+                    }}
+                  />
+                  <Button
+                    title="上传照片"
+                    secondary
+                    disabled={!!busy}
+                    onPress={() => {
+                      addImages(false);
+                    }}
+                  />
+                  <Button
+                    title="上传 PDF"
+                    secondary
+                    disabled={!!busy}
+                    onPress={() => {
+                      addPdf();
+                    }}
+                  />
+                </View>
+                {sources.map((source, index) => (
+                  <View key={`${index}-${source.uri}`} style={styles.sourceRow}>
+                    <View style={styles.grow}>
+                      <Text style={styles.body}>
+                        {index + 1}. {source.name}
+                      </Text>
+                      <Text style={styles.muted}>
+                        {source.kind === 'pdf' ? 'PDF' : '照片'} ·{' '}
+                        {source.pageUris.length} 页
+                      </Text>
+                    </View>
+                    <Button
+                      title={`移除第${index + 1}项`}
+                      secondary
+                      disabled={!!busy}
+                      onPress={() => {
+                        removeSource(index);
+                      }}
+                    />
+                    {index > 0 && (
+                      <Button
+                        title={`第${index + 1}项上移`}
+                        secondary
+                        disabled={!!busy}
+                        onPress={() =>
+                          setSources(values => {
+                            const reordered = [...values];
+                            [reordered[index - 1], reordered[index]] = [
+                              reordered[index],
+                              reordered[index - 1],
+                            ];
+                            return reordered;
+                          })
+                        }
+                      />
+                    )}
+                  </View>
+                ))}
+                <Text style={styles.muted}>
+                  已选 {sources.length} 项，共 {pageUris.length} 页
+                </Text>
                 <Button
-                  title={`打开${value.title || '未命名试卷'}`}
+                  title="解析试卷"
+                  disabled={!sources.length || !!busy}
+                  onPress={() => {
+                    run(false);
+                  }}
+                />
+              </Card>
+            )}
+            {!!pageUris.length && (
+              <Card>
+                <Text style={styles.heading}>原卷页面</Text>
+                <ScrollView horizontal showsHorizontalScrollIndicator>
+                  {pageUris.map((uri, index) => (
+                    <Pressable
+                      key={`${uri}-${index}`}
+                      accessibilityRole="button"
+                      accessibilityLabel={`查看原卷第${index + 1}页`}
+                      onPress={() => setImagePreview({uris: pageUris, index})}
+                      style={styles.pageThumb}>
+                      <Image
+                        source={{uri}}
+                        style={styles.thumb}
+                        resizeMode="contain"
+                      />
+                      <Text style={styles.muted}>第 {index + 1} 页</Text>
+                    </Pressable>
+                  ))}
+                </ScrollView>
+              </Card>
+            )}
+            <Text style={styles.sectionTitle}>最近挑战</Text>
+            {!!listError && (
+              <Card>
+                <Text style={styles.error}>{listError}</Text>
+                <Button
+                  title="重新读取记录"
                   secondary
                   disabled={!!localBusy}
                   onPress={() => {
-                    open(value.id);
+                    refresh();
                   }}
                 />
-              </View>
-            </Card>
-          ))
+              </Card>
+            )}
+            {loading ? (
+              <ActivityIndicator color="#A55B17" />
+            ) : !records.length ? (
+              <Card>
+                <Text style={styles.muted}>还没有挑战，先上传一份试卷。</Text>
+              </Card>
+            ) : (
+              records.map(value => (
+                <Card key={value.id}>
+                  <Text style={styles.label}>
+                    {value.title || '未命名试卷'}
+                  </Text>
+                  <Text style={styles.muted}>
+                    {new Date(value.createdAt).toLocaleString()} ·{' '}
+                    {value.pageUris.length} 页 · {STATUS_LABELS[value.status]}
+                  </Text>
+                  <Button
+                    title={`打开${value.title || '未命名试卷'}`}
+                    secondary
+                    disabled={!!localBusy}
+                    onPress={() => {
+                      open(value.id);
+                    }}
+                  />
+                </Card>
+              ))
+            )}
+          </>
         )}
-      </ScrollView>
+        {visibleTab === 'analysis' && (
+          <>
+            <Card>
+              <Text style={styles.heading}>科目核验</Text>
+              <Text style={styles.body}>
+                {identification
+                  ? `识别科目：${identification.courseName}`
+                  : '解析时先抽最多3题识科，不一致再逐题追加。'}
+              </Text>
+              {!!record?.subjectVerification && (
+                <SubjectVerificationSummary
+                  verification={record.subjectVerification}
+                />
+              )}
+            </Card>
+            {!analysis ? (
+              <Card>
+                <Text style={styles.muted}>
+                  完成原卷解析后，这里展示逐题分析、难度分布和知识范围。
+                </Text>
+              </Card>
+            ) : (
+              <>
+                <Card>
+                  <Text style={styles.heading}>原卷解析</Text>
+                  <Text style={styles.body}>
+                    {analysis.subjectLabel} ·{' '}
+                    {analysis.educationLevel === 'high'
+                      ? '高中'
+                      : analysis.educationLevel === 'middle'
+                      ? '初中'
+                      : '学段待确认'}{' '}
+                    · {analysis.questions.length} 道题
+                  </Text>
+                  <Text style={styles.muted}>
+                    原卷
+                    {analysis.answerState === 'blank'
+                      ? '空白'
+                      : analysis.answerState === 'answered'
+                      ? '已作答'
+                      : '部分已作答'}
+                    {analysis.totalScore !== null
+                      ? ` · ${analysis.totalScore} 分`
+                      : ''}
+                    {analysis.timeLimitMinutes !== null
+                      ? ` · ${analysis.timeLimitMinutes} 分钟`
+                      : ''}
+                  </Text>
+                  <Text style={styles.label}>难度预估</Text>
+                  <Text style={styles.body}>{analysis.difficultySummary}</Text>
+                  <Text style={styles.muted}>
+                    依据题目要求预估，不等同于实测难度或个人掌握情况。
+                  </Text>
+                  <Text style={styles.label}>难度分布</Text>
+                  {difficultyBands.map(band => {
+                    const count = analysis.questions.filter(
+                      question =>
+                        !question.analysisIssues?.length &&
+                        question.difficulty.rating >= band.min &&
+                        question.difficulty.rating <= band.max,
+                    ).length;
+                    return (
+                      <View key={band.label} style={styles.review}>
+                        <Text style={styles.muted}>
+                          {band.label}：{count} 题
+                        </Text>
+                        <View style={styles.track}>
+                          <View
+                            style={[
+                              styles.bar,
+                              {
+                                width: `${
+                                  (count * 100) / analysis.questions.length
+                                }%`,
+                              },
+                            ]}
+                          />
+                        </View>
+                      </View>
+                    );
+                  })}
+                  {!!analysis.questions.filter(
+                    question => question.analysisIssues?.length,
+                  ).length && (
+                    <Text style={styles.muted}>
+                      分析待核：
+                      {
+                        analysis.questions.filter(
+                          question => question.analysisIssues?.length,
+                        ).length
+                      }{' '}
+                      题（保留原题，不计入已确认难度分布）
+                    </Text>
+                  )}
+                  <Text style={styles.label}>知识范围</Text>
+                  <Text selectable style={styles.body}>
+                    {analysis.knowledgePoints.join('、')}
+                  </Text>
+                  <Text style={styles.label}>题型分布</Text>
+                  <Text style={styles.body}>
+                    {questionTypes
+                      .map(([type, count]) => `${type} ${count}题`)
+                      .join(' · ')}
+                  </Text>
+                  {analysis.warnings.map((warning, index) => (
+                    <Text key={index} style={styles.muted}>
+                      {warning}
+                    </Text>
+                  ))}
+                  {!!analysis.unresolvedIssues.length && (
+                    <View>
+                      <Text style={styles.error}>
+                        以下信息尚未核实，请补充原卷或重新解析后再生成：
+                      </Text>
+                      {analysis.unresolvedIssues.map((issue, index) => (
+                        <Text key={index} style={styles.error}>
+                          • {issue}
+                        </Text>
+                      ))}
+                    </View>
+                  )}
+                </Card>
+                <Text style={styles.sectionTitle}>逐题分析</Text>
+                {analysis.questions.map(question => (
+                  <Card key={question.id}>
+                    <Text style={styles.label}>
+                      第 {question.number} 题 · {question.type}
+                      {question.score !== null ? ` · ${question.score} 分` : ''}
+                      {question.isListening ? ' · 听力保持不变' : ''}
+                    </Text>
+                    <Text selectable style={styles.body}>
+                      {question.stem}
+                    </Text>
+                    <Text style={styles.muted}>
+                      知识点：{question.knowledgePoints.join('、')}
+                    </Text>
+                    <Text style={styles.muted}>
+                      {question.analysisIssues?.length
+                        ? '难度分析待核'
+                        : `难度预估 ${question.difficulty.rating}/10 · 推理步骤约 ${question.difficulty.reasoningSteps}`}
+                      ：{question.difficulty.explanation}
+                    </Text>
+                    {question.analysisIssues?.map((issue, index) => (
+                      <Text key={index} style={styles.notice}>
+                        待核：{issue}
+                      </Text>
+                    ))}
+                    {sourceRequiresRetention(question) &&
+                      !question.isListening && (
+                        <Text style={styles.notice}>
+                          建议保留原题：
+                          {question.retentionReason ||
+                            '逐题分析尚不能可靠支持变式命题'}
+                        </Text>
+                      )}
+                  </Card>
+                ))}
+              </>
+            )}
+          </>
+        )}
+        {visibleTab === 'plan' && (
+          <>
+            <Card>
+              <Text style={styles.heading}>选择升档难度</Text>
+              <View style={styles.actions}>
+                {([1, 2, 3] as ChallengeLevel[]).map(value => (
+                  <Button
+                    key={value}
+                    title={`升 ${value} 档`}
+                    secondary={level !== value}
+                    disabled={!!busy}
+                    onPress={() => setLevel(value)}
+                  />
+                ))}
+              </View>
+              <Text style={styles.label}>
+                升 {level} 档 · 非听力题至少 {minimumUpgradePercent(level)}%
+                升档
+              </Text>
+              <Text style={styles.muted}>
+                按非听力小题总数计算，题数向上取整；听力保持不变。不好升档或分析存疑的题可原样保留并说明原因。
+              </Text>
+              {!!coverage && (
+                <Text style={styles.body}>
+                  本卷 {coverage.total} 道非听力小题，至少升档{' '}
+                  {coverage.required} 题；当前可可靠选用 {coverage.eligible}{' '}
+                  题。
+                </Text>
+              )}
+              {!!coverage && coverage.eligible < coverage.required && (
+                <Text style={styles.error}>
+                  可升档题数不足当前最低比例，请选较低档或补充核实原题。
+                </Text>
+              )}
+              <Text style={styles.heading}>本档升档思路</Text>
+              {policy ? (
+                <>
+                  <Text style={styles.body}>
+                    {policy.subjectLabel} · {policy.summary}
+                  </Text>
+                  {policy.subjectBlueprint.difficultyProgression
+                    .find(tier => tier.level === level)
+                    ?.qualityTargets.slice(0, 3)
+                    .map((thought, index) => (
+                      <Text key={index} style={styles.muted}>
+                        • {thought}
+                      </Text>
+                    ))}
+                </>
+              ) : (
+                <Text style={styles.muted}>
+                  {policyError ||
+                    '先完成原卷解析与识科，再展示对应科目、当前档次的升档思路。'}
+                </Text>
+              )}
+              <Text style={styles.muted}>
+                题型、题量、分值和原知识范围保持。升档题按该档难度、易错与深度要求核验，保留题不凑升档数。
+              </Text>
+              <Text style={styles.muted}>
+                本次生成后
+                {settings.roundtableSize
+                  ? `由${settings.roundtableSize}个角色按规则独立评审`
+                  : '进行基础综合校核'}
+                ，发现问题修正后重审。
+              </Text>
+              <Button
+                title="升档"
+                disabled={!canUpgrade || !!busy}
+                onPress={() => {
+                  run(true);
+                }}
+              />
+            </Card>
+            {!!pdfReady && record?.candidate && finalCoverage && (
+              <Card>
+                <Text style={styles.heading}>
+                  本次生成结果 · 升 {record.candidate.level} 档
+                </Text>
+                <Text style={styles.body}>
+                  已升档 {finalCoverage.upgraded} / {finalCoverage.total}{' '}
+                  道非听力题（{finalCoverage.percent.toFixed(1)}%）；其余{' '}
+                  {finalCoverage.retained} 题保留原题。
+                </Text>
+                {record.candidate.questions.map(question => (
+                  <View key={question.id} style={styles.question}>
+                    <Text style={styles.label}>
+                      第 {question.number} 题 ·{' '}
+                      {isRetainedQuestion(question) ? '保留原题' : '已升档'}
+                    </Text>
+                    {isRetainedQuestion(question) ? (
+                      <Text style={styles.muted}>
+                        {question.upgrade.retentionReason ||
+                          (question.isListening
+                            ? '听力沿用原卷与原录音'
+                            : '原知识范围内暂不适宜调整')}
+                      </Text>
+                    ) : (
+                      question.upgrade.changes.map((change, index) => (
+                        <Text key={index} style={styles.body}>
+                          • {change}
+                        </Text>
+                      ))
+                    )}
+                  </View>
+                ))}
+              </Card>
+            )}
+            {!!record?.reviewRounds.length && (
+              <Card>
+                <Text style={styles.heading}>生成校核</Text>
+                <Text style={styles.muted}>
+                  沿用本卷生成时的{reviewModeLabel(record.reviewRoundtableSize)}
+                  设置。
+                </Text>
+                {record.reviewRounds.map(round => (
+                  <ReviewRoundSummary
+                    key={`${round.round}-${round.candidateRevision}`}
+                    round={round}
+                    record={record}
+                    showDetails={false}
+                  />
+                ))}
+              </Card>
+            )}
+          </>
+        )}
+        {(visibleTab === 'paper' || visibleTab === 'answers') && (
+          <Card fill>
+            <Text style={styles.heading}>
+              {visibleTab === 'paper' ? '试卷 PDF 预览' : '答案 PDF 预览'}
+            </Text>
+            {!pdfReady ? (
+              <Text style={styles.muted}>
+                新卷通过校核并生成两份 PDF 后，可在这里预览、缩放和下载。
+              </Text>
+            ) : (
+              <>
+                {visibleTab === 'answers' &&
+                  record?.candidate?.answers.some(
+                    answer => answer.status !== 'verified',
+                  ) && (
+                    <Text style={styles.notice}>
+                      部分答案待原录音或原题核验，PDF
+                      中已明确标注，不作为确定答案。
+                    </Text>
+                  )}
+                <Button
+                  title={visibleTab === 'paper' ? '下载试卷' : '下载答案'}
+                  disabled={!!busy}
+                  onPress={() => {
+                    download(visibleTab === 'answers');
+                  }}
+                />
+                <Text style={styles.muted}>双指缩放 · 滑动翻页 {pdfPage}</Text>
+                {previewError ? (
+                  <View>
+                    <Text style={styles.error}>
+                      PDF 预览失败：{previewError}
+                    </Text>
+                    <Button
+                      title="重新打开 PDF"
+                      secondary
+                      onPress={() => {
+                        setPreviewError('');
+                        setPreviewAttempt(value => value + 1);
+                      }}
+                    />
+                  </View>
+                ) : (
+                  <Pdf
+                    key={pdfKey}
+                    source={{
+                      uri:
+                        (Platform.OS as string) === 'harmony'
+                          ? pdfUri!.replace(/^file:\/\//, '')
+                          : pdfUri!,
+                      cache: false,
+                    }}
+                    style={styles.pdf}
+                    fitPolicy={0}
+                    trustAllCerts={false}
+                    onPageChanged={(page, count) => {
+                      if (activePdfKey.current === pdfKey) {
+                        setPdfPage(`${page}/${count}`);
+                      }
+                    }}
+                    onError={reason => {
+                      if (activePdfKey.current === pdfKey) {
+                        setPreviewError(String(reason));
+                      }
+                    }}
+                  />
+                )}
+              </>
+            )}
+          </Card>
+        )}
+        {visibleTab === 'usage' && !!record && (
+          <ChallengeUsageDetails record={record} />
+        )}
+      </TabContent>
       {!!imagePreview && (
         <ImageViewer
           uris={imagePreview.uris}
@@ -1898,6 +1548,21 @@ export default function ChallengeScreen({
 }
 
 const styles = StyleSheet.create({
+  fill: {flex: 1, minHeight: 0},
+  previewContent: {flex: 1, padding: 20, gap: 16},
+  top: {paddingHorizontal: 20, paddingTop: 4, gap: 10},
+  tabs: {flexDirection: 'row', flexWrap: 'wrap', gap: 5, paddingVertical: 8},
+  tab: {
+    paddingHorizontal: 12,
+    paddingVertical: 10,
+    borderRadius: 10,
+    backgroundColor: '#EEEFF3',
+  },
+  activeTab: {backgroundColor: '#FFF0DB'},
+  tabText: {color: '#64748b', fontSize: 14},
+  activeTabText: {color: '#965414', fontWeight: '700'},
+  track: {height: 6, borderRadius: 4, backgroundColor: '#EEF0F4'},
+  bar: {height: 6, borderRadius: 4, backgroundColor: '#BE803E'},
   safe: {flex: 1, backgroundColor: '#F8F8FB'},
   container: {padding: 20, paddingBottom: 48, gap: 16},
   header: {
@@ -1973,5 +1638,5 @@ const styles = StyleSheet.create({
     backgroundColor: '#FFF8EE',
     borderRadius: 10,
   },
-  pdf: {height: 560, width: '100%', backgroundColor: '#E2E8F0'},
+  pdf: {flex: 1, minHeight: 160, width: '100%', backgroundColor: '#E2E8F0'},
 });

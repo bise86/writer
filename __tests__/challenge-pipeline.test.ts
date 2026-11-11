@@ -4,7 +4,7 @@ import {imageAsDataUri, runResponse} from '../src/services/openai';
 import {buildChallengePdfs} from '../src/challenge/pdf';
 import {publishChallengePdfs} from '../src/challenge/store';
 import {applicableChallengeMetrics} from '../src/challenge/rules';
-import {buildSubjectVerification} from '../src/challenge/subjectSampling';
+import {buildProgressiveSubjectVerification} from '../src/challenge/subjectSampling';
 import {CHALLENGE_REVIEW_PROTOCOL_VERSION} from '../src/challenge/review';
 import type {ModelInput} from '../src/services/context';
 import type {
@@ -42,6 +42,9 @@ jest.mock('../src/challenge/subjectSampling', () => {
   return {
     ...actual,
     buildSubjectVerification: jest.fn(actual.buildSubjectVerification),
+    buildProgressiveSubjectVerification: jest.fn(
+      actual.buildProgressiveSubjectVerification,
+    ),
   };
 });
 jest.mock('../src/challenge/rules', () => {
@@ -451,13 +454,29 @@ function roleReview(
 function response(value: unknown) {
   return {text: JSON.stringify(value)};
 }
-function identificationFor(input: ModelInput): SubjectIdentification {
+function identificationFor(input: ModelInput, identified = identification) {
   const payload = JSON.parse(input as string) as {
     verification: SubjectVerification;
+    phase?: string;
+    samples?: {
+      question: {id: string; sourceRefs: {pageIndex: number; quote: string}[]};
+    }[];
     pages?: ChallengePage[];
   };
+  if (payload.phase === 'progressive_vote') {
+    return {
+      votes: payload.samples!.map(sample => ({
+        questionId: sample.question.id,
+        subject: identified.subject,
+        courseName: identified.courseName,
+        integrated: identified.integrated,
+        reason: identified.reason,
+        evidence: sample.question.sourceRefs,
+      })),
+    };
+  }
   return {
-    ...mockClone(identification),
+    ...mockClone(identified),
     evidence:
       payload.verification.mode === 'title_sample'
         ? [
@@ -471,7 +490,7 @@ function identificationFor(input: ModelInput): SubjectIdentification {
   };
 }
 const request = runResponse as jest.Mock;
-const sampler = buildSubjectVerification as jest.Mock;
+const sampler = buildProgressiveSubjectVerification as jest.Mock;
 const actualSampling: typeof import('../src/challenge/subjectSampling') =
   jest.requireActual('../src/challenge/subjectSampling');
 const builder = buildChallengePdfs as jest.Mock;
@@ -481,7 +500,7 @@ const route = async (input: ModelInput) => {
     case 'page':
       return response(page);
     case '挑战科目识别':
-      return response(identification);
+      return response(identificationFor(input));
     case '挑战整卷分析':
       return response(analysis);
     case '挑战试卷生成':
@@ -532,7 +551,7 @@ beforeEach(() => {
   mockStandardApproved = true;
   sampler
     .mockReset()
-    .mockImplementation(actualSampling.buildSubjectVerification);
+    .mockImplementation(actualSampling.buildProgressiveSubjectVerification);
   request.mockReset().mockImplementation(route);
   builder
     .mockReset()
@@ -549,11 +568,15 @@ test('已作答试卷先逐页解析，再评估原难度与范围，分析阶�
     difficultyBasis: 'estimated',
     knowledgePoints: ['整数四则运算与等量关系'],
   });
-  expect(result.subjectIdentification).toMatchObject(identification);
+  expect(result.subjectIdentification).toMatchObject({
+    subject: identification.subject,
+    courseName: identification.courseName,
+    status: 'confirmed',
+  });
   expect(result.analysis?.subjectIdentification).toEqual(
     result.subjectIdentification,
   );
-  expect(result.subjectVerification?.mode).toBe('title_sample');
+  expect(result.subjectVerification?.mode).toBe('progressive');
   expect(request.mock.calls.map(call => task(call[0]))).toEqual([
     'page',
     '挑战整卷分析',
@@ -573,11 +596,11 @@ test('已作答试卷先逐页解析，再评估原难度与范围，分析阶�
   ).toBe(true);
   expect(recognitionInput).not.toHaveProperty('pages');
   expect(recognitionInput.samples).toHaveLength(1);
-  expect(request.mock.calls[2][1]).toContain('英语材料谈数学');
+  expect(request.mock.calls[2][1]).toContain('英语文章谈数学');
 });
 
 test.each(['cannotIdentifySubject', 'mixed', 'uncertain'] as const)(
-  '初判%s后自动全核，仍不确认时停止而不加载科规则或保存分析',
+  '初判%s无法确认时停止，不为标题自动全核或加载科规则',
   async resultKind => {
     mockRecord = record(false);
     request.mockImplementation(async (input: ModelInput) =>
@@ -601,7 +624,6 @@ test.each(['cannotIdentifySubject', 'mixed', 'uncertain'] as const)(
     expect(request.mock.calls.map(call => task(call[0]))).toEqual([
       'page',
       '挑战整卷分析',
-      '挑战科目识别',
       '挑战科目识别',
     ]);
     expect(mockRecord?.analysis).toBeUndefined();
@@ -632,7 +654,11 @@ test('通用草稿不载科规则，标题抽样确认后加载本科再一致�
   expect(result.analysis?.subjectIdentification).toEqual(
     result.subjectIdentification,
   );
-  expect(result.subjectIdentification).toMatchObject(identification);
+  expect(result.subjectIdentification).toMatchObject({
+    subject: identification.subject,
+    courseName: identification.courseName,
+    status: 'confirmed',
+  });
 });
 
 test('英语阅读讨论数学科技，材料主题不会覆盖独立识科结果或加载数学导航', async () => {
@@ -710,7 +736,7 @@ test('英语阅读讨论数学科技，材料主题不会覆盖独立识科结�
       return response(sourcePage);
     }
     if (task(input) === '挑战科目识别') {
-      return response(identified);
+      return response(identificationFor(input, identified));
     }
     if (task(input) === '挑战整卷分析') {
       return response(original);
@@ -806,41 +832,20 @@ test('识科JSON纠正重试沿用同一随机记录，不重新抽题且常规�
   ).toHaveLength(1);
 });
 
-test('标题样题冲突要求扩大时自动全核，保留原抽样审计且不重抽', async () => {
+test('初始题池少于3题时核验全部，不自动送整卷再次识科', async () => {
   mockRecord = record(false);
-  let attempts = 0;
-  request.mockImplementation(async (input: ModelInput) => {
-    if (task(input) === '挑战科目识别') {
-      attempts += 1;
-      return attempts === 1
-        ? response({
-            requiresExpandedCheck: true,
-            reason: '标题与样题需要结合完整原卷核实。',
-          })
-        : response(identificationFor(input));
-    }
-    return route(input);
-  });
   const result = await analyzeChallenge('challenge_test', {settings});
   const checks = request.mock.calls
     .filter(call => task(call[0]) === '挑战科目识别')
     .map(call => JSON.parse(call[0] as string));
-  expect(checks.map(item => item.verification.mode)).toEqual([
-    'title_sample',
-    'expanded',
-  ]);
+  expect(checks).toHaveLength(1);
+  expect(checks[0].samples).toHaveLength(analysis.questions.length);
   expect(checks[0]).not.toHaveProperty('pages');
-  expect(checks[1].pages).toEqual([page]);
-  expect(checks[1].verification.samples).toEqual(
-    checks[0].verification.samples,
-  );
-  expect(sampler).toHaveBeenCalledTimes(1);
-  expect(result.analysis?.subject).toBe('math');
-  expect(result.subjectVerification?.mode).toBe('expanded');
+  expect(result.subjectVerification?.mode).toBe('progressive');
 });
 
 test.each(['no_title', 'no_hierarchy'] as const)(
-  '%s初始就全核，不伪造标题或只抽残余题目',
+  '%s仍只核验初始样题，不自动扩大整卷',
   async reason => {
     mockRecord = record(false);
     const draft = mockClone(analysis);
@@ -871,15 +876,14 @@ test.each(['no_title', 'no_hierarchy'] as const)(
     );
     expect(checks).toHaveLength(1);
     expect(JSON.parse(checks[0][0] as string)).toMatchObject({
-      verification: {mode: 'expanded', samples: []},
-      pages: [originalPage],
+      verification: {mode: 'progressive'},
     });
-    expect(result.subjectVerification?.expansionReason).toBeTruthy();
+    expect(JSON.parse(checks[0][0] as string)).not.toHaveProperty('pages');
     expect(result.status).toBe('analyzed');
   },
 );
 
-test('通用标题不能仅凭模型自报确认本科，自动扩大核对真实题目', async () => {
+test('通用标题只作参考，由实际样题投票确认课程', async () => {
   mockRecord = record(false);
   const originalPage = {
     ...page,
@@ -904,8 +908,8 @@ test('通用标题不能仅凭模型自报确认本科，自动扩大核对真�
     request.mock.calls
       .filter(call => task(call[0]) === '挑战科目识别')
       .map(call => JSON.parse(call[0] as string).verification.mode),
-  ).toEqual(['title_sample', 'expanded']);
-  expect(result.subjectVerification?.mode).toBe('expanded');
+  ).toEqual(['progressive']);
+  expect(result.subjectVerification?.mode).toBe('progressive');
   expect(sampler).toHaveBeenCalledTimes(1);
 });
 
@@ -1874,4 +1878,181 @@ test('实际引用图的原页逐页附图综合校核，最后合并一份报�
   expect(imageAsDataUri).toHaveBeenCalledTimes(2);
   expect(result.reviewRounds[0].reviews).toHaveLength(1);
   expect(result.status).toBe('completed');
+});
+
+test.each([
+  {votes: ['math', 'math', 'math'], sizes: [3]},
+  {votes: ['math', 'math', 'english', 'math'], sizes: [3, 1]},
+  {votes: ['math', 'math', 'english', 'english', 'math'], sizes: [3, 1, 1]},
+])(
+  '递进识科只发送新增样题：$sizes，形成共识后不再多取题',
+  async ({votes, sizes}) => {
+    mockRecord = record(false);
+    const draft = mockClone(analysis);
+    draft.questions = Array.from({length: 5}, (_, index) => ({
+      ...mockClone(analysis.questions[0]),
+      id: `q${index + 1}`,
+      number: String(index + 1),
+      sourceRefs: [
+        {pageIndex: 0, quote: `${index + 1}. ${analysis.questions[0].stem}`},
+      ],
+    }));
+    draft.totalScore = draft.questions.reduce(
+      (sum, question) => sum + (question.score || 0),
+      0,
+    );
+    const originalPage = {
+      ...page,
+      text: `${page.text}\n${draft.questions
+        .map(question => question.sourceRefs[0].quote)
+        .join('\n')}`,
+    };
+    let index = 0;
+    request.mockImplementation(async (input: ModelInput) => {
+      if (task(input) === 'page') {
+        return response(originalPage);
+      }
+      if (task(input) === '挑战整卷分析') {
+        return response(draft);
+      }
+      if (task(input) === '挑战科目识别') {
+        expect(mockRecord?.loadedSubjectRules).toBeUndefined();
+        const payload = JSON.parse(input as string);
+        return response({
+          votes: payload.samples.map((sample: any) => {
+            const subject = votes[index++];
+            return {
+              questionId: sample.question.id,
+              subject,
+              courseName: subject === 'math' ? '数学' : '英语',
+              integrated: false,
+              reason: '依据本题原印刷任务判定课程。',
+              evidence: sample.question.sourceRefs,
+            };
+          }),
+        });
+      }
+      return route(input);
+    });
+    const result = await analyzeChallenge('challenge_test', {settings});
+    const calls = request.mock.calls
+      .filter(call => task(call[0]) === '挑战科目识别')
+      .map(call => JSON.parse(call[0] as string));
+    expect(calls.map(call => call.samples.length)).toEqual(sizes);
+    expect(calls.every(call => !call.pages)).toBe(true);
+    expect(result.subjectVerification?.samples).toHaveLength(votes.length);
+    expect(result.subjectVerification?.votes).toHaveLength(votes.length);
+    expect(result.analysis?.subject).toBe('math');
+    expect(result.loadedSubjectRules?.subject).toBe('math');
+  },
+);
+
+test('非听力混合升档卷可完成评审和PDF发布，保留题不被误算或强制改写', async () => {
+  const original = mockClone(analysis);
+  original.questions = Array.from({length: 5}, (_, index) => ({
+    ...mockClone(analysis.questions[0]),
+    id: `q${index + 1}`,
+    number: String(index + 1),
+  }));
+  original.totalScore = original.questions.reduce(
+    (sum, question) => sum + (question.score || 0),
+    0,
+  );
+  original.questions[0].analysisIssues = [
+    '原印刷完整，难度基线尚需核实，保留本题。',
+  ];
+  mockRecord!.analysis = original;
+  const generated = paper();
+  generated.totalScore = original.totalScore;
+  const variant = mockClone(generated.questions[0]);
+  const answer = mockClone(generated.answers[0]);
+  generated.questions = original.questions.map((question, index) =>
+    index === 1
+      ? {
+          ...mockClone(variant),
+          id: question.id,
+          number: question.number,
+          upgrade: {...variant.upgrade, mode: 'upgraded'},
+        }
+      : {
+          ...mockClone(question),
+          upgrade: {
+            mode: 'retained',
+            level: 1,
+            retentionReason: '原题当前不宜变式，保持原条件。',
+            metrics: {},
+            changes: [],
+            pitfalls: [],
+            scopeExplanation: '原题原样保留，不计升档。',
+          },
+        },
+  );
+  generated.answers = original.questions.map((question, index) =>
+    index === 1
+      ? {...mockClone(answer), questionId: question.id}
+      : {
+          questionId: question.id,
+          status: 'verified',
+          answer: '3',
+          explanation: '按原题等量关系核验并求出原数为3。',
+          scoringPoints: ['满足原题条件'],
+        },
+  );
+  request.mockImplementation(async (input: ModelInput) => {
+    if (task(input) === '挑战试卷生成') {
+      return response(generated);
+    }
+    if (task(input) === '挑战标准一致性校核') {
+      return response({
+        ...review(),
+        checkedQuestionIds: original.questions.map(question => question.id),
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(result.status).toBe('completed');
+  expect(
+    result.candidate?.questions.filter(
+      question => question.upgrade.mode === 'upgraded',
+    ),
+  ).toHaveLength(1);
+  expect(
+    result.candidate?.questions.filter(
+      question => question.upgrade.mode === 'retained',
+    ),
+  ).toHaveLength(4);
+  expect(result.selectionPolicyVersion).toBe('challenge-selection-v1');
+  expect(builder).toHaveBeenCalledWith(
+    expect.anything(),
+    expect.objectContaining({questions: generated.questions}),
+    expect.anything(),
+  );
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test('识科返回整体不确定时仍记录本轮未知票，不自动发送整卷或伪造多数', async () => {
+  mockRecord = record(false);
+  request.mockImplementation(async (input: ModelInput) =>
+    task(input) === '挑战科目识别'
+      ? response({
+          cannotIdentifySubject: true,
+          reason: '本题上下文仍不足以可靠判科。',
+        })
+      : route(input),
+  );
+  await expect(analyzeChallenge('challenge_test', {settings})).rejects.toThrow(
+    '未形成明确课程多数',
+  );
+  expect(mockRecord?.subjectVerification?.votes).toEqual([
+    expect.objectContaining({
+      subject: 'unknown',
+      questionId: analysis.questions[0].id,
+    }),
+  ]);
+  const calls = request.mock.calls.filter(
+    call => task(call[0]) === '挑战科目识别',
+  );
+  expect(calls).toHaveLength(1);
+  expect(JSON.parse(calls[0][0] as string)).not.toHaveProperty('pages');
 });

@@ -5,13 +5,7 @@ import Pdf from 'react-native-pdf';
 import {launchCamera, launchImageLibrary} from 'react-native-image-picker';
 import ChallengeScreen from '../src/components/ChallengeScreen';
 import {DEFAULT_SETTINGS} from '../src/settings';
-import * as challengeRules from '../src/challenge/rules';
-import {
-  CHALLENGE_RULES,
-  CHALLENGE_POLICY_VERSION,
-  applicableMasteryChallenges,
-  getChallengePolicy,
-} from '../src/challenge/rules';
+import {getChallengePolicy} from '../src/challenge/rules';
 import {
   createChallenge,
   deleteChallenge,
@@ -24,7 +18,6 @@ import {parseUsage} from '../src/services/usage';
 import {ModelCall} from '../src/types';
 import {
   CHALLENGE_REVIEW_PROTOCOL_VERSION,
-  challengeReviewRoleLabel,
   getChallengeReviewRoles,
 } from '../src/challenge/review';
 import {
@@ -228,7 +221,7 @@ const modelSettings = jest.fn();
 const selection = jest.fn();
 let view: ReactTestRenderer | undefined;
 
-const text = () => JSON.stringify(view!.toJSON());
+const text = () => screenText();
 const screenText = () =>
   view!.root
     .findAllByType(Text)
@@ -331,642 +324,348 @@ afterEach(() => {
   jest.restoreAllMocks();
 });
 
-test('取消照片或PDF导入不创建挑战，解析与升档在原卷缺失时禁用', async () => {
+test('原卷、分析、方案和两份PDF各有页卡，首次请求前隐藏消耗页卡', async () => {
+  await render();
+  const tabs = view!.root
+    .findAllByType(Pressable)
+    .filter(node => node.props.accessibilityRole === 'tab');
+  expect(tabs.map(node => node.findByType(Text).props.children)).toEqual([
+    '原卷',
+    '试卷分析',
+    '升档方案',
+    '试卷预览',
+    '答案预览',
+  ]);
+  expect(button('消耗详情')).toBeUndefined();
+  expect(text()).toContain('上传一份试卷');
+  await press('试卷分析');
+  expect(text()).toContain('完成原卷解析后');
+  expect(text()).not.toContain('上传一份试卷');
+  await press('升档方案');
+  expect(button('升档').props.disabled).toBe(true);
+  await press('试卷预览');
+  expect(text()).toContain('通过校核并生成两份 PDF');
+});
+
+test('取消照片或PDF导入不创建挑战，未选原卷时解析禁用', async () => {
   (launchImageLibrary as jest.Mock).mockResolvedValueOnce({didCancel: true});
   await render();
   expect(button('解析试卷').props.disabled).toBe(true);
-  expect(button('升档').props.disabled).toBe(true);
   await press('上传照片');
   await press('上传 PDF');
   expect(createChallenge).not.toHaveBeenCalled();
   expect(analyzeChallenge).not.toHaveBeenCalled();
-  expect(text()).toContain('已选');
 });
 
-test('未识科不预载默认数学；主动参考单科标准也不能替代本卷识科', async () => {
-  const load = jest.spyOn(challengeRules, 'loadChallengeSubjectRules');
+test('照片和PDF可混合导入并排序、移除，点击解析才创建持久挑战', async () => {
+  (pickChallengePdf as jest.Mock).mockResolvedValueOnce(pdfSource);
   await render();
-  expect(load).not.toHaveBeenCalled();
-  await press('查看各科三档提升标准');
-  expect(load).not.toHaveBeenCalled();
-  await press('英语');
-  expect(load).toHaveBeenCalledWith('english');
-  expect(load.mock.calls.every(([subject]) => subject === 'english')).toBe(
-    true,
+  await uploadPhoto();
+  await press('上传 PDF');
+  expect(createChallenge).not.toHaveBeenCalled();
+  expect(text()).toContain('共 3 页');
+  await press('第2项上移');
+  await press('移除第2项');
+  await press('解析试卷');
+  await settle();
+  expect(createChallenge).toHaveBeenCalledWith([pdfSource]);
+  expect(analyzeChallenge).toHaveBeenCalledTimes(1);
+  expect(text()).toContain('原卷解析');
+  expect(text()).toContain('逐题分析');
+});
+
+test('拍照取消不入库，选择器错误明确展示并允许重试', async () => {
+  (launchCamera as jest.Mock).mockResolvedValueOnce({didCancel: true});
+  (launchImageLibrary as jest.Mock).mockResolvedValueOnce({
+    errorCode: 'permission',
+    errorMessage: '相册权限未授权',
+  });
+  await render();
+  await press('拍照');
+  await press('上传照片');
+  expect(text()).toContain('相册权限未授权');
+  await uploadPhoto();
+  expect(button('解析试卷').props.disabled).toBe(false);
+  expect(createChallenge).not.toHaveBeenCalled();
+});
+
+test('原卷缩略图点击可全屏看多页，切换页卡不丢失已选输入', async () => {
+  await render();
+  await uploadPhoto();
+  await act(async () =>
+    view!.root
+      .findAllByType(Pressable)
+      .find(node => node.props.accessibilityLabel === '查看原卷第1页')!
+      .props.onPress(),
   );
-  expect(text()).toContain('正在参考所选科目的标准');
-  expect(text()).not.toContain('已加载对应科目标准');
+  expect(
+    view!.root.findByType('ChallengeImageViewer' as any).props.uris,
+  ).toEqual([source.uri]);
+  act(() =>
+    view!.root.findByType('ChallengeImageViewer' as any).props.onClose(),
+  );
+  await press('升档方案');
+  await press('原卷');
+  expect(text()).toContain(source.name);
+  expect(button('解析试卷').props.disabled).toBe(false);
+});
+
+test('逐题分析、难度分布、知识范围只在分析页卡展示，不混入方案或原卷', async () => {
+  await openSaved();
+  expect(text()).toContain('难度分布');
+  expect(text()).toContain('基础（1～3）：1 题');
+  expect(text()).toContain('知识范围');
+  expect(text()).toContain(analysis.questions[0].stem);
+  await press('升档方案');
+  expect(text()).not.toContain('难度分布');
+  expect(text()).not.toContain(analysis.questions[0].stem);
+  await press('原卷');
+  expect(text()).not.toContain('知识范围');
+  expect(text()).toContain('最近挑战');
+});
+
+test.each([1, 2, 3] as const)(
+  '选择升%d档只显示当前档次的概括思路与对应覆盖率',
+  async level => {
+    await openSaved();
+    await press('升档方案');
+    await press(`升 ${level} 档`);
+    expect(text()).toContain(
+      `非听力题至少 ${{1: 20, 2: 40, 3: 65}[level]}% 升档`,
+    );
+    expect(text()).toContain(getChallengePolicy('math', level).summary);
+    expect(text()).not.toContain('deepDirections');
+    expect(text()).not.toContain('25组分项');
+    expect(button('升档').props.disabled).toBe(false);
+  },
+);
+
+test('不足最低覆盖比例时说明题数并禁用升档，可降低档次', async () => {
+  const questions = Array.from({length: 5}, (_, index) => ({
+    ...analysis.questions[0],
+    id: `q${index + 1}`,
+    number: String(index + 1),
+    ...(index
+      ? {
+          analysisIssues: ['分析尚待核实'],
+          upgradeEligibility: 'retain' as const,
+          retentionReason: '分析不够可靠',
+        }
+      : {}),
+  }));
+  await openSaved({...analyzed, analysis: {...analysis, questions}});
+  expect(text()).toContain('分析待核：4 题');
+  await press('升档方案');
+  expect(text()).toContain('至少升档 1 题');
+  expect(button('升档').props.disabled).toBe(false);
+  await press('升 2 档');
+  expect(text()).toContain('至少升档 2 题');
+  expect(button('升档').props.disabled).toBe(true);
+  expect(text()).toContain('可升档题数不足');
+});
+
+test('听力不计入比例分母，单题分析待核可保留但印刷缺失仍阻断', async () => {
+  const questions = [
+    analysis.questions[0],
+    {...analysis.questions[0], id: 'audio', number: '2', isListening: true},
+  ];
+  await openSaved({
+    ...analyzed,
+    analysis: {...analysis, questions, unresolvedIssues: ['第1题印刷条件缺失']},
+  });
+  expect(text()).toContain('第1题印刷条件缺失');
+  await press('升档方案');
+  expect(text()).toContain('本卷 1 道非听力小题');
   expect(button('升档').props.disabled).toBe(true);
 });
 
-test('独立识科加载单科后核实整卷，分析一致前不展示完整标准或允许升档', async () => {
-  const load = jest.spyOn(challengeRules, 'loadChallengeSubjectRules');
+test('识科核验展示初抽与追加票数，完整题池和依赖内容不混入用户页卡', async () => {
+  const verification: SubjectVerification = {
+    mode: 'progressive',
+    candidateOrder: ['q1', 'q2', 'q3', 'q4'],
+    titleEvidence: [],
+    samples: ['q1', 'q2', 'q3', 'q4'].map((id, index) => ({
+      majorQuestionId: 'm1',
+      majorQuestionTitle: '选择题',
+      candidateQuestionIds: ['q1', 'q2', 'q3', 'q4'],
+      selectedQuestionId: id,
+      selectedQuestionNumber: String(index + 1),
+      sourceRefs: [{pageIndex: 0, quote: '原题'}],
+    })),
+    votes: ['math', 'math', 'english', 'math'].map((subject, index) => ({
+      questionId: `q${index + 1}`,
+      subject: subject as 'math' | 'english',
+      courseName: subject === 'math' ? '数学' : '英语',
+      integrated: false,
+      reason: '依据原题实际任务',
+      evidence: [{pageIndex: 0, quote: '原题'}],
+    })),
+  };
+  await openSaved({...analyzed, subjectVerification: verification});
+  expect(text()).toContain('先抽3题');
+  expect(text()).toContain('已抽 4 题');
+  expect(text()).toContain('数学 3票');
+  expect(text()).toContain('英语 1票');
+  expect(text()).not.toContain('candidateOrder');
+});
+
+test('生成完成后在方案页列出升档题号、调整思路与保留原因，切换档次不改写历史结果', async () => {
+  const questions = Array.from({length: 5}, (_, index) => ({
+    ...analysis.questions[0],
+    id: `q${index + 1}`,
+    number: String(index + 1),
+  }));
+  const paper = {
+    ...candidate,
+    level: 2 as const,
+    questions: questions.map((question, index) => ({
+      ...question,
+      upgrade: {
+        ...candidate.questions[0].upgrade,
+        level: 2 as const,
+        mode: index < 2 ? ('upgraded' as const) : ('retained' as const),
+        changes: index < 2 ? ['由直接计算改为反推条件'] : [],
+        retentionReason: index < 2 ? undefined : '原题范围窄，维持原题',
+      },
+    })),
+  };
+  const value = {
+    ...completed,
+    level: 2 as const,
+    analysis: {...analysis, questions},
+    candidate: paper,
+    reviewRounds: completed.reviewRounds.map(round => ({
+      ...round,
+      reviews: round.reviews.map(review => ({
+        ...review,
+        checkedQuestionIds: questions.map(question => question.id),
+      })),
+    })),
+  };
+  await openSaved(value);
+  await press('升档方案');
+  expect(text()).toContain('已升档 2 / 5 道非听力题（40.0%）');
+  expect(text()).toContain('第 1 题 · 已升档');
+  expect(text()).toContain('第 3 题 · 保留原题');
+  expect(text()).toContain('由直接计算改为反推条件');
+  expect(text()).toContain('原题范围窄，维持原题');
+  await press('升 3 档');
+  expect(text()).toContain('至少升档 4 题');
+  expect(text()).toContain('本次生成结果 · 升 2 档');
+});
+
+test.each([0, 3, 5] as const)(
+  '生成后沿保存的%d角色校核设置显示进度，修订意见不泄露答案',
+  async size => {
+    const value = roundtableRecord(size);
+    value.reviewRounds[0].reviews[0].summary = '答案内容不得出现在方案页';
+    await openSaved(value, 5);
+    await press('升档方案');
+    expect(text()).toContain('生成校核');
+    expect(text()).toContain(size ? `${size} 角色圆桌评审` : '基础综合校核');
+    expect(text()).not.toContain('答案内容不得出现在方案页');
+  },
+);
+
+test('试卷、答案PDF各在自己的页卡预览下载，预览故障可以重试', async () => {
+  await openSaved(completed);
+  await press('试卷预览');
+  expect(view!.root.findByType(Pdf).props.source.uri).toBe('file:///paper.pdf');
+  act(() => view!.root.findByType(Pdf).props.onError('PDF暂不可读'));
+  expect(text()).toContain('PDF暂不可读');
+  await press('重新打开 PDF');
+  expect(view!.root.findAllByType(Pdf)).toHaveLength(1);
+  await press('下载试卷');
+  expect(saveChallengePdf).toHaveBeenLastCalledWith(
+    'file:///paper.pdf',
+    expect.stringContaining('试卷.pdf'),
+  );
+  await press('答案预览');
+  expect(view!.root.findByType(Pdf).props.source.uri).toBe(
+    'file:///answers.pdf',
+  );
+  await press('下载答案');
+  expect(saveChallengePdf).toHaveBeenLastCalledWith(
+    'file:///answers.pdf',
+    expect.stringContaining('答案.pdf'),
+  );
+});
+
+test('PDF保存取消不报成功，失败后仍可预览且可以重试', async () => {
+  await openSaved(completed);
+  await press('答案预览');
+  (saveChallengePdf as jest.Mock).mockResolvedValueOnce(false);
+  await press('下载答案');
+  expect(text()).not.toContain('PDF 已保存');
+  (saveChallengePdf as jest.Mock).mockRejectedValueOnce(
+    new Error('目标目录不可写'),
+  );
+  await press('下载答案');
+  expect(text()).toContain('目标目录不可写');
+  expect(view!.root.findAllByType(Pdf)).toHaveLength(1);
+  await press('下载答案');
+  expect(text()).toContain('答案 PDF 已保存');
+});
+
+test('切换到答案页后忽略旧试卷预览的迟到错误，未通过的候选不显示PDF', async () => {
+  await openSaved(completed);
+  await press('试卷预览');
+  const oldError = view!.root.findByType(Pdf).props.onError;
+  await press('答案预览');
+  act(() => oldError('旧预览错误'));
+  expect(text()).not.toContain('旧预览错误');
+  act(() => view!.unmount());
+  view = undefined;
+  await openSaved({...completed, candidateRevision: 2});
+  await press('试卷预览');
+  expect(view!.root.findAllByType(Pdf)).toHaveLength(0);
+});
+
+test('消耗详情是单独页卡，首次模型请求后出现，运行中持续更新', async () => {
   const pending = deferred<ChallengeRecord>();
   (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
   await render();
   await uploadPhoto();
   await press('解析试卷');
   await settle();
+  expect(button('消耗详情')).toBeUndefined();
   const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
+  const first = modelCall();
   act(() =>
     options.onUpdate({
       ...base,
       status: 'analyzing',
-      subjectIdentification: mathIdentification,
-      loadedSubjectRules: {
-        subject: 'math',
-        policyVersion: CHALLENGE_POLICY_VERSION,
-      },
+      calls: [{stage: 'analysis', call: first}],
     }),
   );
-  expect(load).not.toHaveBeenCalled();
-  expect(text()).toContain('已加载对应科目标准');
-  expect(text()).toContain('正在核实整卷');
-  expect(button('升档').props.disabled).toBe(true);
-  await act(async () => pending.resolve(analyzed));
-  expect(load).toHaveBeenCalledWith('math');
-  expect(text()).toContain('已加载对应科目标准');
-  expect(button('升档').props.disabled).toBe(false);
-});
-
-test('展示标题识科与每大题抽中题号，原页依据只随记录保存', async () => {
-  const verification: SubjectVerification = {
-    mode: 'title_sample',
-    titleEvidence: [{pageIndex: 0, quote: '仅存档的原卷标题证据'}],
-    samples: [
-      {
-        majorQuestionId: 'major_1',
-        majorQuestionTitle: '一、选择题',
-        candidateQuestionIds: ['candidate_hidden_1', 'selected_1'],
-        selectedQuestionId: 'selected_1',
-        selectedQuestionNumber: '4',
-        sourceRefs: [{pageIndex: 0, quote: '仅存档的抽样原页证据'}],
-      },
-      {
-        majorQuestionId: 'major_2',
-        majorQuestionTitle: '二、解答题',
-        candidateQuestionIds: ['selected_2'],
-        selectedQuestionId: 'selected_2',
-        selectedQuestionNumber: '12（2）',
-        sourceRefs: [{pageIndex: 1, quote: '另一大题的原页依据'}],
-      },
-    ],
-  };
-  await openSaved({...analyzed, subjectVerification: verification});
-  const visibleText = view!.root
-    .findAllByType(Text)
-    .map(node => [node.props.children].flat().join(''))
-    .join('\n');
-  expect(visibleText).toContain('标题识科，每大题随机1题佐证');
-  expect(visibleText).toContain('一、选择题 · 题号 4');
-  expect(visibleText).toContain('二、解答题 · 题号 12（2）');
-  expect(visibleText).not.toContain('candidate_hidden_1');
-  expect(visibleText).not.toContain('仅存档的原卷标题证据');
-  expect(visibleText).not.toContain('仅存档的抽样原页证据');
-});
-
-test('扩大核验展示实际原因，并可从保存的科目票据恢复识科方式', async () => {
-  const verification: SubjectVerification = {
-    mode: 'expanded',
-    titleEvidence: [],
-    samples: [],
-    expansionReason: '原卷标题缺失，需要结合整卷题目确认。',
-  };
-  const identification = {...mathIdentification, verification};
-  await openSaved({
-    ...analyzed,
-    subjectIdentification: identification,
-    analysis: {...analysis, subjectIdentification: identification},
-  });
-  expect(text()).toContain('扩大核验：原卷标题缺失，需要结合整卷题目确认。');
-  expect(text()).not.toContain('本轮抽中的题目');
-  expect(text()).not.toContain('标题识科，每大题随机1题佐证');
-  expect(button('升档').props.disabled).toBe(false);
-});
-
-test.each([
-  {
-    label: '旧解析没有科目确认',
-    value: {
-      ...completed,
-      subjectIdentification: undefined,
-      analysis: {...analysis, subjectIdentification: undefined},
-    },
-  },
-  {
-    label: '混合多科',
-    value: {
-      ...base,
-      status: 'failed' as const,
-      error: '识别到数学和英语混合，请上传完整的单科试卷。',
-    },
-  },
-  {
-    label: '科目确认与整卷不一致',
-    value: {
-      ...analyzed,
-      subjectIdentification: {
-        ...mathIdentification,
-        subject: 'english' as const,
-        courseName: '英语',
+  await press('消耗详情');
+  expect(text()).toContain('总体消耗');
+  expect(text()).toContain('进行中 1 次');
+  expect(text()).not.toContain('难度分布');
+  await press('展开逐次调用');
+  expect(text()).toContain('test-model');
+  const calls: ChallengeRecord['calls'] = [
+    {
+      stage: 'analysis',
+      call: {
+        ...first,
+        status: 'completed',
+        ...parseUsage({input_tokens: 100, output_tokens: 20}),
       },
     },
-  },
-])('$label时禁止升档且不默认套其它科，旧PDF保留', async ({value}) => {
-  const load = jest.spyOn(challengeRules, 'loadChallengeSubjectRules');
-  await openSaved(value);
-  expect(load).not.toHaveBeenCalled();
-  expect(button('升档').props.disabled).toBe(true);
-  if ('paperPdfUri' in value && value.paperPdfUri) {
-    expect(view!.root.findByType(Pdf).props.source.uri).toBe(value.paperPdfUri);
-  }
-  expect(upgradeChallenge).not.toHaveBeenCalled();
+    {stage: 'analysis', call: modelCall({id: 'retry', status: 'failed'})},
+  ];
+  act(() => options.onUpdate({...base, status: 'analyzing', calls}));
+  expect(text()).toContain('合计：120（另 1 次未返回）');
+  expect(text()).toContain('请求失败');
+  await press('升档方案');
+  expect(options.signal.aborted).toBe(false);
+  await act(async () => pending.resolve({...analyzed, calls}));
+  await press('消耗详情');
+  expect(text()).toContain('实际调用 2 次');
 });
 
-test('图片与PDF按用户顺序混合导入，渲染页完整交给解析并清理临时PDF', async () => {
-  await render();
-  await uploadPhoto();
-  (pickChallengePdf as jest.Mock).mockResolvedValueOnce(pdfSource);
-  await press('上传 PDF');
-  await press('第2项上移');
-  await press('解析试卷');
-  await settle();
-  expect(createChallenge).toHaveBeenCalledWith([pdfSource, source]);
-  expect(discardChallengePdf).toHaveBeenCalledWith(pdfSource);
-  expect(analyzeChallenge).toHaveBeenCalledWith(
-    base.id,
-    expect.objectContaining({
-      settings,
-      signal: expect.any(Object),
-      onUpdate: expect.any(Function),
-    }),
-  );
-  expect(text()).toContain('原卷解析');
-  expect(text()).toContain('整数运算');
-  expect(text()).toContain('难度预估');
-  expect(selection).toHaveBeenCalledWith(base.id);
-  expect(button('升档').props.disabled).toBe(false);
-});
-
-test('移除尚未入库PDF只清理其临时副本，不启动解析', async () => {
-  (pickChallengePdf as jest.Mock).mockResolvedValueOnce(pdfSource);
-  await render();
-  await press('上传 PDF');
-  await press('移除第1项');
-  expect(discardChallengePdf).toHaveBeenCalledWith(pdfSource);
-  expect(button('解析试卷').props.disabled).toBe(true);
-  expect(createChallenge).not.toHaveBeenCalled();
-});
-
-test('拍摄可多次添加试卷页，未点击解析前不发起模型请求', async () => {
-  (launchCamera as jest.Mock)
-    .mockResolvedValueOnce({assets: [{uri: 'file:///camera1.jpg'}]})
-    .mockResolvedValueOnce({assets: [{uri: 'file:///camera2.jpg'}]});
-  await render();
-  await press('拍照');
-  await press('拍照');
-  expect(launchCamera).toHaveBeenCalledTimes(2);
-  expect(analyzeChallenge).not.toHaveBeenCalled();
-  await press('解析试卷');
-  expect(
-    (createChallenge as jest.Mock).mock.calls[0][0].map(
-      (item: ChallengeSource) => item.uri,
-    ),
-  ).toEqual(['file:///camera1.jpg', 'file:///camera2.jpg']);
-});
-
-test('关闭圆桌时保留一次基础综合校核，完成后可输出双PDF', async () => {
-  (upgradeChallenge as jest.Mock).mockResolvedValueOnce(roundtableRecord(0));
-  await openSaved();
-  await press('升 3 档');
-  await press('升档');
-  await settle();
-  expect(upgradeChallenge).toHaveBeenCalledWith(
-    analyzed.id,
-    3,
-    expect.objectContaining({settings}),
-  );
-  expect(view!.root.findByType(Pdf).props.source.uri).toBe(
-    completed.paperPdfUri,
-  );
-  expect(text()).toContain('生成校核');
-  expect(screenText()).toContain('本次采用：0 · 基础综合校核（1 个角色）');
-  expect(screenText()).toContain('基础综合校核：通过');
-  expect(button('下载试卷').props.disabled).toBe(false);
-});
-
-test('三角色逐项显示已完成和待完成，所有报告通过前不显示PDF', async () => {
-  const finished = roundtableRecord(3);
-  const firstRound = finished.reviewRounds[0];
-  const partial: ChallengeRecord = {
-    ...finished,
-    reviewRounds: [{...firstRound, reviews: firstRound.reviews.slice(0, 1)}],
-  };
-  await openSaved(partial, 3);
-  expect(screenText()).toContain('本次采用：3 角色圆桌评审');
-  expect(screenText()).toContain('已完成 1 / 3 个角色');
-  expect(screenText()).toContain(
-    `${challengeReviewRoleLabel('difficulty', 3)}：待完成`,
-  );
-  expect(view!.root.findAllByType(Pdf)).toHaveLength(0);
-  const pending = deferred<ChallengeRecord>();
-  (upgradeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
-  await press('升档');
-  const options = (upgradeChallenge as jest.Mock).mock.calls[0][2];
-  act(() =>
-    options.onUpdate({
-      ...partial,
-      status: 'reviewing',
-      reviewRounds: [{...firstRound, reviews: firstRound.reviews.slice(0, 2)}],
-    }),
-  );
-  expect(screenText()).toContain('已完成 2 / 3 个角色');
-  expect(view!.root.findAllByType(Pdf)).toHaveLength(0);
-  await act(async () => pending.resolve(finished));
-  expect(screenText()).toContain('本轮全部通过');
-  expect(view!.root.findAllByType(Pdf)).toHaveLength(1);
-});
-
-test('五角色提出异议后整轮重审，不沿用上一轮通过，修订明细仍放答案侧', async () => {
-  const finished = roundtableRecord(5);
-  const round = finished.reviewRounds[0];
-  const privateFix = '答案侧才显示的具体修复：重新计算该题结果';
-  const firstRound = {
-    ...round,
-    reviews: round.reviews.map(report =>
-      report.role === 'scope'
-        ? {
-            ...report,
-            verdict: 'revise' as const,
-            issues: [
-              {
-                questionId: 'q1',
-                code: 'scope',
-                comment: '需修订',
-                fix: privateFix,
-              },
-            ],
-          }
-        : report,
-    ),
-  };
-  const secondRound = {...round, round: 2, candidateRevision: 2};
-  const partial: ChallengeRecord = {
-    ...finished,
-    status: 'reviewing',
-    candidateRevision: 2,
-    reviewRounds: [
-      firstRound,
-      {...secondRound, reviews: secondRound.reviews.slice(0, 1)},
-    ],
-  };
-  await openSaved(partial, 5);
-  expect(screenText()).toContain('已完成 1 / 5 个角色');
-  expect(screenText()).toContain('修复后开启下一轮，本轮所有角色都会重新评审');
-  expect(screenText()).toContain(
-    `${challengeReviewRoleLabel('answers', 5)}：待完成`,
-  );
-  expect(text()).not.toContain(privateFix);
-  expect(view!.root.findAllByType(Pdf)).toHaveLength(0);
-  (upgradeChallenge as jest.Mock).mockResolvedValueOnce({
-    ...partial,
-    status: 'completed',
-    reviewRounds: [firstRound, secondRound],
-  });
-  await press('升档');
-  expect(screenText()).toContain('本轮全部通过');
-  expect(text()).not.toContain(privateFix);
-  await press('答案 PDF');
-  expect(text()).toContain(privateFix);
-});
-
-test('当前设置只用于下次生成，旧卷继续按已保存圆桌人数显示', async () => {
-  await openSaved(roundtableRecord(3), 5);
-  expect(screenText()).toContain('本次采用：3 角色圆桌评审');
-  expect(screenText()).toContain('下一次生成评审：5 角色圆桌评审');
-  expect(view!.root.findAllByType(Pdf)).toHaveLength(1);
-  (upgradeChallenge as jest.Mock).mockResolvedValueOnce(roundtableRecord(5));
-  await press('升档');
-  expect(upgradeChallenge).toHaveBeenCalledWith(
-    analyzed.id,
-    1,
-    expect.objectContaining({
-      settings: expect.objectContaining({roundtableSize: 5}),
-    }),
-  );
-  expect(screenText()).toContain('本次采用：5 角色圆桌评审');
-});
-
-test('旧单报告历史不按当前五角色设置追补，PDF照常浏览', async () => {
-  await openSaved(completed, 5);
-  expect(screenText()).toContain('本次采用：历史评审（人数未记录）');
-  expect(screenText()).toContain('已记录 1 份报告');
-  expect(screenText()).not.toContain('已完成 1 / 5 个角色');
-  expect(view!.root.findByType(Pdf).props.source.uri).toBe(
-    completed.paperPdfUri,
-  );
-});
-
-test.each(['reviewProtocolVersion', 'reviewRoundtableSize'] as const)(
-  '新圆桌快照缺少%s时不显示已通过PDF',
-  async missingField => {
-    await openSaved({...roundtableRecord(3), [missingField]: undefined}, 3);
-    expect(view!.root.findAllByType(Pdf)).toHaveLength(0);
-    expect(screenText()).toContain('评审记录尚未完整');
-  },
-);
-
-test('三档标准展示思维方向、实际联系和必要性说明，不只显示步骤计数', async () => {
-  await render();
-  await press('查看各科三档提升标准');
-  await press('英语');
-  await press('升 3 档');
-  const policy = getChallengePolicy('english', 3);
-  const visibleText = view!.root
-    .findAllByType(Text)
-    .map(node => [node.props.children].flat().join(''))
-    .join('\n');
-  expect(visibleText).toContain('思维深度要求');
-  expect(visibleText).toContain('至少采用 3 个适用思路');
-  expect(visibleText).toContain('至少形成 2 处有效联系');
-  expect(visibleText).toContain('这些思路在新题解法中起什么关键作用');
-  expect(visibleText).toContain(policy.deepDirections[0].name);
-  expect(visibleText).toContain(policy.deepDirections[0].description);
-  expect(visibleText).toContain(
-    `当前使用深度与掌握训练标准 v${CHALLENGE_RULES.version}`,
-  );
-});
-
-test('对应学科展示本档质性提升、范围与题型设计，验收指向训练题和讲解', async () => {
-  await openSaved();
-  const blueprint = getChallengePolicy('math', 1).subjectBlueprint;
-  expect(text()).toContain(
-    blueprint.difficultyProgression[0].qualityTargets[0],
-  );
-  await press('升 3 档');
-  expect(text()).toContain(
-    blueprint.difficultyProgression[2].qualityTargets[0],
-  );
-  await press('查看各科三档提升标准');
-  expect(text()).toContain('训练题与答案讲解的验收要求');
-  expect(text()).toContain(blueprint.masteryAcceptance[0]);
-  expect(text()).toContain(blueprint.scopeExclusions[0]);
-  expect(text()).toContain(blueprint.questionTypeGuidance[0].design);
-});
-
-test('每个原核心安排五维训练，三档配额按每题合计展示', async () => {
-  await openSaved();
-  const allText = () =>
-    view!.root
-      .findAllByType(Text)
-      .map(node => [node.props.children].flat().join(''))
-      .join('\n');
-  expect(allText()).toContain('每个原题核心知识点都安排以下五维训练');
-  for (const dimension of CHALLENGE_RULES.masteryFramework.dimensions) {
-    expect(allText()).toContain(dimension.name);
-  }
-  expect(allText()).toContain(
-    '每题合计至少辨析 1 类不同易错点、建立 1 处同核迁移联系，并安排 1 种有效自检',
-  );
-  await press('升 2 档');
-  expect(allText()).toContain(
-    '每题合计至少辨析 2 类不同易错点、建立 1 处同核迁移联系，并安排 2 种有效自检',
-  );
-  await press('升 3 档');
-  expect(allText()).toContain(
-    '每题合计至少辨析 3 类不同易错点、建立 2 处同核迁移联系，并安排 3 种有效自检',
-  );
-  expect(allText()).toContain(CHALLENGE_RULES.masteryFramework.claimBoundary);
-  for (const intent of Object.values(
-    CHALLENGE_RULES.masteryFramework.tierIntent[3],
-  )) {
-    expect(allText()).toContain(intent);
-  }
-});
-
-test('按原知识点筛出候选目录名称，不把全科目录当成本卷覆盖，也不提前给出错解', async () => {
-  const catalog = getChallengePolicy('math', 1).masteryChallenges;
-  const selected = catalog.find(
-    item => item.appliesTo === 'non_listening' && !item.taskCondition,
-  )!;
-  const knowledgePoint = selected.knowledgeKeywords[0];
-  const originalQuestion = {
-    ...analysis.questions[0],
-    knowledgePoints: [knowledgePoint],
-  };
-  const matched = applicableMasteryChallenges(
-    'math',
-    1,
-    originalQuestion,
-    analysis.materials,
-    knowledgePoint,
-    analysis.educationLevel,
-  );
-  expect(matched.some(item => item.id === selected.id)).toBe(true);
-  const unmatched = catalog.find(
-    item => !matched.some(result => result.id === item.id),
-  )!;
-  await openSaved({
-    ...analyzed,
-    analysis: {
-      ...analysis,
-      knowledgePoints: [knowledgePoint],
-      questions: [originalQuestion],
-    },
-  });
-  expect(text()).toContain('按原知识点匹配的易错与难点目录');
-  expect(text()).toContain(selected.name);
-  expect(text()).not.toContain(unmatched.name);
-  expect(text()).not.toContain(selected.misconception);
-  expect(text()).not.toContain(selected.diagnosticContrast);
-  expect(text()).toContain('不表示你已经出现这些错误或已经掌握');
-});
-
-test.each(['middle', 'unknown', 'high'] as const)(
-  '学段为%s时只显示实际允许匹配的高中专属目录',
-  async educationLevel => {
-    const highOnly = getChallengePolicy('math', 1).masteryChallenges.find(
-      item =>
-        item.educationLevels?.length === 1 &&
-        item.educationLevels[0] === 'high',
-    )!;
-    const knowledgePoint = highOnly.knowledgeKeywords[0];
-    await openSaved({
-      ...analyzed,
-      analysis: {
-        ...analysis,
-        educationLevel,
-        knowledgePoints: [knowledgePoint],
-        questions: [
-          {...analysis.questions[0], knowledgePoints: [knowledgePoint]},
-        ],
-      },
-    });
-    if (educationLevel === 'high') {
-      expect(text()).toContain(highOnly.name);
-    } else {
-      expect(text()).not.toContain(highOnly.name);
-    }
-  },
-);
-
-test.each([1, 2])(
-  '历史v%d标准的PDF继续浏览，不被标成当前掌握训练标准',
-  async version => {
-    await openSaved({
-      ...completed,
-      policyVersion: `exam-challenge-within-scope-v${version}:${version}`,
-    });
-    expect(text()).toContain('此卷按旧版标准生成');
-    expect(text()).toContain(`历史标准 v${version}`);
-    expect(view!.root.findByType(Pdf).props.source.uri).toBe(
-      'file:///paper.pdf',
-    );
-    expect(upgradeChallenge).not.toHaveBeenCalled();
-    expect(deleteChallenge).not.toHaveBeenCalled();
-    act(() => view!.unmount());
-    view = undefined;
-    await openSaved({...completed, policyVersion: CHALLENGE_POLICY_VERSION});
-    expect(text()).not.toContain('此卷按旧版标准生成');
-  },
-);
-
-test('数学高档允许单策略深挖，不把组合方法数量当成唯一路线', async () => {
-  await openSaved();
-  await press('升 2 档');
-  let visibleText = view!.root
-    .findAllByType(Text)
-    .map(node => [node.props.children].flat().join(''))
-    .join('\n');
-  expect(visibleText).toContain('可选路线一：组合深化');
-  expect(visibleText).toContain('可选路线二：单策略深挖');
-  expect(visibleText).toContain('至少完成 2 个关键决策和 1 项实际边界检查');
-  expect(visibleText).toContain('两条路线任选其一');
-  await press('升 3 档');
-  visibleText = view!.root
-    .findAllByType(Text)
-    .map(node => [node.props.children].flat().join(''))
-    .join('\n');
-  expect(visibleText).toContain('至少完成 3 个关键决策和 2 项实际边界检查');
-});
-
-test('答案侧逐题展示深化方向与原新要求，试卷侧不提前展示解法说明', async () => {
-  const direction = getChallengePolicy('math', 1).deepDirections[0];
-  await openSaved({
-    ...completed,
-    policyVersion: CHALLENGE_POLICY_VERSION,
-    candidate: {
-      ...candidate,
-      questions: [
-        {
-          ...candidate.questions[0],
-          upgrade: {
-            ...candidate.questions[0].upgrade,
-            directionEvidence: [
-              {
-                directionId: direction.id,
-                originalDemand: '原题已直接给出运算关系。',
-                newDemand: '新题需要由目标反推缺失条件。',
-                problemQuote: '题干定位文字',
-                solutionQuote: '答案中需要保留到答案PDF的具体解法',
-                necessity: '答案中详细解释必要性',
-              },
-            ],
-          },
-        },
-      ],
-    },
-  });
-  await press('查看逐题分析');
-  expect(text()).not.toContain('原题已直接给出运算关系');
-  expect(text()).not.toContain('新题需要由目标反推缺失条件');
-  await press('答案 PDF');
-  expect(text()).toContain(direction.name);
-  expect(text()).toContain('原题已直接给出运算关系');
-  expect(text()).toContain('新题需要由目标反推缺失条件');
-  expect(text()).not.toContain('答案中需要保留到答案PDF的具体解法');
-  expect(text()).not.toContain('答案中详细解释必要性');
-});
-
-test('生成校核通过只说明试卷达标，具体修订内容仅在答案侧显示', async () => {
-  const privateSummary = '校核修正为选B，另一选项不符合条件';
-  const privateFix = '将第1题结果修订为9并补上步骤';
-  await openSaved({
-    ...completed,
-    reviewRounds: [
-      {
-        ...completed.reviewRounds[0],
-        reviews: [
-          {
-            ...completed.reviewRounds[0].reviews[0],
-            verdict: 'revise',
-            issues: [
-              {
-                questionId: 'q1',
-                code: 'answer_consistency',
-                comment: '原解答结果有误',
-                fix: privateFix,
-              },
-            ],
-          },
-        ],
-      },
-      {
-        ...completed.reviewRounds[0],
-        round: 2,
-        reviews: [
-          {
-            ...completed.reviewRounds[0].reviews[0],
-            summary: privateSummary,
-          },
-        ],
-      },
-    ],
-  });
-  expect(text()).toContain('个人掌握情况需结合后续作答与订正判断');
-  expect(text()).not.toContain(privateSummary);
-  expect(text()).not.toContain(privateFix);
-  expect(text()).toContain(CHALLENGE_RULES.masteryFramework.claimBoundary);
-  await press('答案 PDF');
-  expect(text()).toContain(privateSummary);
-  expect(text()).toContain(privateFix);
-  await press('试卷 PDF');
-  expect(text()).not.toContain(privateSummary);
-  expect(text()).not.toContain(privateFix);
-});
-
-test('解析仍有缺页或无法识别的问题时显示补充提示且禁止升档', async () => {
-  await openSaved({
-    ...analyzed,
-    analysis: {
-      ...analysis,
-      unresolvedIssues: ['第2题条件缺失，请补拍右半页。'],
-    },
-  });
-  expect(button('升档').props.disabled).toBe(true);
-  expect(text()).toContain('第2题条件缺失');
-  await press('补充页面');
-  expect(button('解析试卷').props.disabled).toBe(false);
-  expect(text()).toContain('原卷已放回待解析列表');
-});
-
-test('不是试卷或解析失败时不假成功，重新解析复用已持久化原卷', async () => {
-  (analyzeChallenge as jest.Mock).mockRejectedValueOnce(
-    new Error('上传内容不是试卷，请重新选择。'),
-  );
-  await render();
-  await uploadPhoto();
-  await press('解析试卷');
-  await settle();
-  expect(text()).toContain('上传内容不是试卷');
-  expect(view!.root.findAllByType(Pdf)).toHaveLength(0);
-  await press('重新解析');
-  await settle();
-  expect(createChallenge).toHaveBeenCalledTimes(1);
-  expect(analyzeChallenge).toHaveBeenCalledTimes(2);
-});
-
-test('重复点击解析只创建一次，返回首页和卸载后继续请求，重进可恢复进度', async () => {
+test('重复点击只启动一个任务，返回首页、卸载与重进仍可恢复进度和主动停止', async () => {
   const pending = deferred<ChallengeRecord>();
   (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
   await render();
@@ -980,238 +679,51 @@ test('重复点击解析只创建一次，返回首页和卸载后继续请求�
   expect(analyzeChallenge).toHaveBeenCalledTimes(1);
   const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
   await press('‹ 返回首页');
-  expect(options.signal.aborted).toBe(false);
   expect(back).toHaveBeenCalledTimes(1);
   act(() => view!.unmount());
   view = undefined;
   expect(options.signal.aborted).toBe(false);
   expect(getChallengeTask(base.id)).toBeDefined();
-  const running: ChallengeRecord = {
+  options.onUpdate({
     ...base,
     status: 'analyzing',
-    progress: '已完成两页，继续识别科目',
-  };
-  options.onUpdate(running);
+    progress: '后台正在核验样题',
+  });
   (getChallenge as jest.Mock).mockResolvedValueOnce(base);
   await render(base.id);
-  expect(text()).toContain(running.progress);
-  expect(button('停止处理').props.disabled).toBe(false);
-  expect(button('重新解析').props.disabled).toBe(true);
-  await act(async () => {
-    pending.resolve(analyzed);
-  });
-  expect(getChallengeTask(base.id)).toBeUndefined();
-  expect(button('重新解析').props.disabled).toBe(false);
-});
-
-test('停止处理保留原卷与记录，可以重试而不重新导入', async () => {
-  const pending = deferred<ChallengeRecord>();
-  (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
-  await render();
-  await uploadPhoto();
-  await press('解析试卷');
-  await settle();
+  expect(text()).toContain('后台正在核验样题');
   await press('停止处理');
-  const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
   expect(options.signal.aborted).toBe(true);
-  await act(async () =>
-    pending.resolve({...base, status: 'cancelled', progress: '已停止'}),
-  );
+  await act(async () => pending.resolve({...analyzed, status: 'cancelled'}));
   expect(button('重新解析').props.disabled).toBe(false);
-  expect(createChallenge).toHaveBeenCalledTimes(1);
 });
 
-test('试卷和答案分开预览下载，取消保存不报成功，保存失败仍可预览和重试', async () => {
-  await openSaved(completed);
-  expect(view!.root.findByType(Pdf).props.source.uri).toBe('file:///paper.pdf');
-  (saveChallengePdf as jest.Mock).mockResolvedValueOnce(false);
-  await press('下载试卷');
-  expect(text()).not.toContain('PDF 已保存');
-  (saveChallengePdf as jest.Mock).mockRejectedValueOnce(
-    new Error('目标目录不可写'),
-  );
-  await press('下载答案');
-  expect(text()).toContain('目标目录不可写');
-  expect(view!.root.findAllByType(Pdf)).toHaveLength(1);
-  await press('答案 PDF');
-  expect(view!.root.findByType(Pdf).props.source.uri).toBe(
-    'file:///answers.pdf',
-  );
-  await press('下载答案');
-  expect(saveChallengePdf).toHaveBeenLastCalledWith(
-    'file:///answers.pdf',
-    expect.stringContaining('答案.pdf'),
-  );
-  expect(text()).toContain('答案 PDF 已保存');
-});
-
-test('PDF预览故障可重新打开；候选与校核版本不一致时不暴露旧PDF', async () => {
-  await openSaved(completed);
-  act(() => view!.root.findByType(Pdf).props.onError('文件暂时无法读取'));
-  expect(text()).toContain('文件暂时无法读取');
-  await press('重新打开 PDF');
-  expect(view!.root.findAllByType(Pdf)).toHaveLength(1);
-  act(() => view!.unmount());
-  view = undefined;
-  await openSaved({...completed, candidateRevision: 2});
-  expect(view!.root.findAllByType(Pdf)).toHaveLength(0);
-});
-
-test('进入模型设置前保存待解析输入，返回时可恢复选中的已保存挑战', async () => {
-  await render();
-  await uploadPhoto();
-  await press('模型设置');
-  await settle();
-  expect(createChallenge).toHaveBeenCalledWith([source]);
-  expect(selection).toHaveBeenCalledWith(base.id);
-  expect(modelSettings).toHaveBeenCalledTimes(1);
-  expect(analyzeChallenge).not.toHaveBeenCalled();
-  act(() => view!.unmount());
-  view = undefined;
-  (getChallenge as jest.Mock).mockResolvedValueOnce(analyzed);
-  await render(base.id);
-  expect(text()).toContain('原卷解析');
-});
-
-test('恢复上次挑战的迟到结果不能覆盖用户新导入的试卷', async () => {
-  const previous = deferred<ChallengeRecord>();
-  (getChallenge as jest.Mock).mockReturnValueOnce(previous.promise);
-  await render('challenge_previous');
-  await uploadPhoto();
-  await act(async () => previous.resolve(analyzed));
-  expect(text()).not.toContain('原卷解析');
-  expect(button('解析试卷').props.disabled).toBe(false);
-});
-
-test('补充页面引用旧记录时禁止删除，旧确认回调也不能破坏草稿；新副本保存后解除保护', async () => {
-  await openSaved(analyzed);
-  await press('管理');
-  selectRecord(analyzed.title);
-  await press('删除已选（1）');
-  const confirmation = (Alert.alert as jest.Mock).mock.calls.slice(-1)[0][2];
-  const confirmDelete = confirmation.find(
-    (item: {text: string}) => item.text === '删除',
-  ).onPress;
-  await press('‹ 返回挑战');
-  await press('补充页面');
-  await press('管理');
-  const protectedRow = view!.root
-    .findAllByType(Pressable)
-    .find(node => node.props.accessibilityLabel === `选择${analyzed.title}`)!;
-  expect(protectedRow.props.disabled).toBe(true);
-  expect(text()).toContain('当前补充页面正在使用的记录暂不可删除');
-  await act(async () => {
-    await confirmDelete();
-  });
-  expect(deleteChallenge).not.toHaveBeenCalled();
-  await press('‹ 返回挑战');
-  expect(button('解析试卷').props.disabled).toBe(false);
-
-  const copying = deferred<ChallengeRecord>();
-  const copied: ChallengeRecord = {
-    ...base,
-    id: 'challenge_copied',
-    title: '补充后的数学卷',
-    sources: [
-      {
-        ...source,
-        uri: 'file:///copied/page.jpg',
-        pageUris: ['file:///copied/page.jpg'],
-      },
-    ],
-    pageUris: ['file:///copied/page.jpg'],
-  };
-  (createChallenge as jest.Mock).mockReturnValueOnce(copying.promise);
-  (analyzeChallenge as jest.Mock).mockResolvedValueOnce({
-    ...copied,
-    analysis,
-    status: 'analyzed',
-  });
-  (listChallenges as jest.Mock).mockResolvedValue([analyzed, copied]);
-  await press('解析试卷');
-  await settle();
-  expect(createChallenge).toHaveBeenCalledWith(analyzed.sources);
-  expect(button('管理').props.disabled).toBe(true);
-  await act(async () => copying.resolve(copied));
-  await settle();
-  await press('管理');
-  const unprotectedRow = view!.root
-    .findAllByType(Pressable)
-    .find(node => node.props.accessibilityLabel === `选择${analyzed.title}`)!;
-  expect(unprotectedRow.props.disabled).toBe(false);
-  expect(deleteChallenge).not.toHaveBeenCalled();
-});
-
-test('切换答案PDF后，旧试卷预览的迟到错误不能覆盖新预览', async () => {
-  await openSaved(completed);
-  const previousError = view!.root.findByType(Pdf).props.onError;
-  await press('答案 PDF');
-  act(() => previousError('来自旧试卷的错误'));
-  expect(text()).not.toContain('来自旧试卷的错误');
-  expect(view!.root.findByType(Pdf).props.source.uri).toBe(
-    'file:///answers.pdf',
-  );
-});
-
-test('记录读取失败可重试，删除只在确认后调用持久化服务', async () => {
-  (listChallenges as jest.Mock).mockRejectedValueOnce(
-    new Error('数据库暂时不可用'),
-  );
-  await render();
-  expect(text()).toContain('数据库暂时不可用');
-  (listChallenges as jest.Mock).mockResolvedValueOnce([analyzed]);
-  await press('重新读取记录');
-  await settle();
-  expect(button(`删除${analyzed.title}`)).toBeUndefined();
-  await press('管理');
-  selectRecord(analyzed.title);
-  await press('删除已选（1）');
-  expect(deleteChallenge).not.toHaveBeenCalled();
-  const buttons = (Alert.alert as jest.Mock).mock.calls.slice(-1)[0][2];
-  await act(async () => {
-    await buttons
-      .find((item: {text: string}) => item.text === '删除')
-      .onPress();
-  });
-  expect(deleteChallenge).toHaveBeenCalledWith(analyzed.id);
-});
-
-test('升档时可进入模型设置，重进后仍可主动停止原请求', async () => {
+test('升档期间可进入设置与切换页卡，不会中断请求', async () => {
   const pending = deferred<ChallengeRecord>();
   (upgradeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
-  await openSaved(analyzed);
+  await openSaved();
+  await press('升档方案');
   await press('升档');
   await settle();
   const options = (upgradeChallenge as jest.Mock).mock.calls[0][2];
-  expect(button('模型设置').props.disabled).toBe(false);
+  await press('试卷分析');
   await press('模型设置');
   expect(modelSettings).toHaveBeenCalledTimes(1);
   act(() => view!.unmount());
   view = undefined;
   expect(options.signal.aborted).toBe(false);
-  options.onUpdate({
-    ...analyzed,
-    status: 'reviewing',
-    progress: '后台圆桌评审中',
-  });
-  (getChallenge as jest.Mock).mockResolvedValueOnce(analyzed);
-  await render(analyzed.id);
-  expect(text()).toContain('后台圆桌评审中');
-  expect(button('升档').props.disabled).toBe(true);
-  await press('停止处理');
-  expect(options.signal.aborted).toBe(true);
-  await act(async () => pending.resolve({...analyzed, status: 'cancelled'}));
-  expect(getChallengeTask(analyzed.id)).toBeUndefined();
-  expect(button('升档').props.disabled).toBe(false);
+  await act(async () => pending.resolve(completed));
+  (getChallenge as jest.Mock).mockResolvedValueOnce(completed);
+  await render(completed.id);
+  expect(view!.root.findByType(Pdf).props.source.uri).toBe('file:///paper.pdf');
 });
 
-test('保存原卷期间返回首页，导入完成后仍启动已请求的解析', async () => {
+test('保存原卷期间离开，导入完成后继续已请求的解析', async () => {
   const copying = deferred<ChallengeRecord>();
   (createChallenge as jest.Mock).mockReturnValueOnce(copying.promise);
   await render();
   await uploadPhoto();
   await press('解析试卷');
-  expect(analyzeChallenge).not.toHaveBeenCalled();
   await press('‹ 返回首页');
   act(() => view!.unmount());
   view = undefined;
@@ -1220,11 +732,10 @@ test('保存原卷期间返回首页，导入完成后仍启动已请求的解�
   expect((analyzeChallenge as jest.Mock).mock.calls[0][1].signal.aborted).toBe(
     false,
   );
-  expect(selection).toHaveBeenCalledWith(base.id);
 });
 
-test('打开另一份记录不停止后台任务，原任务迟到进度和结果不覆盖当前记录', async () => {
-  const other = {...base, id: 'challenge_other', title: '另一份英语卷'};
+test('切换另一份记录后，后台旧任务的进度与完成结果不覆盖当前试卷', async () => {
+  const other = {...base, id: 'challenge_other', title: '另一份试卷'};
   const pending = deferred<ChallengeRecord>();
   (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
   (listChallenges as jest.Mock).mockResolvedValue([analyzed, other]);
@@ -1235,94 +746,88 @@ test('打开另一份记录不停止后台任务，原任务迟到进度和结�
   await press('重新解析');
   await settle();
   const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
-  expect(button(`打开${other.title}`).props.disabled).toBe(false);
+  await press('原卷');
   await press(`打开${other.title}`);
+  act(() => options.onUpdate({...analyzed, progress: '旧任务的后续进度'}));
+  expect(text()).not.toContain('旧任务的后续进度');
   expect(options.signal.aborted).toBe(false);
-  act(() => options.onUpdate({...analyzed, progress: '原任务的后续进度'}));
-  expect(text()).not.toContain('原任务的后续进度');
   await act(async () => pending.resolve(analyzed));
-  expect(text()).not.toContain('原卷解析');
   expect(selection).toHaveBeenLastCalledWith(other.id);
 });
 
-test('管理页可删除正在处理的记录，明确停止请求并清除选中记录', async () => {
+test('进入模型设置前保存未解析输入，返回可恢复原卷', async () => {
+  await render();
+  await uploadPhoto();
+  await press('模型设置');
+  await settle();
+  expect(createChallenge).toHaveBeenCalledWith([source]);
+  expect(selection).toHaveBeenCalledWith(base.id);
+  expect(modelSettings).toHaveBeenCalledTimes(1);
+});
+
+test('最近列表没有删除入口，管理页确认后批量删除并停止对应任务', async () => {
   const pending = deferred<ChallengeRecord>();
   (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
   (listChallenges as jest.Mock).mockResolvedValue([analyzed]);
-  await openSaved(analyzed);
+  await openSaved();
+  await press('原卷');
   expect(button(`删除${analyzed.title}`)).toBeUndefined();
   await press('重新解析');
   await settle();
   const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
-  expect(button('管理').props.disabled).toBe(false);
   await press('管理');
-  expect(text()).toContain('挑战管理');
   selectRecord(analyzed.title);
   await press('删除已选（1）');
-  expect(options.signal.aborted).toBe(false);
   expect(deleteChallenge).not.toHaveBeenCalled();
+  expect(options.signal.aborted).toBe(false);
   (listChallenges as jest.Mock).mockResolvedValue([]);
-  const confirmation = (Alert.alert as jest.Mock).mock.calls.slice(-1)[0][2];
-  await act(async () =>
-    confirmation.find((item: {text: string}) => item.text === '删除').onPress(),
-  );
+  const confirm = (Alert.alert as jest.Mock).mock.calls
+    .slice(-1)[0][2]
+    .find((item: {text: string}) => item.text === '删除').onPress;
+  await act(async () => confirm());
   expect(deleteChallenge).toHaveBeenCalledWith(analyzed.id);
   expect(options.signal.aborted).toBe(true);
-  expect(selection).toHaveBeenLastCalledWith(undefined);
   await press('‹ 返回挑战');
-  // A late model callback cannot restore a record the user deleted.
   act(() => options.onUpdate(analyzed));
   await act(async () => pending.resolve(analyzed));
   expect(text()).toContain('上传一份试卷');
-  expect(text()).not.toContain('原卷解析');
 });
 
-test('首次请求前隐藏顶部消耗入口，运行中显示分阶段统计与逐次明细并实时更新', async () => {
-  const pending = deferred<ChallengeRecord>();
-  (analyzeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
-  await render();
-  expect(button('模型消耗详情')).toBeUndefined();
-  await uploadPhoto();
-  await press('解析试卷');
-  await settle();
-  expect(button('模型消耗详情')).toBeUndefined();
-  const options = (analyzeChallenge as jest.Mock).mock.calls[0][1];
-  const first = modelCall();
-  act(() =>
-    options.onUpdate({
-      ...base,
-      status: 'analyzing',
-      calls: [{stage: 'analysis', call: first}],
-    }),
-  );
-  expect(button('模型消耗详情')).toBeDefined();
-  await press('模型消耗详情');
-  expect(text()).toContain('总体消耗');
-  expect(screenText()).toContain('进行中 1 次');
-  expect(screenText()).toContain('输入：未返回');
-  await press('展开逐次调用');
-  expect(text()).toContain('test-model');
-  expect(text()).toContain('请求中');
-  const calls: ChallengeRecord['calls'] = [
-    {
-      stage: 'analysis',
-      call: {
-        ...first,
-        status: 'completed',
-        finishedAt: '2026-11-11T01:00:02.000Z',
-        durationMs: 2000,
-        ...parseUsage({input_tokens: 100, output_tokens: 20}),
-      },
-    },
-    {stage: 'analysis', call: modelCall({id: 'retry', status: 'failed'})},
-  ];
-  act(() => options.onUpdate({...base, status: 'analyzing', calls}));
-  expect(screenText()).toContain('实际调用 2 次');
-  expect(screenText()).toContain('合计：120（另 1 次未返回）');
-  expect(text()).toContain('请求失败');
-  expect(text()).toContain('2.0 秒');
-  expect(options.signal.aborted).toBe(false);
+test('补充页面保护原记录，管理页旧确认回调不会破坏当前草稿', async () => {
+  await openSaved();
+  await press('管理');
+  selectRecord(analyzed.title);
+  await press('删除已选（1）');
+  const stale = (Alert.alert as jest.Mock).mock.calls
+    .slice(-1)[0][2]
+    .find((item: {text: string}) => item.text === '删除').onPress;
   await press('‹ 返回挑战');
-  await act(async () => pending.resolve({...analyzed, calls}));
-  expect(button('模型消耗详情')).toBeDefined();
+  await press('补充页面');
+  await press('管理');
+  expect(
+    view!.root
+      .findAllByType(Pressable)
+      .find(node => node.props.accessibilityLabel === `选择${analyzed.title}`)!
+      .props.disabled,
+  ).toBe(true);
+  await act(async () => stale());
+  expect(deleteChallenge).not.toHaveBeenCalled();
+  await press('‹ 返回挑战');
+  expect(button('解析试卷').props.disabled).toBe(false);
+});
+
+test('记录读取失败可重试，恢复原记录的迟到结果不能覆盖新导入输入', async () => {
+  const restoring = deferred<ChallengeRecord>();
+  (getChallenge as jest.Mock).mockReturnValueOnce(restoring.promise);
+  (listChallenges as jest.Mock).mockRejectedValueOnce(
+    new Error('数据库暂时不可用'),
+  );
+  await render('challenge_previous');
+  expect(text()).toContain('数据库暂时不可用');
+  await press('重新读取记录');
+  expect(text()).not.toContain('数据库暂时不可用');
+  await uploadPhoto();
+  await act(async () => restoring.resolve(analyzed));
+  expect(button('解析试卷').props.disabled).toBe(false);
+  expect(text()).toContain(source.name);
 });

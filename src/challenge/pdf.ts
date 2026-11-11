@@ -698,6 +698,12 @@ export async function buildChallengePdfs(
       answer.scoringPoints.forEach((point, index) =>
         answers.text(`评分点 ${index + 1}：${point}`, 11, 18),
       );
+    } else if (
+      answer.status === 'requires_review' &&
+      question.upgrade.mode === 'retained'
+    ) {
+      answers.text('原题保留，参考答案待核。', 12, 20);
+      answers.text(`核验说明：${answer.explanation}`, 11, 18);
     } else {
       throw new Error('答案核验状态无效');
     }
@@ -707,7 +713,11 @@ export async function buildChallengePdfs(
       17,
       MUTED,
     );
-    if (!question.isListening && answer.learningGuide?.length) {
+    if (
+      !question.isListening &&
+      question.upgrade.mode !== 'retained' &&
+      answer.learningGuide?.length
+    ) {
       writeLearningGuides(answers, answer.learningGuide, label);
     }
     answers.setContext('');

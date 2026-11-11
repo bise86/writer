@@ -16,6 +16,7 @@ import {
   SubjectIdentification,
   SubjectVerification,
   ChallengeSubject,
+  SubjectSampleVote,
 } from './types';
 import {
   applicableChallengeDirections,
@@ -25,6 +26,15 @@ import {
   isWritingQuestion,
 } from './rules';
 import {validateLearningGuides} from './mastery';
+import {
+  challengeCoverage,
+  isRetainedQuestion,
+  sourceRequiresRetention,
+} from './selection';
+import {
+  subjectConsensus,
+  SubjectVerificationSampleInput,
+} from './subjectSampling';
 
 function object(value: unknown): value is Record<string, any> {
   return !!value && typeof value === 'object' && !Array.isArray(value);
@@ -481,8 +491,8 @@ export function validateSubjectVerification(
   const data = root(value);
   const check = new Check();
   check.require(
-    data.mode === 'title_sample' || data.mode === 'expanded',
-    '识科核验模式必须为title_sample/expanded',
+    ['title_sample', 'expanded', 'progressive'].includes(data.mode),
+    '识科核验模式必须为title_sample/expanded/progressive',
   );
   const refs = (valueRefs: unknown, path: string, min: number) => {
     if (check.array(valueRefs, path, min, 100)) {
@@ -540,17 +550,120 @@ export function validateSubjectVerification(
         `${path} 抽中小题必须来自该大题完整候选集合`,
       );
       refs(sample.sourceRefs, `${path}.sourceRefs`, 1);
-      groups.push(sample.majorQuestionId);
+      groups.push(
+        data.mode === 'progressive'
+          ? sample.selectedQuestionId
+          : sample.majorQuestionId,
+      );
     });
     check.require(
       unique(groups),
-      '每大题恰好一份随机抽样记录，不得重复或以同一题替代多组',
+      '随机抽样不得重复同一题；历史逐大题模式不得重复题组',
     );
   }
   if (data.mode === 'expanded') {
     check.text(data.expansionReason, 'expansionReason');
   }
+  if (data.mode === 'progressive') {
+    check.texts(data.candidateOrder, 'candidateOrder', 1, true);
+    check.require(
+      Array.isArray(data.samples) &&
+        Array.isArray(data.candidateOrder) &&
+        data.samples.length >= Math.min(3, data.candidateOrder.length) &&
+        data.samples.length <= data.candidateOrder.length &&
+        data.samples.every(
+          (sample: any, index: number) =>
+            sample?.selectedQuestionId === data.candidateOrder[index],
+        ),
+      '递进抽样须先取最多3题，随后沿固定题池顺序逐次追加1题',
+    );
+    if (check.array(data.votes, 'votes', 0, 300)) {
+      check.require(
+        data.votes.length <= data.samples?.length &&
+          unique(data.votes.map((vote: any) => vote?.questionId)),
+        '抽样识科票不得重复或超出已抽题',
+      );
+      data.votes.forEach((vote: any, index: number) => {
+        check.require(
+          object(vote) &&
+            vote.questionId === data.samples?.[index]?.selectedQuestionId &&
+            (vote.subject === 'unknown' ||
+              CHALLENGE_SUBJECTS.includes(vote.subject)),
+          `votes[${index}]须对应已抽题及有效科目`,
+        );
+        if (!object(vote)) {
+          return;
+        }
+        check.text(vote.reason, `votes[${index}].reason`);
+        check.text(
+          vote.courseName,
+          `votes[${index}].courseName`,
+          vote.subject === 'unknown',
+        );
+        check.require(
+          typeof vote.integrated === 'boolean' &&
+            (!vote.integrated || vote.subject === 'science'),
+          '综合课程票只能对应有证据的科学/理综',
+        );
+        refs(
+          vote.evidence,
+          `votes[${index}].evidence`,
+          vote.subject === 'unknown' ? 0 : 1,
+        );
+        if (vote.subject !== 'unknown') {
+          check.require(
+            Array.isArray(data.samples?.[index]?.sourceRefs) &&
+              Array.isArray(vote.evidence) &&
+              data.samples[index].sourceRefs.some((ref: any) =>
+                vote.evidence.some((item: any) => sameJson(ref, item)),
+              ),
+            '每张明确科目票必须引用该抽中题的真实原锚',
+          );
+        }
+      });
+    }
+  }
   return JSON.parse(JSON.stringify(check.finish(data))) as SubjectVerification;
+}
+
+export function validateSubjectVotes(
+  value: unknown,
+  pages: ChallengePage[],
+  verification: SubjectVerification,
+  samples: SubjectVerificationSampleInput[],
+): SubjectSampleVote[] {
+  const data = root(value);
+  const check = new Check();
+  if (data.requiresExpandedCheck === true && nonempty(data.reason)) {
+    return samples.map(sample => ({
+      questionId: sample.question.id,
+      subject: 'unknown',
+      courseName: '',
+      integrated: false,
+      reason: data.reason,
+      evidence: [],
+    }));
+  }
+  if (check.array(data.votes, 'votes', samples.length, samples.length)) {
+    data.votes.forEach((vote: any, index: number) => {
+      check.require(
+        object(vote) && vote.questionId === samples[index]?.question.id,
+        '识科票必须逐一对应本轮新增题，不能换题或对依赖题另计票',
+      );
+      if (samples[index]?.contextIssue) {
+        check.require(
+          vote?.subject === 'unknown',
+          '依赖上下文无法核实的小题只能记unknown，不能猜科',
+        );
+      }
+    });
+  }
+  check.finish(data);
+  const combined = validateSubjectVerification(
+    {...verification, votes: [...(verification.votes || []), ...data.votes]},
+    pages,
+  );
+  return combined.votes!.slice(verification.votes?.length || 0);
 }
 
 export function validateSubjectIdentification(
@@ -624,7 +737,10 @@ export function validateSubjectIdentification(
         `evidence[${index}] 必须逐字来自对应印刷原页，不能引用学生作答或文件名`,
       );
     });
-    if (verification?.mode !== 'title_sample') {
+    if (
+      verification?.mode !== 'title_sample' &&
+      verification?.mode !== 'progressive'
+    ) {
       check.require(
         pages.every(page =>
           data.evidence.some(
@@ -657,6 +773,25 @@ export function validateSubjectIdentification(
           `大题${sample.majorQuestionTitle}抽中的${sample.selectedQuestionNumber}小题必须有真实原锚佐证，不能漏核或换题`,
         ),
       );
+    }
+    if (verification?.mode === 'progressive') {
+      const consensus = subjectConsensus(verification);
+      check.require(
+        !!consensus &&
+          consensus.subject === data.subject &&
+          consensus.integrated === data.integrated &&
+          (data.subject !== 'other' ||
+            consensus.courseName === data.courseName),
+        '递进识科须由初始最多3题一致，或追加后超过半数的明确课程票确认，不能只按标题或忽略未知票',
+      );
+      for (const vote of verification.votes || []) {
+        check.require(
+          vote.evidence.every(ref =>
+            data.evidence.some((item: any) => sameJson(item, ref)),
+          ),
+          '确认票据必须保留每道已抽题的识科证据',
+        );
+      }
     }
   }
   if (data.subject === 'other') {
@@ -818,6 +953,36 @@ function validateExamContent(
       );
       if (!object(item)) {
         return;
+      }
+      if (item.analysisIssues !== undefined) {
+        check.texts(item.analysisIssues, `${field}.analysisIssues`, 0);
+      }
+      if (item.upgradeEligibility !== undefined) {
+        check.require(
+          ['eligible', 'retain'].includes(item.upgradeEligibility),
+          `${field}.upgradeEligibility 必须为eligible/retain`,
+        );
+      }
+      if (item.upgradeEligibility === 'retain') {
+        check.text(item.retentionReason, `${field}.retentionReason`);
+      }
+      if (item.dependsOnQuestionIds !== undefined) {
+        check.texts(
+          item.dependsOnQuestionIds,
+          `${field}.dependsOnQuestionIds`,
+          0,
+          true,
+        );
+        if (Array.isArray(item.dependsOnQuestionIds)) {
+          check.require(
+            item.dependsOnQuestionIds.every(
+              (id: string) =>
+                id !== item.id &&
+                data.questions.some((other: any) => other?.id === id),
+            ),
+            `${field} 前问依赖必须指向真实的其它原小题`,
+          );
+        }
       }
       if (typeof item.stem === 'string') {
         const transcript = item.stem.match(
@@ -1352,6 +1517,13 @@ export function validateChallengePaper(
   );
   check.text(data.title, 'title');
   const originalSectionIds = analysis.sections.map(item => item.id);
+  const retainedQuestionIds = new Set(
+    Array.isArray(data.questions)
+      ? data.questions
+          .filter((item: any) => item?.upgrade?.mode === 'retained')
+          .map((item: any) => item.id)
+      : [],
+  );
   const parsedSections = sections(data.sections, check);
   check.require(
     sameList(
@@ -1363,12 +1535,14 @@ export function validateChallengePaper(
   analysis.sections.forEach((section, index) => {
     if (
       analysis.questions.some(
-        item => item.sectionId === section.id && item.isListening,
+        item =>
+          item.sectionId === section.id &&
+          (item.isListening || retainedQuestionIds.has(item.id)),
       )
     ) {
       check.require(
         sameJson(parsedSections[index], section),
-        `sections[${index}] 听力题组标题与指示必须原样保留，不能改变听几遍等作答条件`,
+        `sections[${index}] 含听力或保留题的题组标题与指示必须原样保留，不能改变听几遍等作答条件`,
       );
     }
   });
@@ -1415,12 +1589,13 @@ export function validateChallengePaper(
     );
     const usedByListening = analysis.questions.some(
       item =>
-        item.isListening && item.materialIds.includes(originalMaterial.id),
+        (item.isListening || retainedQuestionIds.has(item.id)) &&
+        item.materialIds.includes(originalMaterial.id),
     );
     if (originalMaterial.isListening || usedByListening) {
       check.require(
         sameJson(material, originalMaterial),
-        `materials[${index}] 听力及听力共享材料必须完整保留，不得改写`,
+        `materials[${index}] 听力共享材料或保留题共享材料必须完整保留，不得改写`,
       );
     }
   });
@@ -1486,32 +1661,48 @@ export function validateChallengePaper(
         return;
       }
       const upgrade = item.upgrade;
+      const retained = upgrade.mode === 'retained';
+      check.require(
+        upgrade.mode === undefined ||
+          ['upgraded', 'retained'].includes(upgrade.mode),
+        `${field}.upgrade.mode 必须为upgraded/retained`,
+      );
+      check.require(
+        !source.isListening || upgrade.mode !== 'upgraded',
+        `${field} 听力不能标为升档`,
+      );
+      check.require(
+        !sourceRequiresRetention(source) || source.isListening || retained,
+        `${field} 原题分析存疑或标记保留，不得强行升档`,
+      );
       check.require(
         upgrade.level === level,
         `${field}.upgrade.level 必须与当前升档一致`,
       );
-      depthEvidence(
-        item,
-        source,
-        analysis,
-        level,
-        parsedMaterials,
-        generatedFigures,
-        data.answers,
-        field,
-        check,
-      );
+      if (!retained) {
+        depthEvidence(
+          item,
+          source,
+          analysis,
+          level,
+          parsedMaterials,
+          generatedFigures,
+          data.answers,
+          field,
+          check,
+        );
+      }
       check.text(upgrade.scopeExplanation, `${field}.upgrade.scopeExplanation`);
       check.texts(
         upgrade.changes,
         `${field}.upgrade.changes`,
-        source.isListening ? 0 : 1,
+        source.isListening || retained ? 0 : 1,
         true,
       );
       check.texts(
         upgrade.pitfalls,
         `${field}.upgrade.pitfalls`,
-        source.isListening ? 0 : 1,
+        source.isListening || retained ? 0 : 1,
         true,
       );
       for (const key of ['changes', 'pitfalls']) {
@@ -1531,6 +1722,73 @@ export function validateChallengePaper(
         Object.values(upgrade.metrics).every(metric => integer(metric, 0, 100)),
         `${field}.upgrade.metrics 必须使用0..100有限整数`,
       );
+      if (retained) {
+        check.text(upgrade.retentionReason, `${field}.upgrade.retentionReason`);
+        for (const key of [
+          'stem',
+          'options',
+          'knowledgePoints',
+          'answerLines',
+        ] as const) {
+          check.require(
+            sameJson(item[key], source[key]),
+            `${field}.${key} 保留题必须逐字保持原题，不得暗改条件或选项`,
+          );
+        }
+        check.require(
+          upgrade.changes?.length === 0 &&
+            upgrade.pitfalls?.length === 0 &&
+            Object.values(upgrade.metrics).every(metric => metric === 0),
+          `${field} 保留题的changes/pitfalls须空且指标为0，不得计入升档`,
+        );
+        for (const key of [
+          'directionEvidence',
+          'directionConnections',
+          'depthChecks',
+        ]) {
+          check.require(
+            upgrade[key] === undefined ||
+              (Array.isArray(upgrade[key]) && upgrade[key].length === 0),
+            `${field} 保留题不能附加升档方向证据`,
+          );
+        }
+        check.require(
+          upgrade.depthRoute === undefined || upgrade.depthRoute === 'combined',
+          `${field} 保留题不能使用focused升档路线`,
+        );
+        const materialsIds = source.materialIds;
+        const figureIds = new Set([
+          ...source.figureIds,
+          ...analysis.materials
+            .filter(material => materialsIds.includes(material.id))
+            .flatMap(material => material.figureIds),
+        ]);
+        for (const id of figureIds) {
+          const before = analysis.figures.find(
+            itemFigure => itemFigure.id === id,
+          );
+          const after = generatedFigures.find(
+            itemFigure => itemFigure?.id === id,
+          );
+          check.require(
+            sameJson(before, after) ||
+              (before?.containsStudentMarks === true &&
+                after?.kind === 'drawing' &&
+                after.caption === before.caption),
+            `${field} 保留题的图形条件必须不变，只能等内容清除学生标记`,
+          );
+        }
+        for (const id of source.dependsOnQuestionIds || []) {
+          const dependency = data.questions.find(
+            (candidate: any) => candidate?.id === id,
+          );
+          check.require(
+            dependency && isRetainedQuestion(dependency),
+            `${field} 保留题依赖的前问也必须保留，不能借改前问间接改变原题`,
+          );
+        }
+        return;
+      }
       if (source.isListening) {
         for (const key of [
           'stem',
@@ -1633,6 +1891,11 @@ export function validateChallengePaper(
         }
       }
     });
+    const coverage = challengeCoverage(analysis, level, data as ChallengePaper);
+    check.require(
+      coverage.upgraded >= coverage.required,
+      `整卷升${level}档至少${coverage.minimumPercent}%题实质升档：共${coverage.total}道非听力题须至少${coverage.required}题，实际${coverage.upgraded}题；听力及保留题不计入升档`,
+    );
   }
   questionTotals(data, check);
   check.require(
@@ -1671,35 +1934,44 @@ export function validateChallengePaper(
         `${field}.questionId 必须对应原题`,
       );
       check.require(
-        item.status === 'verified' || item.status === 'requires_audio',
-        `${field}.status 只能为verified/requires_audio`,
+        ['verified', 'requires_audio', 'requires_review'].includes(item.status),
+        `${field}.status 只能为verified/requires_audio/requires_review`,
       );
-      check.text(
-        item.answer,
-        `${field}.answer`,
-        item.status === 'requires_audio',
-      );
+      check.text(item.answer, `${field}.answer`, item.status !== 'verified');
       check.text(item.explanation, `${field}.explanation`);
       check.texts(
         item.scoringPoints,
         `${field}.scoringPoints`,
-        item.status === 'requires_audio' ? 0 : 1,
+        item.status === 'verified' ? 1 : 0,
       );
       if (!source || !questionItem) {
         return;
       }
-      validateLearningGuides(
-        item,
-        questionItem,
-        source,
-        analysis,
-        level,
-        parsedMaterials,
-        generatedFigures,
-        field,
-        check,
-      );
-      if (item.status === 'requires_audio') {
+      if (questionItem.upgrade?.mode !== 'retained') {
+        validateLearningGuides(
+          item,
+          questionItem,
+          source,
+          analysis,
+          level,
+          parsedMaterials,
+          generatedFigures,
+          field,
+          check,
+        );
+      }
+      if (item.status === 'requires_review') {
+        check.require(
+          questionItem.upgrade?.mode === 'retained' && !source.isListening,
+          `${field} 只有原样保留的非听力题可标记答案待核`,
+        );
+        check.require(
+          typeof item.answer === 'string' &&
+            (!item.answer.trim() || /待核|无法确定|需.*核/.test(item.answer)) &&
+            /待核|无法确定|需.*核/.test(item.explanation),
+          `${field} 存疑答案必须明确待核，不能编造确定答案`,
+        );
+      } else if (item.status === 'requires_audio') {
         check.require(
           source.isListening,
           `${field} 只有听力题能标记requires_audio，其他题必须给出确定答案和解析`,

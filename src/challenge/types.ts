@@ -102,6 +102,9 @@ export interface SourceQuestion extends PaperQuestion {
   difficulty: {rating: number; reasoningSteps: number; explanation: string};
   majorQuestionId?: string;
   dependsOnQuestionIds?: string[];
+  analysisIssues?: string[];
+  upgradeEligibility?: 'eligible' | 'retain';
+  retentionReason?: string;
 }
 export interface SubjectEvidence {
   pageIndex: number;
@@ -113,7 +116,7 @@ export interface MajorQuestion {
   sourceRefs: SubjectEvidence[];
 }
 export interface SubjectVerification {
-  mode: 'title_sample' | 'expanded';
+  mode: 'title_sample' | 'expanded' | 'progressive';
   titleEvidence: SubjectEvidence[];
   samples: {
     majorQuestionId: string;
@@ -124,6 +127,16 @@ export interface SubjectVerification {
     sourceRefs: SubjectEvidence[];
   }[];
   expansionReason?: string;
+  candidateOrder?: string[];
+  votes?: SubjectSampleVote[];
+}
+export interface SubjectSampleVote {
+  questionId: string;
+  subject: ChallengeSubject | 'unknown';
+  courseName: string;
+  integrated: boolean;
+  reason: string;
+  evidence: SubjectEvidence[];
 }
 export interface SubjectIdentification {
   status: 'confirmed';
@@ -186,6 +199,8 @@ export interface ChallengeDepthCheck {
   explanation: string;
 }
 export interface QuestionUpgrade {
+  mode?: 'upgraded' | 'retained';
+  retentionReason?: string;
   level: ChallengeLevel;
   metrics: Record<string, number>;
   changes: string[];
@@ -238,7 +253,7 @@ export interface ChallengeLearningGuide {
 }
 export interface QuestionAnswer {
   questionId: string;
-  status: 'verified' | 'requires_audio';
+  status: 'verified' | 'requires_audio' | 'requires_review';
   answer: string;
   explanation: string;
   scoringPoints: string[];
@@ -294,6 +309,7 @@ export interface ChallengeRecord {
   level: ChallengeLevel;
   runId?: string;
   policyVersion?: string;
+  selectionPolicyVersion?: string;
   reviewProtocolVersion?: string;
   reviewRoundtableSize?: ChallengeRoundtableSize;
   analysis?: ExamAnalysis;
