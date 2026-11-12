@@ -1,5 +1,6 @@
 import {applicableMasteryChallenges, getChallengePolicy} from './rules';
 import {exactEvidenceQuote, questionEvidenceSources} from './evidence';
+import {masteryCatalogValidationMessage} from './masteryCatalog';
 import {
   ChallengeFigure,
   ChallengeLevel,
@@ -185,7 +186,17 @@ export function validateLearningGuides(
             allowedChallenges.some(
               challenge => challenge.id === trap.challengeId,
             ),
-            `${trapPath}.challengeId 必须是本学段、本题原核心与原任务适用的具体易错点目录ID；不适用目录不得硬套`,
+            masteryCatalogValidationMessage(`${trapPath}.challengeId`, {
+              questionId: source.id,
+              questionNumber: source.number,
+              knowledgePoint: point,
+              educationLevel: analysis.educationLevel,
+              receivedChallengeId: trap.challengeId,
+              allowedChallengeIds: [
+                ...allowedChallenges.map(challenge => challenge.id),
+                'source_specific',
+              ],
+            }),
           );
         }
         for (const key of ['wrongApproach', 'whyWrong', 'correction']) {

@@ -1039,6 +1039,309 @@ test('命题与综合校核仅携带已确认数学的规则目录与来源', as
   }
 });
 
+test('命题和评审目录同时按本学段及当前题的原核心筛选，不发送无关高中目录', async () => {
+  await upgradeChallenge('challenge_test', 1, {settings});
+  for (const call of request.mock.calls) {
+    const context = `${call[1]}\n${JSON.stringify(call[0])}`;
+    expect(context).toContain('math_case_completeness');
+    expect(context.includes('math_derivative_domain_extrema')).toBe(false);
+    expect(context.includes('math_probability_base')).toBe(false);
+    expect(context).toContain('allowedChallengeIds');
+  }
+});
+
+test.each(['middle', 'high', 'unknown'] as const)(
+  '%s学段生成时错选目录，只修目录绑定再完整校验，不重新生成已正确题面和解析',
+  async educationLevel => {
+    mockRecord!.analysis!.educationLevel = educationLevel;
+    const generated = paper();
+    generated.answers[0].learningGuide![0].misconceptions[0].challengeId =
+      'math_derivative_domain_extrema';
+    request.mockImplementation(async (input: ModelInput) => {
+      const payload = requestPayload(input);
+      if (payload.task === '挑战试卷生成') {
+        return response(generated);
+      }
+      if (payload.task === '挑战易错目录修复') {
+        expect(payload.educationLevel).toBe(educationLevel);
+        expect(payload.targets[0].allowedChallengeIds).not.toContain(
+          'math_derivative_domain_extrema',
+        );
+        return response({
+          fixes: payload.targets.map((target: any) => ({
+            questionId: target.questionId,
+            path: target.path,
+            challengeId: 'math_case_completeness',
+          })),
+        });
+      }
+      return route(input);
+    });
+    const result = await upgradeChallenge('challenge_test', 1, {settings});
+    expect(result.status).toBe('completed');
+    expect(request.mock.calls.map(call => task(call[0]))).toEqual([
+      '挑战试卷生成',
+      '挑战易错目录修复',
+      '挑战标准一致性校核',
+    ]);
+    expect(result.candidate!.questions[0]).toEqual(generated.questions[0]);
+    expect(result.candidate!.answers[0].explanation).toBe(
+      generated.answers[0].explanation,
+    );
+    expect(
+      result.candidate!.answers[0].learningGuide![0].misconceptions[0]
+        .challengeId,
+    ).toBe('math_case_completeness');
+  },
+);
+
+test('目录缺项可用原题定制，必须补范围说明及本题原句，仍经独立评审', async () => {
+  const original = mockRecord!.analysis!;
+  const point = '整体等和构造任务';
+  original.knowledgePoints = [point];
+  original.questions[0].knowledgePoints = [point];
+  const generated = paper();
+  generated.questions[0].knowledgePoints = [point];
+  generated.answers[0].learningGuide![0].knowledgePoint = point;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      return response(generated);
+    }
+    if (payload.task === '挑战易错目录修复') {
+      expect(payload.targets[0].allowedChallengeIds).toEqual([
+        'source_specific',
+      ]);
+      return response({
+        fixes: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          challengeId: 'source_specific',
+          scopeReason:
+            '目录关键词未覆盖该构造子点，现有错因只涉及原题有限数字的完整分组与等和限制。',
+          sourceQuote: original.questions[0].stem,
+        })),
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(result.status).toBe('completed');
+  expect(
+    result.candidate!.answers[0].learningGuide![0].misconceptions[0],
+  ).toMatchObject({
+    challengeId: 'source_specific',
+    sourceQuote: original.questions[0].stem,
+  });
+  expect(result.reviewRounds[0].reviews[0].checkedQuestionIds).toEqual(['q1']);
+});
+
+test('易错目录修复中断保留候选和前批，续做只修目录且不重新生成整题', async () => {
+  patchExam(2);
+  const small = {...settings, maxOutputTokens: 16000};
+  let interrupted = true;
+  const generated: string[] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      generated.push(...payload.questionIds);
+      const value = variantPatch(payload.questionIds);
+      if (payload.questionIds.includes('q2')) {
+        value.answers[0].learningGuide![0].misconceptions[0].challengeId =
+          'math_derivative_domain_extrema';
+      }
+      return response(value);
+    }
+    if (payload.task === '挑战易错目录修复') {
+      if (interrupted) {
+        throw new ModelOutputTruncatedError();
+      }
+      return response({
+        fixes: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          challengeId: 'math_case_completeness',
+        })),
+      });
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings: small}),
+  ).rejects.toThrow('易错目录修复未完成');
+  expect(mockRecord!.generationProgress).toMatchObject({
+    phase: 'evidence',
+    completedQuestionIds: ['q1'],
+    evidenceQuestionIds: ['q2'],
+  });
+  interrupted = false;
+  const result = await upgradeChallenge('challenge_test', 1, {
+    settings: small,
+  });
+  expect(result.status).toBe('completed');
+  expect(generated).toEqual(['q1', 'q2']);
+});
+
+test('目录修好后引文修复又断网，续做保留已修目录且不重复调用目录修复', async () => {
+  const generated = paper();
+  const guide = generated.answers[0].learningGuide![0];
+  guide.misconceptions[0].challengeId = 'math_derivative_domain_extrema';
+  guide.solutionQuote = guide.coreInsight;
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      return response(generated);
+    }
+    if (payload.task === '挑战易错目录修复') {
+      return response({
+        fixes: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          challengeId: 'math_case_completeness',
+        })),
+      });
+    }
+    if (payload.task === '挑战引文修复') {
+      if (interrupted) {
+        throw new Error('临时断网');
+      }
+      return response({
+        fixes: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          sourceId: 'solution:explanation',
+          quote: '六数总和为21，故每组和必须为7。',
+        })),
+      });
+    }
+    return route(input);
+  });
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings}),
+  ).rejects.toThrow('引文修复未完成');
+  expect(
+    mockRecord!.generationProgress!.paper.answers[0].learningGuide![0]
+      .misconceptions[0].challengeId,
+  ).toBe('math_case_completeness');
+  interrupted = false;
+  expect((await upgradeChallenge('challenge_test', 1, {settings})).status).toBe(
+    'completed',
+  );
+  expect(
+    request.mock.calls.filter(call => task(call[0]) === '挑战试卷生成'),
+  ).toHaveLength(1);
+  expect(
+    request.mock.calls.filter(call => task(call[0]) === '挑战易错目录修复'),
+  ).toHaveLength(1);
+});
+
+test('目录修复的JSON纠正只要求目录fixes，不错误要求完整题目答案', async () => {
+  const generated = paper();
+  generated.answers[0].learningGuide![0].misconceptions[0].challengeId =
+    'not_a_catalog_id';
+  let attempts = 0;
+  request.mockImplementation(
+    async (
+      input: ModelInput,
+      _instructions: unknown,
+      _settings: unknown,
+      _model: unknown,
+      options: any,
+    ) => {
+      const payload = requestPayload(input);
+      if (payload.task === '挑战试卷生成') {
+        return response(generated);
+      }
+      if (payload.task === '挑战易错目录修复') {
+        if (attempts++ === 0) {
+          return response({questions: []});
+        }
+        const correction = options.history[options.history.length - 1].content;
+        expect(correction).toContain('只重新输出fixes/unresolved');
+        expect(correction).not.toContain('对应完整答案');
+        return response({
+          fixes: payload.targets.map((target: any) => ({
+            questionId: target.questionId,
+            path: target.path,
+            challengeId: 'math_case_completeness',
+          })),
+        });
+      }
+      return route(input);
+    },
+  );
+  expect((await upgradeChallenge('challenge_test', 1, {settings})).status).toBe(
+    'completed',
+  );
+  expect(attempts).toBe(2);
+});
+
+test('错因内容确实超范围时目录修复报告未解决，必须重新命题而非强改ID放行', async () => {
+  const generated = paper();
+  const trap = generated.answers[0].learningGuide![0].misconceptions[0];
+  trap.challengeId = 'math_derivative_domain_extrema';
+  trap.wrongApproach = '对有限分组的整数约束直接求导，用驻点判断可行分组。';
+  let generations = 0;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      return response(generations++ === 0 ? generated : paper());
+    }
+    if (payload.task === '挑战易错目录修复') {
+      return response({
+        fixes: [],
+        unresolved: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          reason: '此错误机制用了原题没有的导数概念，不能只换目录ID。',
+        })),
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(result.status).toBe('completed');
+  expect(generations).toBe(2);
+  expect(JSON.stringify(result.candidate)).not.toContain('驻点');
+});
+
+test('持续错误目录不能自动降为原题定制或跳过校验，失败说明列出可用ID和原核心', async () => {
+  const generated = paper();
+  generated.answers[0].learningGuide![0].misconceptions[0].challengeId =
+    'math_derivative_domain_extrema';
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      return response(generated);
+    }
+    if (payload.task === '挑战易错目录修复') {
+      return response({
+        fixes: [],
+        unresolved: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          reason: '无法核实该错误机制与原核心一致。',
+        })),
+      });
+    }
+    return route(input);
+  });
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings}),
+  ).rejects.toThrow(
+    /当前学段：初中.*收到："math_derivative_domain_extrema".*可用ID：.*math_case_completeness/,
+  );
+  expect(builder).not.toHaveBeenCalled();
+  expect(publisher).not.toHaveBeenCalled();
+});
+
 test('识科JSON纠正重试沿用同一随机记录，不重新抽题且常规仍只一次草稿分析', async () => {
   mockRecord = record(false);
   let attempts = 0;
@@ -3157,81 +3460,96 @@ test('同批后问保留导致前问回滚时，同批其它已升档后问也�
   ).toContain('REFRESHED_SAME_BATCH');
 });
 
-test('同批回退的后问遇到另一题引文修复断网，续做仍须保留后问重算任务', async () => {
-  const original = patchExam(6);
-  original.questions[1].dependsOnQuestionIds = ['q1'];
-  original.questions[2].dependsOnQuestionIds = ['q1'];
-  original.questions = ['q1', 'q5', 'q6', 'q2', 'q3', 'q4'].map(
-    id => original.questions.find(question => question.id === id)!,
-  );
-  mockRecord!.analysis = original;
-  const calls: {task: string; ids: string[]}[] = [];
-  let interrupted = true;
-  request.mockImplementation(async (input: ModelInput) => {
-    const payload = requestPayload(input);
-    if (payload.task === '挑战试卷生成' || payload.task === '挑战试卷修订') {
-      calls.push({task: payload.task, ids: payload.questionIds});
-      const value = variantPatch(
-        payload.questionIds.filter((id: string) => id !== 'q2'),
-      );
-      value.answers.forEach(answer => {
-        if (answer.questionId === 'q3') {
-          answer.explanation +=
-            payload.task === '挑战试卷生成'
-              ? 'STALE_BEFORE_QUOTE_RESUME'
-              : 'REFRESHED_AFTER_QUOTE_RESUME';
-        }
-        if (answer.questionId === 'q4') {
-          answer.learningGuide![0].solutionQuote = '原解析没有这一句';
-        }
-      });
-      return response(value);
-    }
-    if (payload.task === '挑战引文修复') {
-      if (interrupted) {
-        throw new Error('引文修复临时断网');
+test.each(['引文', '易错目录'] as const)(
+  '同批回退的后问遇到另一题%s修复断网，续做仍须保留后问重算任务',
+  async kind => {
+    const original = patchExam(6);
+    original.questions[1].dependsOnQuestionIds = ['q1'];
+    original.questions[2].dependsOnQuestionIds = ['q1'];
+    original.questions = ['q1', 'q5', 'q6', 'q2', 'q3', 'q4'].map(
+      id => original.questions.find(question => question.id === id)!,
+    );
+    mockRecord!.analysis = original;
+    const calls: {task: string; ids: string[]}[] = [];
+    let interrupted = true;
+    request.mockImplementation(async (input: ModelInput) => {
+      const payload = requestPayload(input);
+      if (payload.task === '挑战试卷生成' || payload.task === '挑战试卷修订') {
+        calls.push({task: payload.task, ids: payload.questionIds});
+        const value = variantPatch(
+          payload.questionIds.filter((id: string) => id !== 'q2'),
+        );
+        value.answers.forEach(answer => {
+          if (answer.questionId === 'q3') {
+            answer.explanation +=
+              payload.task === '挑战试卷生成'
+                ? 'STALE_BEFORE_QUOTE_RESUME'
+                : 'REFRESHED_AFTER_QUOTE_RESUME';
+          }
+          if (answer.questionId === 'q4') {
+            if (kind === '引文') {
+              answer.learningGuide![0].solutionQuote = '原解析没有这一句';
+            } else {
+              answer.learningGuide![0].misconceptions[0].challengeId =
+                'math_derivative_domain_extrema';
+            }
+          }
+        });
+        return response(value);
       }
-      return response({
-        fixes: payload.targets.map((target: any) => ({
-          questionId: target.questionId,
-          path: target.path,
-          sourceId: 'solution:explanation',
-          quote: '六数总和为21，故每组和必须为7。',
-        })),
-      });
-    }
-    if (payload.task === '挑战标准一致性校核') {
-      return response({
-        ...roleReview(input),
-        checkedQuestionIds: payload.reviewQuestionIds,
-      });
-    }
-    return route(input);
-  });
-  const large = {...settings, maxOutputTokens: 48000};
-  await expect(
-    upgradeChallenge('challenge_test', 1, {settings: large}),
-  ).rejects.toThrow('引文修复未完成');
-  expect(mockRecord!.generationProgress).toMatchObject({
-    phase: 'evidence',
-    evidenceQuestionIds: ['q2', 'q3', 'q4'],
-    pendingQuestionIds: ['q3'],
-  });
-  interrupted = false;
-  const result = await upgradeChallenge('challenge_test', 1, {
-    settings: large,
-  });
-  expect(calls).toEqual([
-    {task: '挑战试卷生成', ids: ['q1', 'q5', 'q6']},
-    {task: '挑战试卷生成', ids: ['q2', 'q3', 'q4']},
-    {task: '挑战试卷修订', ids: ['q3']},
-  ]);
-  expect(result.status).toBe('completed');
-  expect(
-    result.candidate!.answers.find(answer => answer.questionId === 'q3')!
-      .explanation,
-  ).toContain('REFRESHED_AFTER_QUOTE_RESUME');
-});
+      if (
+        payload.task === '挑战引文修复' ||
+        payload.task === '挑战易错目录修复'
+      ) {
+        if (interrupted) {
+          throw new Error('字段修复临时断网');
+        }
+        return response({
+          fixes: payload.targets.map((target: any) => ({
+            questionId: target.questionId,
+            path: target.path,
+            ...(kind === '引文'
+              ? {
+                  sourceId: 'solution:explanation',
+                  quote: '六数总和为21，故每组和必须为7。',
+                }
+              : {challengeId: 'math_case_completeness'}),
+          })),
+        });
+      }
+      if (payload.task === '挑战标准一致性校核') {
+        return response({
+          ...roleReview(input),
+          checkedQuestionIds: payload.reviewQuestionIds,
+        });
+      }
+      return route(input);
+    });
+    const large = {...settings, maxOutputTokens: 48000};
+    await expect(
+      upgradeChallenge('challenge_test', 1, {settings: large}),
+    ).rejects.toThrow(`${kind}修复未完成`);
+    expect(mockRecord!.generationProgress).toMatchObject({
+      phase: 'evidence',
+      evidenceQuestionIds: ['q2', 'q3', 'q4'],
+      pendingQuestionIds: ['q3'],
+    });
+    interrupted = false;
+    const result = await upgradeChallenge('challenge_test', 1, {
+      settings: large,
+    });
+    expect(calls).toEqual([
+      {task: '挑战试卷生成', ids: ['q1', 'q5', 'q6']},
+      {task: '挑战试卷生成', ids: ['q2', 'q3', 'q4']},
+      {task: '挑战试卷修订', ids: ['q3']},
+    ]);
+    expect(result.status).toBe('completed');
+    expect(
+      result.candidate!.answers.find(answer => answer.questionId === 'q3')!
+        .explanation,
+    ).toContain('REFRESHED_AFTER_QUOTE_RESUME');
+  },
+);
 
 test('共享变种材料只被点名一题，也能跨单题批修复材料并重算其全部升档用户', async () => {
   const original = patchExam(2);

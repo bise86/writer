@@ -323,6 +323,8 @@ export interface ChallengeGenerationProgress {
   phase?: 'generation' | 'repair' | 'evidence';
   pendingQuestionIds?: string[];
   feedback?: unknown;
+  // Evidence-phase tasks include quote and mastery-catalog bindings; both edit
+  // metadata only, sharing the trusted body and pending regeneration queue.
   evidenceQuestionIds?: string[];
   afterEvidencePhase?: 'generation' | 'repair';
   evidenceBasePaper?: ChallengePaper;
