@@ -7,6 +7,16 @@ import {applicableChallengeMetrics} from '../src/challenge/rules';
 import {buildProgressiveSubjectVerification} from '../src/challenge/subjectSampling';
 import {CHALLENGE_REVIEW_PROTOCOL_VERSION} from '../src/challenge/review';
 import {ModelOutputTruncatedError} from '../src/shared/model/request';
+import {
+  ContextBudgetError,
+  contextBudget,
+  estimateInputTokens,
+  estimateTextTokens,
+} from '../src/shared/model/context';
+import {
+  generationCheckpoint,
+  generationSeed,
+} from '../src/challenge/generation';
 import type {ModelInput} from '../src/services/context';
 import type {
   ChallengeLevel,
@@ -518,6 +528,17 @@ const route = async (input: ModelInput) => {
       return response(paper());
     case '挑战标准一致性校核':
       return response(review());
+    case '挑战引文修复': {
+      const payload = requestPayload(input);
+      return response({
+        fixes: [],
+        unresolved: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          reason: '该说法在独立解析中没有可靠依据，不可猜补',
+        })),
+      });
+    }
     default:
       throw new Error('未知测试任务');
   }
@@ -1953,8 +1974,11 @@ test('反复伪造策略引文会在生成校验停止，即使校核模型准�
   ).rejects.toThrow('必须逐字引用本题');
   expect(request.mock.calls.map(call => task(call[0]))).toEqual([
     '挑战试卷生成',
+    '挑战引文修复',
     '挑战试卷生成',
+    '挑战引文修复',
     '挑战试卷生成',
+    '挑战引文修复',
   ]);
   expect(mockRecord?.status).toBe('failed');
   expect(mockRecord?.candidate).toBeUndefined();
@@ -2022,11 +2046,140 @@ test('学习说明借自身文字伪造解答依据，反复不修时在导出�
   await expect(
     upgradeChallenge('challenge_test', 1, {settings}),
   ).rejects.toThrow('不能以学习说明自身');
-  expect(request).toHaveBeenCalledTimes(3);
+  expect(
+    request.mock.calls.filter(call => task(call[0]) === '挑战试卷生成'),
+  ).toHaveLength(3);
+  expect(
+    request.mock.calls.filter(call => task(call[0]) === '挑战引文修复'),
+  ).toHaveLength(3);
   expect(mockRecord?.candidate).toBeUndefined();
   expect(mockRecord?.reviewRounds).toEqual([]);
   expect(builder).not.toHaveBeenCalled();
   expect(publisher).not.toHaveBeenCalled();
+});
+
+test('解析换行及引文外层空白引号自动还原，不重生成整题或新增模型修复请求', async () => {
+  const formatted = paper();
+  const firstSentence = '六数总和为21，故每组和必须为7。';
+  formatted.answers[0].explanation = formatted.answers[0].explanation.replace(
+    firstSentence,
+    '六数总和为21，\n故每组和必须为7。',
+  );
+  formatted.answers[0].learningGuide![0].solutionQuote = ` “${firstSentence}” `;
+  request.mockImplementation(async (input: ModelInput) =>
+    task(input) === '挑战试卷生成' ? response(formatted) : route(input),
+  );
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(result.status).toBe('completed');
+  expect(request.mock.calls.map(call => task(call[0]))).toEqual([
+    '挑战试卷生成',
+    '挑战标准一致性校核',
+  ]);
+  expect(result.candidate!.answers[0].learningGuide![0].solutionQuote).toBe(
+    '六数总和为21，\n故每组和必须为7。',
+  );
+  expect(result.candidate!.answers[0].explanation).toBe(
+    formatted.answers[0].explanation,
+  );
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test('学习说明引文选错来源时只修指定字段，题面和独立解析不重写，完成后仍独立评审', async () => {
+  const generated = paper();
+  const guide = generated.answers[0].learningGuide![0];
+  guide.solutionQuote = guide.coreInsight;
+  guide.transferLinks[0].sourceQuote = generated.questions[0].stem;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      expect(
+        payload.sourceEvidence[0].original.some(
+          (source: any) => source.text === analysis.questions[0].stem,
+        ),
+      ).toBe(true);
+      return response(generated);
+    }
+    if (payload.task === '挑战引文修复') {
+      expect(payload.phase).toBe('quote_only');
+      expect(payload.targets.map((target: any) => target.path)).toEqual([
+        'answer.learningGuide[0].solutionQuote',
+        'answer.learningGuide[0].transferLinks[0].sourceQuote',
+      ]);
+      const allowedSolution = payload.questions[0].sources.solution;
+      expect(allowedSolution.map((source: any) => source.text)).toEqual([
+        generated.answers[0].explanation,
+        ...generated.answers[0].scoringPoints,
+      ]);
+      expect(
+        allowedSolution.some(
+          (source: any) => source.text === guide.coreInsight,
+        ),
+      ).toBe(false);
+      return response({
+        fixes: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          sourceId:
+            target.origin === 'original'
+              ? 'original:stem'
+              : 'solution:explanation',
+          quote:
+            target.origin === 'original'
+              ? analysis.questions[0].stem
+              : '六数总和为21，故每组和必须为7。',
+        })),
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(result.status).toBe('completed');
+  expect(request.mock.calls.map(call => task(call[0]))).toEqual([
+    '挑战试卷生成',
+    '挑战引文修复',
+    '挑战标准一致性校核',
+  ]);
+  expect(result.candidate!.answers[0].explanation).toBe(
+    generated.answers[0].explanation,
+  );
+  expect(result.candidate!.questions[0]).toEqual(generated.questions[0]);
+  expect(result.candidate!.answers[0].learningGuide![0].solutionQuote).toBe(
+    '六数总和为21，故每组和必须为7。',
+  );
+  expect(
+    result.candidate!.answers[0].learningGuide![0].transferLinks[0].sourceQuote,
+  ).toBe(analysis.questions[0].stem);
+  expect(result.candidate!.answers[0].learningGuide![0].coreInsight).toBe(
+    guide.coreInsight,
+  );
+  expect(result.reviewRounds[0].reviews[0].checkedQuestionIds).toEqual(['q1']);
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test('现有解析无依据时修复器报告未解决，重新独立命题，不能直接拼入学习说明自证', async () => {
+  const bad = paper();
+  bad.answers[0].learningGuide![0].solutionQuote =
+    bad.answers[0].learningGuide![0].coreInsight;
+  let generations = 0;
+  request.mockImplementation(async (input: ModelInput) =>
+    task(input) === '挑战试卷生成'
+      ? response(generations++ === 0 ? bad : paper())
+      : route(input),
+  );
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(result.status).toBe('completed');
+  expect(request.mock.calls.map(call => task(call[0]))).toEqual([
+    '挑战试卷生成',
+    '挑战引文修复',
+    '挑战试卷生成',
+    '挑战标准一致性校核',
+  ]);
+  expect(result.candidate!.answers[0].explanation).toBe(
+    paper().answers[0].explanation,
+  );
+  expect(result.candidate!.answers[0].explanation).not.toContain(
+    bad.answers[0].learningGuide![0].coreInsight,
+  );
 });
 
 test('综合校核发现无依据的学生掌握结论后修复学习说明，再重新校核导出', async () => {
@@ -2481,4 +2634,715 @@ test('同学科有效识科票据的课程别名和说明差异不再误挡升�
   expect(
     request.mock.calls.filter(call => task(call[0]) === '挑战科目识别'),
   ).toHaveLength(0);
+});
+
+test('乱序原题先按依赖生成，返修前问会同步返修后问但不重生成无关题', async () => {
+  const original = patchExam(3);
+  original.questions[2].dependsOnQuestionIds = ['q1'];
+  original.materials = [
+    {
+      id: 'private-q2',
+      title: '只属于未返修题的材料',
+      text: 'UNRELATED_Q2_MATERIAL',
+      isListening: false,
+      figureIds: [],
+    },
+  ];
+  original.questions[1].materialIds = ['private-q2'];
+  original.questions = [
+    original.questions[2],
+    original.questions[1],
+    original.questions[0],
+  ];
+  mockRecord!.analysis = original;
+  const generated: string[] = [];
+  const repaired: string[] = [];
+  let checked = 0;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成' || payload.task === '挑战试卷修订') {
+      const ids = payload.questionIds as string[];
+      const value = variantPatch(ids);
+      value.questions.forEach(question => {
+        question.materialIds = original.questions.find(
+          source => source.id === question.id,
+        )!.materialIds;
+      });
+      if (payload.task === '挑战试卷生成') {
+        generated.push(...ids);
+      } else {
+        repaired.push(...ids);
+        expect(JSON.stringify(payload.candidate)).not.toContain(
+          'UNRELATED_Q2_MATERIAL',
+        );
+        expect(JSON.stringify(payload.check)).not.toContain(
+          'UNRELATED_REPORT_SUMMARY',
+        );
+        value.answers.forEach(answer => {
+          answer.explanation += '前问修订后，重新核对当前条件及结论。';
+        });
+      }
+      return response(value);
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      checked += 1;
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+        verdict: checked === 1 ? 'revise' : 'approve',
+        summary: 'UNRELATED_REPORT_SUMMARY',
+        issues:
+          checked === 1
+            ? [
+                {
+                  questionId: 'q1',
+                  code: 'answer',
+                  comment: '前问结论需进一步核对',
+                  fix: '独立复核前问当前解法',
+                },
+              ]
+            : [],
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(generated.indexOf('q1')).toBeLessThan(generated.indexOf('q3'));
+  expect(repaired).toEqual(['q1', 'q3']);
+  expect(result.candidate!.questions.map(question => question.id)).toEqual([
+    'q3',
+    'q2',
+    'q1',
+  ]);
+  expect(
+    result.candidate!.answers.find(answer => answer.questionId === 'q3')!
+      .explanation,
+  ).toContain('前问修订后');
+  expect(result.reviewRounds).toHaveLength(2);
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test('修订中断后先续修未完成题及其后问，不先花一轮模型评审重找已知问题', async () => {
+  const original = patchExam(4);
+  original.questions[2].dependsOnQuestionIds = ['q1'];
+  mockRecord!.analysis = original;
+  const small = {...settings, maxOutputTokens: 16000};
+  let interrupted = true;
+  let firstReview = true;
+  const repairs: string[] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      return response(variantPatch(payload.questionIds));
+    }
+    if (payload.task === '挑战试卷修订') {
+      const ids = payload.questionIds as string[];
+      repairs.push(...ids);
+      if (interrupted && ids.includes('q3')) {
+        throw new Error('返修临时连接失败');
+      }
+      const value = variantPatch(ids);
+      value.answers.forEach(answer => {
+        answer.explanation += '本批已重新独立核验。';
+      });
+      return response(value);
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      const revise = firstReview;
+      firstReview = false;
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+        verdict: revise ? 'revise' : 'approve',
+        issues: revise
+          ? [
+              {
+                questionId: 'q1',
+                code: 'reasoning',
+                comment: '前问需复核',
+                fix: '重新求解前问',
+              },
+            ]
+          : [],
+      });
+    }
+    return route(input);
+  });
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings: small}),
+  ).rejects.toThrow('返修临时连接失败');
+  expect(mockRecord!.generationProgress).toMatchObject({
+    phase: 'repair',
+    pendingQuestionIds: ['q3'],
+  });
+  expect(repairs).toEqual(['q1', 'q3']);
+  const previous = request.mock.calls.length;
+  interrupted = false;
+  const result = await upgradeChallenge('challenge_test', 1, {settings: small});
+  const next = request.mock.calls
+    .slice(previous)
+    .map(call => requestPayload(call[0]));
+  expect(next[0]).toMatchObject({task: '挑战试卷修订', questionIds: ['q3']});
+  expect(next.filter(payload => payload.task === '挑战试卷生成')).toHaveLength(
+    0,
+  );
+  expect(repairs).toEqual(['q1', 'q3', 'q3']);
+  expect(result.status).toBe('completed');
+});
+
+test('引文单字段持续截断时保存完整题，只续修引文而不误重生成整题', async () => {
+  const bad = paper();
+  bad.answers[0].learningGuide![0].solutionQuote =
+    bad.answers[0].learningGuide![0].coreInsight;
+  let interrupted = true;
+  let generations = 0;
+  let quotes = 0;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      generations += 1;
+      return response(bad);
+    }
+    if (payload.task === '挑战引文修复') {
+      quotes += 1;
+      if (interrupted) {
+        throw new ModelOutputTruncatedError();
+      }
+      return response({
+        fixes: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          sourceId: 'solution:explanation',
+          quote: '六数总和为21，故每组和必须为7。',
+        })),
+      });
+    }
+    return route(input);
+  });
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings}),
+  ).rejects.toThrow('引文修复未完成');
+  expect(generations).toBe(1);
+  expect(quotes).toBe(2);
+  expect(mockRecord!.generationProgress).toMatchObject({
+    phase: 'evidence',
+    evidenceQuestionIds: ['q1'],
+    afterEvidencePhase: 'generation',
+  });
+  expect(mockRecord!.generationProgress!.paper.questions[0].stem).toBe(
+    bad.questions[0].stem,
+  );
+  interrupted = false;
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(generations).toBe(1);
+  expect(quotes).toBe(3);
+  expect(result.status).toBe('completed');
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test('引文fixes结构纠错只要求fixes与unresolved，不再错误要求完整题目答案', async () => {
+  const bad = paper();
+  bad.answers[0].learningGuide![0].solutionQuote =
+    bad.answers[0].learningGuide![0].coreInsight;
+  let fixes = 0;
+  request.mockImplementation(
+    async (
+      input: ModelInput,
+      _instructions: unknown,
+      _settings: unknown,
+      _model: unknown,
+      options: any,
+    ) => {
+      const payload = requestPayload(input);
+      if (payload.task === '挑战试卷生成') {
+        return response(bad);
+      }
+      if (payload.task === '挑战引文修复') {
+        if (fixes++ === 0) {
+          return response({questions: []});
+        }
+        expect(options.history[options.history.length - 1].content).toContain(
+          '只重新输出fixes/unresolved',
+        );
+        expect(
+          options.history[options.history.length - 1].content,
+        ).not.toContain('对应完整答案');
+        return response({
+          fixes: payload.targets.map((target: any) => ({
+            questionId: target.questionId,
+            path: target.path,
+            sourceId: 'solution:explanation',
+            quote: '六数总和为21，故每组和必须为7。',
+          })),
+        });
+      }
+      return route(input);
+    },
+  );
+  expect((await upgradeChallenge('challenge_test', 1, {settings})).status).toBe(
+    'completed',
+  );
+  expect(fixes).toBe(2);
+});
+
+test('实际预算显示多题评审输入超限时拆批，单题可容纳即可正常完成', async () => {
+  patchExam(8);
+  const budgetSettings = {...settings, contextWindow: 256000};
+  const batches: string[][] = [];
+  let exceeded = false;
+  request.mockImplementation(
+    async (input: ModelInput, instructions: string) => {
+      const payload = requestPayload(input);
+      if (payload.task === '挑战试卷生成') {
+        const value = variantPatch(payload.questionIds, 3);
+        value.answers.forEach(answer => {
+          answer.explanation += '基于原知识核对每个对象的覆盖与同一性。'.repeat(
+            150,
+          );
+        });
+        return response(value);
+      }
+      if (payload.task === '挑战标准一致性校核') {
+        batches.push([...payload.reviewQuestionIds]);
+        const count =
+          estimateInputTokens(input) + estimateTextTokens(instructions);
+        if (count > contextBudget(budgetSettings).inputLimit) {
+          exceeded = true;
+          throw new ContextBudgetError('单批输入超过可用上下文预算');
+        }
+        return response({
+          ...roleReview(input),
+          checkedQuestionIds: payload.reviewQuestionIds,
+        });
+      }
+      return route(input);
+    },
+  );
+  const result = await upgradeChallenge('challenge_test', 3, {
+    settings: budgetSettings,
+  });
+  expect(exceeded).toBe(true);
+  expect(batches[0]).toHaveLength(8);
+  expect(batches.some(ids => ids.length < 8)).toBe(true);
+  expect(result.status).toBe('completed');
+  expect(result.reviewRounds[0].reviews[0].checkedQuestionIds).toHaveLength(8);
+});
+
+test('循环依赖局部保留原题，独立题仍生成，不把全卷判失败', async () => {
+  const original = patchExam(3);
+  original.questions[0].dependsOnQuestionIds = ['q2'];
+  original.questions[1].dependsOnQuestionIds = ['q1'];
+  mockRecord!.analysis = original;
+  const generated: string[] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      generated.push(...payload.questionIds);
+      return response(variantPatch(payload.questionIds, 3));
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 3, {settings});
+  expect(generated).toEqual(['q3']);
+  expect(result.status).toBe('completed');
+  expect(
+    result
+      .candidate!.questions.slice(0, 2)
+      .every(question => question.upgrade.mode === 'retained'),
+  ).toBe(true);
+});
+
+test('旧坏断点中的原题变式答案清理为待核，同时保留已完成的升档题', async () => {
+  const original = patchExam(2);
+  original.questions[0].analysisIssues = ['原题难度解析待核'];
+  mockRecord!.analysis = original;
+  const draft = generationSeed(original, 1);
+  const variant = variantPatch(['q2']);
+  draft.questions[1] = variant
+    .questions[0] as ChallengePaper['questions'][number];
+  draft.answers[1] = variant.answers[0] as ChallengePaper['answers'][number];
+  draft.answers[0] = {
+    ...draft.answers[0],
+    status: 'verified',
+    answer: '旧变式的错误答案',
+    explanation: '旧变式的解法',
+    scoringPoints: ['旧变式评分点'],
+  };
+  mockRecord!.generationProgress = generationCheckpoint(
+    original,
+    1,
+    ['q2'],
+    draft,
+  );
+  Reflect.deleteProperty(mockRecord!.generationProgress, 'integrityVersion');
+  mockRecord!.status = 'failed';
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(
+    request.mock.calls.filter(call => task(call[0]) === '挑战试卷生成'),
+  ).toHaveLength(0);
+  expect(result.status).toBe('completed');
+  expect(
+    result.candidate!.answers.find(answer => answer.questionId === 'q1'),
+  ).toMatchObject({
+    status: 'requires_review',
+    answer: '',
+    scoringPoints: [],
+    learningGuide: [],
+  });
+  expect(result.candidate!.questions[1].upgrade.mode).toBe('upgraded');
+});
+
+test('引文候选基础结构也坏且修复断网时，恢复可信前批而不把全部进度重置', async () => {
+  patchExam(2);
+  const small = {...settings, maxOutputTokens: 16000};
+  const generated: string[] = [];
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成' || payload.task === '挑战试卷修订') {
+      generated.push(...payload.questionIds);
+      const value = variantPatch(payload.questionIds);
+      if (interrupted && payload.questionIds.includes('q2')) {
+        value.answers[0].explanation = '';
+        value.answers[0].learningGuide![0].solutionQuote = '无法在空解析中取证';
+      }
+      return response(value);
+    }
+    if (payload.task === '挑战引文修复') {
+      throw new Error('引文修复临时断网');
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings: small}),
+  ).rejects.toThrow('引文修复未完成');
+  expect(mockRecord!.generationProgress).toMatchObject({
+    phase: 'evidence',
+    completedQuestionIds: ['q1'],
+    evidenceQuestionIds: ['q2'],
+  });
+  expect(
+    mockRecord!.generationProgress!.evidenceBasePaper!.questions[0].upgrade
+      .mode,
+  ).toBe('upgraded');
+  interrupted = false;
+  expect(
+    (await upgradeChallenge('challenge_test', 1, {settings: small})).status,
+  ).toBe('completed');
+  expect(generated).toEqual(['q1', 'q2', 'q2']);
+});
+
+test('旧断点清理前问答案时，只追加返修受其影响的已升档后问', async () => {
+  const original = patchExam(3);
+  original.questions[1].dependsOnQuestionIds = ['q1'];
+  original.questions[2].dependsOnQuestionIds = ['q1'];
+  mockRecord!.analysis = original;
+  const draft = generationSeed(original, 1);
+  const variant = variantPatch(['q2']);
+  draft.questions[1] = variant
+    .questions[0] as ChallengePaper['questions'][number];
+  draft.answers[1] = {
+    ...variant.answers[0],
+    explanation: variant.answers[0].explanation + 'OLD_DEPENDENCY_EXPLANATION',
+  } as ChallengePaper['answers'][number];
+  draft.answers[0] = {
+    ...draft.answers[0],
+    status: 'verified',
+    answer: '旧变式答案',
+    explanation: '旧变式条件得出的结果',
+    scoringPoints: ['旧变式点'],
+  };
+  mockRecord!.generationProgress = generationCheckpoint(
+    original,
+    1,
+    ['q1', 'q2', 'q3'],
+    draft,
+  );
+  Reflect.deleteProperty(mockRecord!.generationProgress, 'integrityVersion');
+  mockRecord!.status = 'failed';
+  const repaired: string[] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷修订') {
+      repaired.push(...payload.questionIds);
+      return response(variantPatch(payload.questionIds));
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(repaired).toEqual(['q2']);
+  expect(result.status).toBe('completed');
+  expect(
+    result.candidate!.answers.find(answer => answer.questionId === 'q1'),
+  ).toMatchObject({status: 'requires_review', answer: ''});
+  expect(
+    result.candidate!.answers.find(answer => answer.questionId === 'q2')!
+      .explanation,
+  ).not.toContain('OLD_DEPENDENCY_EXPLANATION');
+});
+
+test('同批后问保留导致前问回滚时，同批其它已升档后问也必须重新生成', async () => {
+  const original = patchExam(3);
+  original.questions[1].dependsOnQuestionIds = ['q1'];
+  original.questions[2].dependsOnQuestionIds = ['q1'];
+  mockRecord!.analysis = original;
+  const calls: {task: string; ids: string[]}[] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成' || payload.task === '挑战试卷修订') {
+      calls.push({task: payload.task, ids: payload.questionIds});
+      const ids = payload.questionIds.filter((id: string) => id !== 'q2');
+      const value = variantPatch(ids);
+      value.answers.forEach(answer => {
+        if (answer.questionId === 'q3') {
+          answer.explanation +=
+            payload.task === '挑战试卷生成'
+              ? 'STALE_SAME_BATCH'
+              : 'REFRESHED_SAME_BATCH';
+        }
+      });
+      return response(value);
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {
+    settings: {...settings, maxOutputTokens: 48000},
+  });
+  expect(calls).toEqual([
+    {task: '挑战试卷生成', ids: ['q1', 'q2', 'q3']},
+    {task: '挑战试卷修订', ids: ['q3']},
+  ]);
+  expect(result.status).toBe('completed');
+  expect(result.candidate!.questions[0].upgrade.mode).toBe('retained');
+  expect(
+    result.candidate!.answers.find(answer => answer.questionId === 'q1'),
+  ).toMatchObject({status: 'requires_review', answer: ''});
+  expect(
+    result.candidate!.answers.find(answer => answer.questionId === 'q3')!
+      .explanation,
+  ).toContain('REFRESHED_SAME_BATCH');
+});
+
+test('同批回退的后问遇到另一题引文修复断网，续做仍须保留后问重算任务', async () => {
+  const original = patchExam(6);
+  original.questions[1].dependsOnQuestionIds = ['q1'];
+  original.questions[2].dependsOnQuestionIds = ['q1'];
+  original.questions = ['q1', 'q5', 'q6', 'q2', 'q3', 'q4'].map(
+    id => original.questions.find(question => question.id === id)!,
+  );
+  mockRecord!.analysis = original;
+  const calls: {task: string; ids: string[]}[] = [];
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成' || payload.task === '挑战试卷修订') {
+      calls.push({task: payload.task, ids: payload.questionIds});
+      const value = variantPatch(
+        payload.questionIds.filter((id: string) => id !== 'q2'),
+      );
+      value.answers.forEach(answer => {
+        if (answer.questionId === 'q3') {
+          answer.explanation +=
+            payload.task === '挑战试卷生成'
+              ? 'STALE_BEFORE_QUOTE_RESUME'
+              : 'REFRESHED_AFTER_QUOTE_RESUME';
+        }
+        if (answer.questionId === 'q4') {
+          answer.learningGuide![0].solutionQuote = '原解析没有这一句';
+        }
+      });
+      return response(value);
+    }
+    if (payload.task === '挑战引文修复') {
+      if (interrupted) {
+        throw new Error('引文修复临时断网');
+      }
+      return response({
+        fixes: payload.targets.map((target: any) => ({
+          questionId: target.questionId,
+          path: target.path,
+          sourceId: 'solution:explanation',
+          quote: '六数总和为21，故每组和必须为7。',
+        })),
+      });
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const large = {...settings, maxOutputTokens: 48000};
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings: large}),
+  ).rejects.toThrow('引文修复未完成');
+  expect(mockRecord!.generationProgress).toMatchObject({
+    phase: 'evidence',
+    evidenceQuestionIds: ['q2', 'q3', 'q4'],
+    pendingQuestionIds: ['q3'],
+  });
+  interrupted = false;
+  const result = await upgradeChallenge('challenge_test', 1, {
+    settings: large,
+  });
+  expect(calls).toEqual([
+    {task: '挑战试卷生成', ids: ['q1', 'q5', 'q6']},
+    {task: '挑战试卷生成', ids: ['q2', 'q3', 'q4']},
+    {task: '挑战试卷修订', ids: ['q3']},
+  ]);
+  expect(result.status).toBe('completed');
+  expect(
+    result.candidate!.answers.find(answer => answer.questionId === 'q3')!
+      .explanation,
+  ).toContain('REFRESHED_AFTER_QUOTE_RESUME');
+});
+
+test('共享变种材料只被点名一题，也能跨单题批修复材料并重算其全部升档用户', async () => {
+  const original = patchExam(2);
+  original.materials = [
+    {
+      id: 'shared',
+      title: '共享条件',
+      text: '原卷共有四个数。',
+      isListening: false,
+      figureIds: [],
+    },
+  ];
+  original.questions.forEach(question => {
+    question.materialIds = ['shared'];
+  });
+  mockRecord!.analysis = original;
+  const checkpoint = generationSeed(original, 1);
+  const variants = variantPatch(['q1', 'q2']);
+  checkpoint.questions = variants.questions.map(question => ({
+    ...question,
+    materialIds: ['shared'],
+  })) as ChallengePaper['questions'];
+  checkpoint.answers = variants.answers as ChallengePaper['answers'];
+  checkpoint.materials = [
+    {...original.materials[0], text: '旧变种材料需要修正。'},
+  ];
+  mockRecord!.generationProgress = generationCheckpoint(
+    original,
+    1,
+    ['q1', 'q2'],
+    checkpoint,
+  );
+  mockRecord!.status = 'failed';
+  let checks = 0;
+  const repaired: string[] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷修订') {
+      repaired.push(...payload.questionIds);
+      const value = variantPatch(payload.questionIds);
+      value.questions.forEach(question => {
+        question.materialIds = ['shared'];
+      });
+      if (payload.questionIds.includes('q1')) {
+        return response({
+          ...value,
+          materials: [{...original.materials[0], text: '修复后的变种材料。'}],
+        });
+      }
+      expect(payload.currentAssets.materials[0].text).toBe(
+        '修复后的变种材料。',
+      );
+      expect(payload.lockedAssetIds).toContain('materials:shared');
+      value.answers.forEach(answer => {
+        answer.explanation += '按修复后材料重新求解。';
+      });
+      return response(value);
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      const revise = checks++ === 0;
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+        verdict: revise ? 'revise' : 'approve',
+        issues: revise
+          ? [
+              {
+                questionId: 'q1',
+                code: 'material',
+                comment: '共享材料的一处条件需修正',
+                fix: '修正共享条件并核验其使用题',
+              },
+            ]
+          : [],
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {
+    settings: {...settings, maxOutputTokens: 16000},
+  });
+  expect(repaired).toEqual(['q1', 'q2']);
+  expect(result.status).toBe('completed');
+  expect(result.candidate!.materials[0].text).toBe('修复后的变种材料。');
+  expect(
+    result.candidate!.answers.find(answer => answer.questionId === 'q2')!
+      .explanation,
+  ).toContain('按修复后材料');
+});
+
+test('旧记录的未知前问ID仅按异常元数据保留，不虚构题目或阻止独立题生成', async () => {
+  const original = patchExam(2);
+  original.questions[0].dependsOnQuestionIds = ['missing-question'];
+  mockRecord!.analysis = original;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      return response(variantPatch(payload.questionIds, 3));
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 3, {settings});
+  expect(result.status).toBe('completed');
+  expect(result.candidate!.questions[0].upgrade.mode).toBe('retained');
+  expect(result.candidate!.questions[0].stem).toBe(original.questions[0].stem);
+  expect(result.candidate!.questions[1].upgrade.mode).toBe('upgraded');
+  expect(result.candidate!.questions).toHaveLength(2);
 });

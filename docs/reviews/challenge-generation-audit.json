@@ -1,0 +1,182 @@
+{
+  "id": "challenge-generation-implementation-audit-2026-11-12",
+  "date": "2026-11-12",
+  "status": "completed",
+  "baselineCommit": "c7434a7bf43842b2fb4b3bf24db9688de329be68",
+  "authorization": "用户要求对试卷生成逻辑进行多角色评审，发现问题直接在本地修复。",
+  "scope": "生成补丁、依赖与共享条件、原题及答案回退、引文校验修复、断点续做、模型预算、运行评审与双PDF发布门禁。",
+  "boundary": "本记录是五个独立代码评审角色的实现审查，不改写学科标准制定历史五票，不代表真实模型命题质量或真机验证，也不代替每份新卷按设置人数执行的运行评审。",
+  "roles": [
+    {
+      "agent": "/root/audit_generation_flow",
+      "role": "生成流程与依赖",
+      "reviewed": "前问排序、批次合并、同批回退、共享资产及断点调用契约",
+      "findings": ["GEN-02", "GEN-03", "GEN-04", "GEN-09"],
+      "status": "fixed_and_rechecked"
+    },
+    {
+      "agent": "/root/audit_evidence",
+      "role": "证据与引文完整性",
+      "reviewed": "题内来源白名单、排版还原、数字及英语词边界、引文候选和可信正文恢复",
+      "findings": ["GEN-05", "GEN-06"],
+      "status": "fixed_and_rechecked"
+    },
+    {
+      "agent": "/root/audit_pdf_publication",
+      "role": "原卷、答案与PDF发布",
+      "reviewed": "原题回退后的答案一致性、上下文复用条件、旧断点清理及依赖迁移",
+      "findings": ["GEN-01", "GEN-04"],
+      "status": "fixed_and_rechecked"
+    },
+    {
+      "agent": "/root/audit_review_runtime",
+      "role": "运行评审与生命周期",
+      "reviewed": "只审升档题、反馈范围、修订联动、共享材料跨批修复、配置人数及版本门禁",
+      "findings": ["GEN-03", "GEN-08"],
+      "status": "fixed_and_rechecked"
+    },
+    {
+      "agent": "/root/audit_regression_tests",
+      "role": "预算、异常与回归",
+      "reviewed": "真实请求预算路径、输入超限类型保留、自适应拆批及失败重试边界",
+      "findings": ["GEN-07"],
+      "status": "fixed_and_rechecked"
+    }
+  ],
+  "findings": [
+    {
+      "id": "GEN-01",
+      "problem": "后问题目保留使前问回退时，可能留下前问的变式答案、评分点和学习说明。",
+      "fix": "只在原题及其完整上下文均相同时复用原答案；变式回退时清空答案侧内容，不可靠的原答案明确待核，听力继续待音频。",
+      "files": ["src/challenge/selection.ts"],
+      "regressions": ["__tests__/challenge-retention-integrity.test.ts"],
+      "status": "fixed"
+    },
+    {
+      "id": "GEN-02",
+      "problem": "修订前问或共享条件未使已完成后问失效；同批回退也可能漏掉同批后问，循环或缺失依赖可能阻塞独立题。",
+      "fix": "按依赖拓扑生成，按原顺序组卷；比较题面、答案及关联条件并传播失效，使用合并前后规范化结果补捕获同批回退。异常依赖相关题保留，独立题继续。",
+      "files": ["src/challenge/generation.ts", "src/challenge/pipeline.ts"],
+      "regressions": [
+        "__tests__/challenge-generation-audit.test.ts",
+        "__tests__/challenge-pipeline.test.ts"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "GEN-03",
+      "problem": "共享变种材料只被点名一题时无法跨批安全修正，也可能在后续批再次改条件使前批答案失效。",
+      "fix": "扩大为全部实际升档用户及后继的返修范围，允许该范围内跨批修正；首次通过校验的修正锁定本轮共享条件，受影响题重新求解。原题或听力使用的条件冻结，锁随断点保存。",
+      "files": [
+        "src/challenge/generation.ts",
+        "src/challenge/pipeline.ts",
+        "src/challenge/types.ts"
+      ],
+      "regressions": [
+        "__tests__/challenge-generation-audit.test.ts",
+        "__tests__/challenge-pipeline.test.ts"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "GEN-04",
+      "problem": "修订中断后丢失待修清单、先重复评审；旧断点的原题答案清理后，依赖该答案的已升档后问仍可能沿用旧解法。",
+      "fix": "完整性版本2保存生成、返修、引文阶段及待做清单和反馈，恢复先续做已知任务；旧断点只重置不可信保留答案，传播影响并返修后问，未受影响的完成题保留。",
+      "files": [
+        "src/challenge/generation.ts",
+        "src/challenge/pipeline.ts",
+        "src/challenge/types.ts"
+      ],
+      "regressions": [
+        "__tests__/challenge-generation-audit.test.ts",
+        "__tests__/challenge-pipeline.test.ts"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "GEN-05",
+      "problem": "简单包含匹配可能从x=20截出x=2、从小数或英语否定词内部取片段；来源混淆或引文排版差异也会误判。",
+      "fix": "统一规范化与校验来源，仅允许本题原题、新题及独立解析各自取证；还原可确认排版差异，保护数字、符号、指数和英语词边界，不用学习说明或其它题自证。",
+      "files": [
+        "src/challenge/evidence.ts",
+        "src/challenge/mastery.ts",
+        "src/challenge/validation.ts"
+      ],
+      "regressions": [
+        "__tests__/challenge-evidence.test.ts",
+        "__tests__/challenge-validation.test.ts"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "GEN-06",
+      "problem": "引文修复截断可能误触整题重生成，失败时丢掉候选；候选同时有基础结构错误时，恢复还可能丢掉已成功前批。",
+      "fix": "区分生成和引文异常，字段白名单修复只返回fixes/unresolved；引文阶段保存候选及修复前可信正文，每个成功引文批次即时保存。恢复先续修引文，结构无效只回退当前批。",
+      "files": ["src/challenge/pipeline.ts", "src/challenge/types.ts"],
+      "regressions": ["__tests__/challenge-pipeline.test.ts"],
+      "status": "fixed"
+    },
+    {
+      "id": "GEN-07",
+      "problem": "输入上下文超限没有自适应拆批，且请求层把预算异常包装成普通错误导致上层无法正确识别。",
+      "fix": "保留并脱敏ContextBudgetError，多题输入超限和输出截断均只拆当前批；单题输入仍超限明确失败并保存进度，不删规则、题文或图片，鉴权等错误不误拆批。",
+      "files": [
+        "src/shared/model/batches.ts",
+        "src/shared/model/openai.ts",
+        "src/challenge/pipeline.ts"
+      ],
+      "regressions": [
+        "__tests__/adaptive-model-batches.test.ts",
+        "__tests__/model-requests.test.ts",
+        "__tests__/challenge-pipeline.test.ts"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "GEN-08",
+      "problem": "小批修订仍携带无关整卷题目、材料及反馈，引文格式纠正提示还会错误要求完整题目答案。",
+      "fix": "修订只传目标题、关联资产、相关问题及必要前问；引文纠正保持fixes/unresolved协议。原题不要求模型重复返回、求解或评审，原有全员同版本通过门禁保留。",
+      "files": ["src/challenge/pipeline.ts"],
+      "regressions": [
+        "__tests__/challenge-pipeline.test.ts",
+        "__tests__/challenge-review-scope.test.ts"
+      ],
+      "status": "fixed"
+    },
+    {
+      "id": "GEN-09",
+      "problem": "同批回退产生后问重算任务，另一题引文修复又中断时，恢复后会错误清掉该后问重算标记。",
+      "fix": "引文断点的pending单独表示引文成功后仍需重做的任务；临时校验包含引文题，成功只完成引文而保留重算任务，失败或候选结构回退则重新加入本批题。",
+      "files": ["src/challenge/pipeline.ts"],
+      "regressions": ["__tests__/challenge-pipeline.test.ts"],
+      "reproduction": "六题分两批：q2保留使q1回退，q3依赖q1需重算，独立q4坏引文并断网。恢复后须先修引文，再单独返修q3，不能直接发布旧q3。",
+      "status": "fixed"
+    }
+  ],
+  "verification": {
+    "targetedTestsBeforeFinalCrossStateFix": {"suites": 7, "passed": 418},
+    "finalTests": {
+      "command": "npm test -- --runInBand",
+      "suites": 40,
+      "passed": 768,
+      "failed": 0,
+      "durationSeconds": 51.658,
+      "result": "passed"
+    },
+    "typecheck": {
+      "command": "npm run typecheck",
+      "result": "passed"
+    },
+    "lintZeroWarnings": {
+      "command": "npm run lint -- --max-warnings 0",
+      "result": "passed"
+    },
+    "androidProductionJsBundle": {
+      "command": "npx react-native bundle --platform android --dev false --entry-file index.js --bundle-output /tmp/writer-audited-challenge/index.android.bundle --assets-dest /tmp/writer-audited-challenge/assets",
+      "result": "passed",
+      "boundary": "仅Metro生产JavaScript包，不是Android原生编译或设备运行。"
+    },
+    "nativeBuildAndDevices": "not_run",
+    "liveModelRequests": "not_run"
+  }
+}

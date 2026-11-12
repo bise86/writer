@@ -1,4 +1,5 @@
 import {applicableMasteryChallenges, getChallengePolicy} from './rules';
+import {exactEvidenceQuote, questionEvidenceSources} from './evidence';
 import {
   ChallengeFigure,
   ChallengeLevel,
@@ -33,27 +34,6 @@ function fingerprint(value: unknown) {
       ).join('')
     : '';
 }
-function problemTexts(
-  question: Record<string, any>,
-  materials: PaperMaterial[],
-  materialIds: string[],
-  figures: ChallengeFigure[],
-  figureIds: string[],
-) {
-  return [
-    question.stem,
-    ...(Array.isArray(question.options)
-      ? question.options.filter(object).map(option => option.text)
-      : []),
-    ...materials
-      .filter(material => object(material) && materialIds.includes(material.id))
-      .flatMap(material => [material.title, material.text]),
-    ...figures
-      .filter(figure => object(figure) && figureIds.includes(figure.id))
-      .map(figure => figure.caption),
-  ].filter(nonempty);
-}
-
 /** Validate the learner-facing explanation against the original core and real solution. */
 export function validateLearningGuides(
   answer: Record<string, any>,
@@ -98,38 +78,38 @@ export function validateLearningGuides(
       source.knowledgePoints.every(point => guidePoints.includes(point)),
     `${path} 必须为每个原核心知识点恰好给出一份五维学习说明，不能漏点、重复或扩充原核心`,
   );
-  const figureIds = [
-    ...new Set([
-      ...source.figureIds,
-      ...analysis.materials
-        .filter(material => source.materialIds.includes(material.id))
-        .flatMap(material => material.figureIds),
-    ]),
-  ];
-  const originalTexts = problemTexts(
+  const evidence = questionEvidenceSources(
     source,
-    analysis.materials,
-    source.materialIds,
-    analysis.figures,
-    figureIds,
-  );
-  const newTexts = problemTexts(
     generatedQuestion,
+    analysis,
     generatedMaterials,
-    source.materialIds,
     generatedFigures,
-    figureIds,
+    answer,
   );
-  const solutionTexts = [
-    answer.explanation,
-    ...(Array.isArray(answer.scoringPoints) ? answer.scoringPoints : []),
-  ].filter(nonempty);
+  const originalTexts = evidence.original.map(item => item.text);
+  const newTexts = evidence.problem.map(item => item.text);
+  const solutionTexts = evidence.solution.map(item => item.text);
   const quote = (value: unknown, corpus: string[], quotePath: string) => {
     check.require(
       nonempty(value) &&
         !!fingerprint(value) &&
-        corpus.some(text => text.includes(value)),
-      `${quotePath} 必须逐字引用本题对应的原题、新题或答案解析，不能以学习说明自身、别题或伪造引文作证`,
+        exactEvidenceQuote(
+          value,
+          corpus.map((entry, index) => ({
+            id: String(index),
+            field: quotePath,
+            text: entry,
+          })),
+        ),
+      `${quotePath}（第${source.number}题，ID ${
+        source.id
+      }）必须逐字引用本题对应的原题、新题或答案解析，不能以学习说明自身、别题或伪造引文作证；本字段仅允许${
+        quotePath.endsWith('.sourceQuote')
+          ? '对应原题题文/关联材料或原图说明'
+          : quotePath.endsWith('.problemQuote')
+          ? '当前新题题文/关联材料或图示说明'
+          : '本题答案的explanation或scoringPoints，不包括answer或learningGuide'
+      }，原题与新题引文不能互换`,
     );
   };
   const concrete = (value: unknown, textPath: string, point?: string) => {

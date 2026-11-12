@@ -28,6 +28,7 @@ import {
   isWritingQuestion,
 } from './rules';
 import {validateLearningGuides} from './mastery';
+import {exactEvidenceQuote, questionEvidenceSources} from './evidence';
 import {prepareRetainedAnalysis, validOriginalRegion} from './retention';
 import {
   challengeCoverage,
@@ -1299,42 +1300,35 @@ function depthEvidence(
         candidate => object(candidate) && candidate.questionId === source.id,
       )
     : undefined;
-  const solutionTexts: string[] = object(answer)
-    ? [
-        answer.explanation,
-        ...(Array.isArray(answer.scoringPoints) ? answer.scoringPoints : []),
-      ].filter(nonempty)
-    : [];
-  const problemTexts: string[] = [
-    item.stem,
-    ...(Array.isArray(item.options)
-      ? item.options.filter(object).map(option => option.text)
-      : []),
-    ...generatedMaterials
-      .filter(
-        material =>
-          object(material) && source.materialIds.includes(material.id),
-      )
-      .flatMap(material => [material.title, material.text]),
-    ...generatedFigures
-      .filter(
-        figureItem =>
-          object(figureItem) &&
-          [
-            ...source.figureIds,
-            ...analysis.materials
-              .filter(material => source.materialIds.includes(material.id))
-              .flatMap(material => material.figureIds),
-          ].includes(figureItem.id),
-      )
-      .map(figureItem => figureItem.caption),
-  ].filter(nonempty);
+  const corpus = questionEvidenceSources(
+    source,
+    item,
+    analysis,
+    generatedMaterials,
+    generatedFigures,
+    object(answer) ? answer : undefined,
+  );
+  const solutionTexts = corpus.solution.map(entry => entry.text);
+  const problemTexts = corpus.problem.map(entry => entry.text);
   const quote = (value: unknown, texts: string[], path: string) => {
     check.require(
       nonempty(value) &&
         !!substantive(value) &&
-        texts.some(text => text.includes(value)),
-      `${path} 必须逐字引用本题实际题文或对应答案解析，不能引用别题、伪造证据或仅写方法名`,
+        exactEvidenceQuote(
+          value,
+          texts.map((entry, index) => ({
+            id: String(index),
+            field: path,
+            text: entry,
+          })),
+        ),
+      `${path}（第${source.number}题，ID ${
+        source.id
+      }）必须逐字引用本题实际题文或对应答案解析，不能引用别题、伪造证据或仅写方法名；${
+        path.endsWith('.problemQuote')
+          ? '本字段仅允许当前新题题文及关联材料/图示'
+          : '本字段仅允许本题答案的explanation/scoringPoints，不包括answer或learningGuide'
+      }`,
     );
   };
 
@@ -2065,6 +2059,9 @@ export function validateChallengePaper(
         item.status === 'verified' ? 1 : 0,
       );
       if (!source || !questionItem) {
+        return;
+      }
+      if (pending.has(source.id)) {
         return;
       }
       if (questionItem.upgrade?.mode !== 'retained') {

@@ -463,8 +463,15 @@ export async function runResponse(
     };
   } catch (error) {
     checkCancelled(options.signal);
+    const sanitizedMessage = (value: string) =>
+      value.split(actual.apiKey.trim()).join('[已隐藏密钥]').slice(0, 800);
     if (error instanceof ModelOutputTruncatedError) {
       throw error;
+    }
+    if (error instanceof ContextBudgetError) {
+      // Keep preflight limits recognizable by batch callers without allowing
+      // provider text or an accidentally matching API key into persisted logs.
+      throw new ContextBudgetError(sanitizedMessage(error.message));
     }
     const status = statusOf(error);
     if (status === 401 || status === 403) {
@@ -479,13 +486,13 @@ export async function runResponse(
       )
     ) {
       throw new ContextBudgetError(
-        '请求超过模型实际上下文限制。请核对模型容量并调整设置；原文和评分细则未被删减。',
+        sanitizedMessage(
+          '请求超过模型实际上下文限制。请核对模型容量并调整设置；原文和评分细则未被删减。',
+        ),
       );
     }
     // Provider errors sometimes echo request fields. Never persist the API key.
-    throw new Error(
-      message.split(actual.apiKey.trim()).join('[已隐藏密钥]').slice(0, 800),
-    );
+    throw new Error(sanitizedMessage(message));
   }
 }
 

@@ -208,6 +208,131 @@ function preserveInventory<T extends {id: string}>(
   );
 }
 
+function sameOriginalContent(first: unknown, second: unknown): boolean {
+  if (first === second) {
+    return true;
+  }
+  if (Array.isArray(first) && Array.isArray(second)) {
+    return (
+      first.length === second.length &&
+      first.every((value, index) => sameOriginalContent(value, second[index]))
+    );
+  }
+  if (
+    first &&
+    second &&
+    typeof first === 'object' &&
+    typeof second === 'object' &&
+    !Array.isArray(first) &&
+    !Array.isArray(second)
+  ) {
+    const firstRecord = first as Record<string, unknown>;
+    const secondRecord = second as Record<string, unknown>;
+    const keys = Object.keys(firstRecord);
+    return (
+      keys.length === Object.keys(secondRecord).length &&
+      keys.every(
+        key =>
+          Object.prototype.hasOwnProperty.call(secondRecord, key) &&
+          sameOriginalContent(firstRecord[key], secondRecord[key]),
+      )
+    );
+  }
+  return false;
+}
+
+/** A variant answer cannot become an original answer by restoring its stem. */
+function originalAnswerContextIntact(
+  paper: ChallengePaper,
+  analysis: ExamAnalysis,
+  questionId: string,
+): boolean {
+  if (
+    !Array.isArray(paper.sections) ||
+    !Array.isArray(paper.materials) ||
+    !Array.isArray(paper.figures)
+  ) {
+    return false;
+  }
+  const pending = [questionId];
+  const checked = new Set<string>();
+  while (pending.length) {
+    const id = pending.pop()!;
+    if (checked.has(id)) {
+      continue;
+    }
+    checked.add(id);
+    const source = analysis.questions.find(question => question.id === id);
+    const candidate = paper.questions.find(question => question.id === id);
+    if (
+      !source ||
+      !candidate ||
+      !isRetainedQuestion(candidate) ||
+      candidate.upgrade?.mode === 'upgraded' ||
+      source.analysisIssues?.length ||
+      source.originalRegions?.length ||
+      !(
+        [
+          'id',
+          'number',
+          'sectionId',
+          'type',
+          'stem',
+          'options',
+          'materialIds',
+          'figureIds',
+          'knowledgePoints',
+          'score',
+          'isListening',
+          'answerLines',
+        ] as const
+      ).every(key => sameOriginalContent(candidate[key], source[key]))
+    ) {
+      return false;
+    }
+    const section = analysis.sections.find(
+      item => item.id === source.sectionId,
+    );
+    if (
+      !section ||
+      !sameOriginalContent(
+        paper.sections.find(item => item?.id === section.id),
+        section,
+      )
+    ) {
+      return false;
+    }
+    const figureIds = new Set(source.figureIds);
+    for (const materialId of source.materialIds) {
+      const material = analysis.materials.find(item => item.id === materialId);
+      if (
+        !material ||
+        !sameOriginalContent(
+          paper.materials.find(item => item?.id === materialId),
+          material,
+        )
+      ) {
+        return false;
+      }
+      material.figureIds.forEach(idOfFigure => figureIds.add(idOfFigure));
+    }
+    for (const figureId of figureIds) {
+      const figure = analysis.figures.find(item => item.id === figureId);
+      if (
+        !figure ||
+        !sameOriginalContent(
+          paper.figures.find(item => item?.id === figureId),
+          figure,
+        )
+      ) {
+        return false;
+      }
+    }
+    pending.push(...(source.dependsOnQuestionIds || []));
+  }
+  return true;
+}
+
 export function preserveRequiredOriginals(
   value: unknown,
   analysis: ExamAnalysis,
@@ -349,8 +474,7 @@ export function preserveRequiredOriginals(
             item => item?.questionId === source.id,
           );
           if (
-            !source.analysisIssues?.length &&
-            !source.originalRegions?.length &&
+            originalAnswerContextIntact(data, analysis, source.id) &&
             answer &&
             typeof answer.explanation === 'string' &&
             answer.explanation.trim() &&

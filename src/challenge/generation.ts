@@ -11,8 +11,10 @@ import {
   ChallengeLevel,
   ChallengePaper,
   ExamAnalysis,
+  PaperQuestion,
 } from './types';
 import {ChallengeValidationError, sameJson} from './validation';
+import {canonicalizePaperEvidence} from './evidence';
 
 export function generationSignature(analysis: ExamAnalysis): string {
   return JSON.stringify({
@@ -89,13 +91,37 @@ export function generationCheckpoint(
   level: ChallengeLevel,
   completed: readonly string[],
   paper: ChallengePaper,
+  resume: Pick<
+    ChallengeGenerationProgress,
+    | 'phase'
+    | 'pendingQuestionIds'
+    | 'feedback'
+    | 'evidenceQuestionIds'
+    | 'afterEvidencePhase'
+    | 'evidenceBasePaper'
+    | 'lockedAssetIds'
+  > = {},
 ): ChallengeGenerationProgress {
   return {
     version: 'question-patches-v1',
     policyVersion: CHALLENGE_POLICY_VERSION,
     sourceSignature: generationSignature(analysis),
     level,
+    integrityVersion: 2,
     completedQuestionIds: [...completed],
+    phase: resume.phase || 'generation',
+    pendingQuestionIds: resume.pendingQuestionIds
+      ? [...resume.pendingQuestionIds]
+      : undefined,
+    feedback: resume.feedback,
+    evidenceQuestionIds: resume.evidenceQuestionIds
+      ? [...resume.evidenceQuestionIds]
+      : undefined,
+    afterEvidencePhase: resume.afterEvidencePhase,
+    evidenceBasePaper: resume.evidenceBasePaper,
+    lockedAssetIds: resume.lockedAssetIds
+      ? [...resume.lockedAssetIds]
+      : undefined,
     paper,
   };
 }
@@ -111,17 +137,206 @@ export function canResumeGeneration(
       .filter(question => !forced.has(question.id))
       .map(question => question.id),
   );
+  const validPendingIds = (ids: unknown) =>
+    Array.isArray(ids) &&
+    new Set(ids).size === ids.length &&
+    ids.every(id => eligible.has(id));
+  const validAssetIds = new Set([
+    ...analysis.materials.map(item => `materials:${item.id}`),
+    ...analysis.figures.map(item => `figures:${item.id}`),
+  ]);
   return (
     !!checkpoint &&
     checkpoint.version === 'question-patches-v1' &&
     checkpoint.policyVersion === CHALLENGE_POLICY_VERSION &&
+    (checkpoint.integrityVersion === undefined ||
+      checkpoint.integrityVersion === 2) &&
     checkpoint.level === level &&
     checkpoint.sourceSignature === generationSignature(analysis) &&
     Array.isArray(checkpoint.completedQuestionIds) &&
     new Set(checkpoint.completedQuestionIds).size ===
       checkpoint.completedQuestionIds.length &&
-    checkpoint.completedQuestionIds.every(id => eligible.has(id))
+    checkpoint.completedQuestionIds.every(id => eligible.has(id)) &&
+    (checkpoint.phase === undefined ||
+      checkpoint.phase === 'generation' ||
+      checkpoint.phase === 'repair' ||
+      checkpoint.phase === 'evidence') &&
+    (checkpoint.phase !== 'repair' ||
+      Array.isArray(checkpoint.pendingQuestionIds)) &&
+    (checkpoint.pendingQuestionIds === undefined ||
+      validPendingIds(checkpoint.pendingQuestionIds)) &&
+    (checkpoint.evidenceQuestionIds === undefined ||
+      validPendingIds(checkpoint.evidenceQuestionIds)) &&
+    (checkpoint.lockedAssetIds === undefined ||
+      (Array.isArray(checkpoint.lockedAssetIds) &&
+        new Set(checkpoint.lockedAssetIds).size ===
+          checkpoint.lockedAssetIds.length &&
+        checkpoint.lockedAssetIds.every(id => validAssetIds.has(id)))) &&
+    (checkpoint.afterEvidencePhase === undefined ||
+      checkpoint.afterEvidencePhase === 'generation' ||
+      checkpoint.afterEvidencePhase === 'repair') &&
+    (checkpoint.phase !== 'evidence' ||
+      (validPendingIds(checkpoint.evidenceQuestionIds) &&
+        (checkpoint.afterEvidencePhase === 'generation' ||
+          checkpoint.afterEvidencePhase === 'repair')))
   );
+}
+
+/** Keep source order among ready questions, while always resolving prerequisites first. */
+export function questionGenerationOrder(
+  analysis: ExamAnalysis,
+  ids: readonly string[],
+): {orderedIds: string[]; blockedIds: string[]} {
+  const selected = new Set(ids);
+  const known = new Set(analysis.questions.map(question => question.id));
+  const dependencies = new Map(
+    analysis.questions.map(question => [
+      question.id,
+      new Set(question.dependsOnQuestionIds || []),
+    ]),
+  );
+  const processed = new Set<string>();
+  const orderedIds: string[] = [];
+  while (true) {
+    const ready = analysis.questions.find(
+      question =>
+        !processed.has(question.id) &&
+        [...dependencies.get(question.id)!].every(id => processed.has(id)),
+    );
+    if (!ready) {
+      break;
+    }
+    processed.add(ready.id);
+    if (selected.has(ready.id)) {
+      orderedIds.push(ready.id);
+    }
+  }
+  // Cycles and missing prerequisites also block their dependants. Neither is
+  // safe to generate from an original placeholder or an invented result.
+  const blockedIds = analysis.questions
+    .filter(
+      question => selected.has(question.id) && !processed.has(question.id),
+    )
+    .map(question => question.id);
+  blockedIds.push(...[...selected].filter(id => !known.has(id)));
+  return {orderedIds, blockedIds};
+}
+
+/** Traverse through every dependant before optionally restricting the returned targets. */
+export function questionSuccessorIds(
+  analysis: ExamAnalysis,
+  ids: readonly string[],
+  candidateIds?: readonly string[],
+): Set<string> {
+  const affected = new Set(ids);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const question of analysis.questions) {
+      if (
+        !affected.has(question.id) &&
+        question.dependsOnQuestionIds?.some(id => affected.has(id))
+      ) {
+        affected.add(question.id);
+        changed = true;
+      }
+    }
+  }
+  return new Set(
+    analysis.questions
+      .filter(
+        question =>
+          affected.has(question.id) &&
+          (!candidateIds || candidateIds.includes(question.id)),
+      )
+      .map(question => question.id),
+  );
+}
+
+/** Changes to a prerequisite or shared condition invalidate all dependent variants. */
+export function affectedGenerationIds(
+  analysis: ExamAnalysis,
+  before: ChallengePaper,
+  after: ChallengePaper,
+  changedIds: readonly string[] = [],
+): Set<string> {
+  const affected = new Set(changedIds);
+  const questionCondition = (question: PaperQuestion | undefined) =>
+    question && {
+      stem: question.stem,
+      options: question.options,
+      sectionId: question.sectionId,
+      materialIds: question.materialIds,
+      figureIds: question.figureIds,
+      knowledgePoints: question.knowledgePoints,
+      answerLines: question.answerLines,
+      type: question.type,
+      score: question.score,
+      isListening: question.isListening,
+    };
+  const answerCondition = (
+    answer: ChallengePaper['answers'][number] | undefined,
+  ) =>
+    answer && {
+      status: answer.status,
+      answer: answer.answer,
+      explanation: answer.explanation,
+      scoringPoints: answer.scoringPoints,
+    };
+  const changedAssets = <T extends {id: string}>(
+    previous: readonly T[],
+    current: readonly T[],
+  ) =>
+    new Set(
+      [...new Set([...previous, ...current].map(item => item.id))].filter(
+        id =>
+          !sameJson(
+            previous.find(item => item.id === id),
+            current.find(item => item.id === id),
+          ),
+      ),
+    );
+  const materials = changedAssets(before.materials, after.materials);
+  const figures = changedAssets(before.figures, after.figures);
+  const sections = changedAssets(before.sections, after.sections);
+  for (const source of analysis.questions) {
+    const previous = before.questions.find(
+      question => question.id === source.id,
+    );
+    const current = after.questions.find(question => question.id === source.id);
+    const references: PaperQuestion[] = [source];
+    if (previous) {
+      references.push(previous);
+    }
+    if (current) {
+      references.push(current);
+    }
+    if (
+      !sameJson(questionCondition(previous), questionCondition(current)) ||
+      !sameJson(
+        answerCondition(
+          before.answers.find(answer => answer.questionId === source.id),
+        ),
+        answerCondition(
+          after.answers.find(answer => answer.questionId === source.id),
+        ),
+      ) ||
+      references.some(
+        question =>
+          sections.has(question.sectionId) ||
+          question.materialIds.some(id => materials.has(id)) ||
+          question.figureIds.some(id => figures.has(id)) ||
+          [...analysis.materials, ...before.materials, ...after.materials].some(
+            material =>
+              question.materialIds.includes(material.id) &&
+              material.figureIds.some(id => figures.has(id)),
+          ),
+      )
+    ) {
+      affected.add(source.id);
+    }
+  }
+  return questionSuccessorIds(analysis, [...affected]);
 }
 
 export function questionContextIds(
@@ -145,6 +360,87 @@ export function questionContextIds(
     }
   }
   return selected;
+}
+
+function assetUsers(
+  analysis: ExamAnalysis,
+  key: 'materials' | 'figures',
+  id: string,
+) {
+  const usesAsset = (question: ExamAnalysis['questions'][number]) =>
+    key === 'materials'
+      ? question.materialIds.includes(id)
+      : question.figureIds.includes(id) ||
+        analysis.materials.some(
+          material =>
+            question.materialIds.includes(material.id) &&
+            material.figureIds.includes(id),
+        );
+  return analysis.questions.filter(question => {
+    const contexts = questionContextIds(analysis, [question.id]);
+    return analysis.questions.some(
+      source => contexts.has(source.id) && usesAsset(source),
+    );
+  });
+}
+
+/** A changed shared condition must be repaired with all of its upgraded users. */
+export function sharedAssetRepairIds(
+  analysis: ExamAnalysis,
+  paper: ChallengePaper,
+  ids: readonly string[],
+  lockedAssetIds: readonly string[] = [],
+): Set<string> {
+  const variants = paper.questions
+    .filter(question => !isRetainedQuestion(question))
+    .map(question => question.id);
+  const upgraded = new Set(variants);
+  const forced = requiredRetentionIds(analysis);
+  const locked = new Set(lockedAssetIds);
+  const affected = questionSuccessorIds(analysis, ids, variants);
+  let changed = true;
+  while (changed) {
+    changed = false;
+    for (const key of ['materials', 'figures'] as const) {
+      const originals: readonly {id: string}[] = analysis[key];
+      const current: readonly {id: string}[] = paper[key];
+      for (const original of originals) {
+        if (
+          locked.has(`${key}:${original.id}`) ||
+          sameJson(
+            original,
+            current.find(item => item.id === original.id),
+          )
+        ) {
+          continue;
+        }
+        const users = assetUsers(analysis, key, original.id);
+        if (
+          !users.some(question => affected.has(question.id)) ||
+          users.some(
+            question => !upgraded.has(question.id) || forced.has(question.id),
+          )
+        ) {
+          continue;
+        }
+        for (const id of questionSuccessorIds(
+          analysis,
+          users.map(question => question.id),
+          variants,
+        )) {
+          if (!affected.has(id)) {
+            affected.add(id);
+            changed = true;
+          }
+        }
+      }
+    }
+  }
+  return new Set(
+    analysis.questions
+      .filter(question => affected.has(question.id))
+      .map(question => question.id),
+  );
 }
 
 export function batchAnalysis(
@@ -204,6 +500,11 @@ export function mergeGenerationPatch(
   current: ChallengePaper,
   ids: readonly string[],
   completedQuestionIds: readonly string[],
+  options: {
+    assetRepairQuestionIds?: readonly string[];
+    lockedAssetIds?: readonly string[];
+    onNormalize?: (intent: ChallengePaper, normalized: ChallengePaper) => void;
+  } = {},
 ): ChallengePaper {
   if (
     !record(value) ||
@@ -291,6 +592,9 @@ export function mergeGenerationPatch(
   if (answerIds.size !== questionIds.size) {
     invalid('本批每道升档题必须恰有一份答案，不能漏掉详解');
   }
+  const forced = requiredRetentionIds(analysis);
+  const repairScope = new Set(options.assetRepairQuestionIds || []);
+  const lockedAssets = new Set(options.lockedAssetIds || []);
   const updateAssets = <T extends {id: string}>(
     key: 'materials' | 'figures',
     originals: T[],
@@ -316,21 +620,10 @@ export function mergeGenerationPatch(
       if (sameJson(item, result[index])) {
         continue;
       }
-      const usesAsset = (question: ExamAnalysis['questions'][number]) =>
-        key === 'materials'
-          ? question.materialIds.includes(item.id)
-          : question.figureIds.includes(item.id) ||
-            analysis.materials.some(
-              material =>
-                question.materialIds.includes(material.id) &&
-                material.figureIds.includes(item.id),
-            );
-      const users = analysis.questions.filter(question => {
-        const contexts = questionContextIds(analysis, [question.id]);
-        return analysis.questions.some(
-          source => contexts.has(source.id) && usesAsset(source),
-        );
-      });
+      if (lockedAssets.has(`${key}:${item.id}`)) {
+        invalid(`${key}.${item.id}本轮已修订并锁定，后续批次必须沿用当前条件`);
+      }
+      const users = assetUsers(analysis, key, item.id);
       if (
         !users.some(
           question => ids.includes(question.id) && questionIds.has(question.id),
@@ -343,6 +636,21 @@ export function mergeGenerationPatch(
         (originals[index] as any).containsStudentMarks === true &&
         item.kind === 'drawing' &&
         item.caption === (originals[index] as any).caption;
+      const scopedRepair =
+        !!users.length &&
+        users.every(question => {
+          const candidate = ids.includes(question.id)
+            ? variants.find((variant: any) => variant.id === question.id)
+            : current.questions.find(
+                existingQuestion => existingQuestion.id === question.id,
+              );
+          return (
+            repairScope.has(question.id) &&
+            !forced.has(question.id) &&
+            !!candidate &&
+            !isRetainedQuestion(candidate)
+          );
+        });
       if (
         !users.length ||
         users.some(
@@ -350,7 +658,7 @@ export function mergeGenerationPatch(
             !ids.includes(question.id) || !questionIds.has(question.id),
         )
       ) {
-        if (!redraw) {
+        if (!redraw && !scopedRepair) {
           invalid(
             `${key}.${item.id}还供其它批次或保留题使用，必须保持原条件；仅可等内容清除图上学生标记`,
           );
@@ -422,10 +730,12 @@ export function mergeGenerationPatch(
         : question,
     ),
   };
-  paper = preserveRequiredOriginals(
+  const normalized = preserveRequiredOriginals(
     paper,
     dynamic,
     current.level,
   ) as ChallengePaper;
-  return paper;
+  options.onNormalize?.(paper, normalized);
+  paper = normalized;
+  return canonicalizePaperEvidence(paper, analysis, ids);
 }

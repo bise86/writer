@@ -4,8 +4,10 @@ import {DEFAULT_SETTINGS, validateSettings} from '../src/settings';
 import {AppSettings, ModelCall} from '../src/types';
 import {runResponse, visionResponse} from '../src/services/openai';
 import {ModelOutputTruncatedError} from '../src/shared/model/request';
+import {runAdaptiveBatches} from '../src/shared/model/batches';
 import {
   contextBudget,
+  ContextBudgetError,
   estimateInputTokens,
   estimateTextTokens,
   splitTextByBudget,
@@ -168,13 +170,61 @@ test('仅原文达到压缩阈值但仍在输入预算内时，不对原文作�
 });
 
 test('作文、规则和输出合计超限时停止，不删减原文或发送超预算请求', async () => {
-  await expect(
-    runResponse('中'.repeat(400), '规则'.repeat(400), {
-      ...settings,
-      contextWindow: 4096,
-      maxOutputTokens: 1000,
-    }),
-  ).rejects.toThrow('不会删减作文');
+  const operation = runResponse('中'.repeat(400), '规则'.repeat(400), {
+    ...settings,
+    contextWindow: 4096,
+    maxOutputTokens: 1000,
+  });
+  await expect(operation).rejects.toBeInstanceOf(ContextBudgetError);
+  await expect(operation).rejects.toThrow('不会删减作文');
+  expect(create).not.toHaveBeenCalled();
+});
+
+test('真实输入预算检查保留超限类型，调用侧缩小批次后完整发送每题', async () => {
+  const questions = [
+    {id: 'q1', text: '中'.repeat(400)},
+    {id: 'q2', text: '文'.repeat(400)},
+  ];
+  const instructions = '规'.repeat(400);
+  const calls: string[][] = [];
+  const onSplit = jest.fn();
+  await runAdaptiveBatches(
+    questions,
+    2,
+    async batch => {
+      calls.push(batch.map(question => question.id));
+      await runResponse(JSON.stringify(batch), instructions, {
+        ...settings,
+        contextWindow: 4096,
+        maxOutputTokens: 1000,
+      });
+    },
+    {onSplit},
+  );
+  expect(calls).toEqual([['q1', 'q2'], ['q1'], ['q2']]);
+  expect(onSplit).toHaveBeenCalledWith(questions, 'input');
+  expect(create).toHaveBeenCalledTimes(2);
+  expect(
+    create.mock.calls.map(([request]) => JSON.parse(request.input)),
+  ).toEqual(questions.map(question => [question]));
+  expect(
+    create.mock.calls.every(([request]) => request.instructions === instructions),
+  ).toBe(true);
+});
+
+test('本地上下文超限保持异常类型，同时遮盖巧合命中提示文字的API Key', async () => {
+  const apiKey = 'token';
+  const operation = runResponse('中'.repeat(400), '规则'.repeat(400), {
+    ...settings,
+    apiKey,
+    contextWindow: 4096,
+    maxOutputTokens: 1000,
+  });
+  await expect(operation).rejects.toBeInstanceOf(ContextBudgetError);
+  await expect(operation).rejects.toThrow('[已隐藏密钥]');
+  await expect(operation).rejects.toEqual(
+    expect.objectContaining({message: expect.not.stringContaining(apiKey)}),
+  );
   expect(create).not.toHaveBeenCalled();
 });
 
@@ -581,9 +631,21 @@ test.each([400, 401, 403, 404])('HTTP %s 不反复请求', async status => {
 
 test('实际模型上下文超限明确失败，不盲目删减后重试', async () => {
   create.mockRejectedValue(failure(400, 'context_length_exceeded'));
-  await expect(
-    runResponse('原文', '规则', {...settings, retryCount: 1}),
-  ).rejects.toThrow('实际上下文限制');
+  const operation = runResponse('原文', '规则', {...settings, retryCount: 1});
+  await expect(operation).rejects.toBeInstanceOf(ContextBudgetError);
+  await expect(operation).rejects.toThrow('实际上下文限制');
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+test('服务端上下文错误保留专用类型且固定提示也不泄露API Key', async () => {
+  create.mockRejectedValue(failure(400, 'context_length_exceeded'));
+  const apiKey = '模型实际上下文限制';
+  const operation = runResponse('原文', '规则', {...settings, apiKey});
+  await expect(operation).rejects.toBeInstanceOf(ContextBudgetError);
+  await expect(operation).rejects.toThrow('[已隐藏密钥]');
+  await expect(operation).rejects.toEqual(
+    expect.objectContaining({message: expect.not.stringContaining(apiKey)}),
+  );
   expect(create).toHaveBeenCalledTimes(1);
 });
 

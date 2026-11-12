@@ -317,7 +317,16 @@ export interface ChallengeGenerationProgress {
   sourceSignature: string;
   level: ChallengeLevel;
   policyVersion: string;
+  integrityVersion?: number;
   completedQuestionIds: string[];
+  // Older drafts omit phase and resume their initial generation pass.
+  phase?: 'generation' | 'repair' | 'evidence';
+  pendingQuestionIds?: string[];
+  feedback?: unknown;
+  evidenceQuestionIds?: string[];
+  afterEvidencePhase?: 'generation' | 'repair';
+  evidenceBasePaper?: ChallengePaper;
+  lockedAssetIds?: string[];
   paper: ChallengePaper;
 }
 export interface ChallengeRecord {
