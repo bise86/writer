@@ -26,6 +26,7 @@ import {
   completedText,
   requestWithRetry,
   statusOf,
+  ModelOutputTruncatedError,
 } from './request';
 
 function clientFor(settings: AppSettings) {
@@ -462,6 +463,9 @@ export async function runResponse(
     };
   } catch (error) {
     checkCancelled(options.signal);
+    if (error instanceof ModelOutputTruncatedError) {
+      throw error;
+    }
     const status = statusOf(error);
     if (status === 401 || status === 403) {
       throw new Error(

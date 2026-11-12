@@ -26,6 +26,7 @@ import {
   CHALLENGE_REVIEW_PROTOCOL_VERSION,
   getChallengeReviewRoles,
 } from '../src/challenge/review';
+import {generationSeed} from '../src/challenge/generation';
 import {
   discardChallengePdf,
   pickChallengePdf,
@@ -620,6 +621,29 @@ test('局部解析异常不禁用升档，提示原位保留与比例不足仍�
   await press('升档');
   await settle();
   expect(upgradeChallenge).toHaveBeenCalledTimes(1);
+});
+
+test('无升档题的空评审轮明确显示无需评审，不伪称五角色通过且PDF可浏览', async () => {
+  await openSaved({
+    ...completed,
+    reviewProtocolVersion: CHALLENGE_REVIEW_PROTOCOL_VERSION,
+    reviewRoundtableSize: 5,
+    candidate: generationSeed(analysis, 1),
+    reviewRounds: [
+      {
+        round: 1,
+        candidateRevision: completed.candidateRevision!,
+        roundtableSize: 5,
+        reviews: [],
+      },
+    ],
+  });
+  await press('升档方案');
+  expect(text()).toContain('无升档题，原题保留，无需模型评审');
+  expect(text()).not.toContain('本轮全部通过');
+  expect(text()).not.toContain('评审记录尚未完整');
+  await press('试卷预览');
+  expect(button('下载试卷')).toBeDefined();
 });
 
 test('解析异常导致低于比例的已完成结果展示实际值及保留原因', async () => {

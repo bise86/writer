@@ -6,6 +6,7 @@ import {publishChallengePdfs} from '../src/challenge/store';
 import {applicableChallengeMetrics} from '../src/challenge/rules';
 import {buildProgressiveSubjectVerification} from '../src/challenge/subjectSampling';
 import {CHALLENGE_REVIEW_PROTOCOL_VERSION} from '../src/challenge/review';
+import {ModelOutputTruncatedError} from '../src/shared/model/request';
 import type {ModelInput} from '../src/services/context';
 import type {
   ChallengeLevel,
@@ -554,6 +555,32 @@ function deferred<T>() {
   });
   return {promise, resolve};
 }
+
+function patchExam(count: number) {
+  const original = mockClone(analysis);
+  original.questions = Array.from({length: count}, (_, index) => ({
+    ...mockClone(analysis.questions[0]),
+    id: `q${index + 1}`,
+    number: String(index + 1),
+  }));
+  original.totalScore = count * 5;
+  mockRecord!.analysis = original;
+  return original;
+}
+
+function variantPatch(ids: string[], level: ChallengeLevel = 1) {
+  const sample = paper(level);
+  return {
+    questions: ids.map(id => ({
+      ...mockClone(sample.questions[0]),
+      id,
+      number: id.slice(1),
+      upgrade: {...mockClone(sample.questions[0].upgrade), mode: 'upgraded'},
+    })),
+    answers: ids.map(id => ({...mockClone(sample.answers[0]), questionId: id})),
+  };
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockRecord = record();
@@ -567,6 +594,183 @@ beforeEach(() => {
     .mockResolvedValue({paperBase64: 'JVBERi0=', answersBase64: 'JVBERi1h'});
   publisher.mockClear();
 });
+
+test('分批只返回升档题，截断只拆当前批，保留题按原位置合并且不进入评审', async () => {
+  const original = patchExam(6);
+  const batches: string[][] = [];
+  const reviews: string[][] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      expect(payload.phase).toBe('question_patches');
+      const ids = payload.questionIds as string[];
+      batches.push([...ids]);
+      if (ids.length === 2 && ids[0] === 'q3') {
+        throw new ModelOutputTruncatedError();
+      }
+      return response(
+        variantPatch(ids.filter(id => ['q1', 'q3'].includes(id))),
+      );
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      reviews.push(payload.reviewQuestionIds);
+      expect(
+        payload.analysis.questions.map((question: any) => question.id),
+      ).toEqual(payload.reviewQuestionIds);
+      expect(
+        payload.candidate.questions.map((question: any) => question.id),
+      ).toEqual(payload.reviewQuestionIds);
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(batches).toEqual([
+    ['q1', 'q2'],
+    ['q3', 'q4'],
+    ['q3'],
+    ['q4'],
+    ['q5', 'q6'],
+  ]);
+  expect(reviews).toEqual([['q1', 'q3']]);
+  expect(result.status).toBe('completed');
+  expect(result.candidate!.questions.map(question => question.id)).toEqual(
+    original.questions.map(question => question.id),
+  );
+  expect(
+    result
+      .candidate!.questions.filter(
+        question => question.upgrade.mode === 'upgraded',
+      )
+      .map(question => question.id),
+  ).toEqual(['q1', 'q3']);
+  for (const index of [1, 3, 4, 5]) {
+    expect(result.candidate!.questions[index].stem).toBe(
+      original.questions[index].stem,
+    );
+    expect(result.candidate!.questions[index].upgrade.mode).toBe('retained');
+  }
+  expect(result.generationProgress!.completedQuestionIds).toHaveLength(6);
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test('单题持续超限后保存完成批次，再次升档只继续未完成题', async () => {
+  patchExam(4);
+  const batches: string[][] = [];
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      const ids = payload.questionIds as string[];
+      batches.push([...ids]);
+      if (interrupted && ids.includes('q3')) {
+        throw new ModelOutputTruncatedError();
+      }
+      return response(variantPatch(ids));
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings}),
+  ).rejects.toThrow('已保存2/4题');
+  expect(mockRecord!.status).toBe('failed');
+  expect(mockRecord!.generationProgress!.completedQuestionIds).toEqual([
+    'q1',
+    'q2',
+  ]);
+  expect(publisher).not.toHaveBeenCalled();
+  interrupted = false;
+  const previous = batches.length;
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(batches.slice(previous)).toEqual([['q3', 'q4']]);
+  expect(result.status).toBe('completed');
+  expect(result.generationProgress!.completedQuestionIds).toHaveLength(4);
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test('评审截断也只拆当前升档题批次，各角色合并为一票且不评审原题', async () => {
+  patchExam(6);
+  const succeeded: {role: string; ids: string[]}[] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      return response(
+        variantPatch(
+          payload.questionIds.filter((id: string) =>
+            ['q1', 'q3', 'q5'].includes(id),
+          ),
+        ),
+      );
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      expect(
+        payload.reviewQuestionIds.every((id: string) =>
+          ['q1', 'q3', 'q5'].includes(id),
+        ),
+      ).toBe(true);
+      if (payload.reviewQuestionIds.length > 1) {
+        throw new ModelOutputTruncatedError();
+      }
+      succeeded.push({role: payload.role, ids: payload.reviewQuestionIds});
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {
+    settings: {...settings, roundtableSize: 3},
+  });
+  expect(result.status).toBe('completed');
+  expect(result.reviewRounds[0].reviews).toHaveLength(3);
+  for (const role of ['subject', 'difficulty', 'answers']) {
+    expect(
+      succeeded
+        .filter(value => value.role === role)
+        .flatMap(value => value.ids),
+    ).toEqual(['q1', 'q3', 'q5']);
+    expect(
+      result.reviewRounds[0].reviews.find(value => value.role === role)!
+        .checkedQuestionIds,
+    ).toEqual(['q1', 'q3', 'q5']);
+  }
+  expect(publisher).toHaveBeenCalledTimes(1);
+});
+
+test.each([0, 3, 5] as const)(
+  '无升档题时%s角色设置也不发起评审，不伪造角色通过报告',
+  async size => {
+    mockRecord!.analysis!.questions[0].analysisIssues = [
+      '原题关键条件未完整识别',
+    ];
+    const result = await upgradeChallenge('challenge_test', 3, {
+      settings: {...settings, roundtableSize: size},
+    });
+    expect(result.status).toBe('completed');
+    expect(
+      request.mock.calls.filter(call => task(call[0]) === '挑战试卷生成'),
+    ).toHaveLength(0);
+    expect(
+      request.mock.calls.filter(call => task(call[0]) === '挑战标准一致性校核'),
+    ).toHaveLength(0);
+    expect(result.reviewRounds[0]).toMatchObject({
+      roundtableSize: size,
+      reviews: [],
+    });
+    expect(result.candidate!.questions[0].upgrade.mode).toBe('retained');
+    expect(publisher).toHaveBeenCalledTimes(1);
+  },
+);
 
 test('已作答试卷先逐页解析，再评估原难度与范围，分析阶段不命题或导出', async () => {
   mockRecord = record(false);
@@ -1246,15 +1450,16 @@ test.each([0, 3, 5] as const)(
         return response(generated);
       }
       if (payload.task === '挑战标准一致性校核') {
-        expect(payload.coverage).toMatchObject({
-          total: 10,
-          targetRequired: 7,
-          required: 1,
-          limitedByAnalysis: true,
-        });
+        expect(payload.reviewQuestionIds).toEqual(['q1']);
+        expect(
+          payload.analysis.questions.map((question: any) => question.id),
+        ).toEqual(['q1']);
+        expect(
+          payload.candidate.questions.map((question: any) => question.id),
+        ).toEqual(['q1']);
         return response({
           ...roleReview(input),
-          checkedQuestionIds: original.questions.map(question => question.id),
+          checkedQuestionIds: payload.reviewQuestionIds,
         });
       }
       return route(input);
@@ -2137,12 +2342,22 @@ test('非听力混合升档卷可完成评审和PDF发布，保留题不被误�
   );
   request.mockImplementation(async (input: ModelInput) => {
     if (task(input) === '挑战试卷生成') {
-      return response(generated);
+      const ids = requestPayload(input).questionIds;
+      const questions = generated.questions.filter(
+        question =>
+          ids.includes(question.id) && question.upgrade.mode === 'upgraded',
+      );
+      return response({
+        questions,
+        answers: generated.answers.filter(itemAnswer =>
+          questions.some(question => question.id === itemAnswer.questionId),
+        ),
+      });
     }
     if (task(input) === '挑战标准一致性校核') {
       return response({
         ...review(),
-        checkedQuestionIds: original.questions.map(question => question.id),
+        checkedQuestionIds: requestPayload(input).reviewQuestionIds,
       });
     }
     return route(input);

@@ -1,6 +1,14 @@
 import type {Response} from 'openai/resources/responses/responses';
 import {RequestProgress} from './context';
 
+export class ModelOutputTruncatedError extends Error {
+  readonly code = 'model_output_truncated';
+  constructor() {
+    super('模型输出被截断，本次内容超过单次输出上限');
+    this.name = 'ModelOutputTruncatedError';
+  }
+}
+
 export function checkCancelled(signal?: AbortSignal) {
   if (signal?.aborted) {
     throw new Error('已停止本次处理，识别结果和评分对话已保留，可继续重试');
@@ -59,7 +67,7 @@ export async function requestWithRetry<T>(
 export function completedText(response: Response) {
   if (response.status !== 'completed') {
     if (response.incomplete_details?.reason === 'max_output_tokens') {
-      throw new Error('模型输出被截断，请增加输出长度或降低思考级别后重试');
+      throw new ModelOutputTruncatedError();
     }
     throw new Error(
       `模型未完成请求（${response.status || '未知状态'}），请重试`,

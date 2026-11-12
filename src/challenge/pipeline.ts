@@ -3,12 +3,23 @@ import {validateSettings} from '../settings';
 import {HistoryMessage, ModelInput} from '../services/context';
 import {imageAsDataUri, parseJson, runResponse} from '../services/openai';
 import {newRecordId} from '../services/usage';
+import {runAdaptiveBatches} from '../shared/model/batches';
+import {ModelOutputTruncatedError} from '../shared/model/request';
+import {
+  batchAnalysis,
+  canResumeGeneration,
+  generationAnalysis,
+  generationCheckpoint,
+  generationSeed,
+  mergeGenerationPatch,
+  questionContextIds,
+} from './generation';
 import {
   challengeCoverage,
   CHALLENGE_SELECTION_POLICY_VERSION,
   requiredRetentionIds,
-  preserveRequiredOriginals,
-  retainEntirePaper,
+  isRetainedQuestion,
+  sourceRequiresRetention,
 } from './selection';
 import {prepareRetainedAnalysis, validOriginalRegion} from './retention';
 import {buildChallengePdfs} from './pdf';
@@ -52,6 +63,7 @@ import {
   SubjectVerification,
   SubjectSampleVote,
   OriginalQuestionRegion,
+  ChallengeGenerationProgress,
 } from './types';
 import {
   buildSubjectVerification,
@@ -247,7 +259,7 @@ async function requestJson<T>(
   instructions: string,
   options: ChallengeRunOptions,
   validate: (value: unknown) => T,
-  onCannotUpgrade?: () => T,
+  onCannotUpgrade?: (reason: string) => T,
 ): Promise<T> {
   const history: HistoryMessage[] = [];
   for (let attempt = 0; attempt < MAX_CORRECTIONS; attempt += 1) {
@@ -287,7 +299,11 @@ async function requestJson<T>(
         }
         if (result.cannotUpgrade === true) {
           if (onCannotUpgrade) {
-            return onCannotUpgrade();
+            return onCannotUpgrade(
+              typeof result.reason === 'string'
+                ? result.reason
+                : '本批未能形成可靠变式，保留原题',
+            );
           }
           throw new ChallengeBlockedError(
             typeof result.reason === 'string'
@@ -315,13 +331,17 @@ async function requestJson<T>(
       if (attempt === MAX_CORRECTIONS - 1) {
         throw error;
       }
+      const correction =
+        stage === 'generation' || stage === 'repair'
+          ? '本批升档补丁校验未通过。只重新输出本批实际升档题、对应完整答案及确实变更的材料或图；未改原题不要返回，程序会按原位置补回。保留已正确的变式和实质问题判断，不伪造指标或降低标准。'
+          : stage === 'review'
+          ? '本批升档题评审校验未通过。只对指定升档题ID输出该角色的报告和checkedQuestionIds，原题与依赖仅作对照，不另评审或给票。保留实质问题，不为过校验虚构通过。'
+          : '结构或一致性校验未通过，请保留原题、已正确部分和实质问题判断，逐项修正并重新输出完整JSON。不能伪造题目、指标或删题。';
       history.push(
         {role: 'assistant', content: response.text},
         {
           role: 'user',
-          content: `结构或一致性校验未通过，请保留原题、已正确部分和实质问题判断，逐项修正并重新输出完整JSON。不能为过校验把不合格改成通过，不能伪造题目/指标或删题：\n${message(
-            error,
-          )}`,
+          content: `${correction}\n${message(error)}`,
         },
       );
       await progress(
@@ -359,10 +379,12 @@ async function locateRetainedOriginals(
   const questions = analysis.questions.map(question => ({...question}));
   const warnings = [...analysis.warnings];
   for (let pageIndex = 0; pageIndex < pageUris.length; pageIndex += 1) {
-    const targets = questions.filter(question =>
-      question.originalRegions?.some(
-        region => region.pageIndex === pageIndex && wholePage(region),
-      ),
+    const targets = questions.filter(
+      question =>
+        sourceRequiresRetention(question) &&
+        question.originalRegions?.some(
+          region => region.pageIndex === pageIndex && wholePage(region),
+        ),
     );
     if (!targets.length) {
       continue;
@@ -817,6 +839,7 @@ export function analyzeChallenge(
         status: 'analyzing',
         runId,
         analysis: undefined,
+        generationProgress: undefined,
         subjectIdentification: undefined,
         subjectVerification: undefined,
         loadedSubjectRules: undefined,
@@ -1217,7 +1240,12 @@ function generationInstructions(
   level: ChallengeLevel,
   repair = false,
   roundtableSize: ChallengeRoundtableSize = 0,
+  questionIds: readonly string[] = analysis.questions.map(
+    question => question.id,
+  ),
 ) {
+  const scoped = batchAnalysis(analysis, questionIds);
+  const example = paperExample(scoped, level);
   const policy = getChallengePolicy(analysis.subject, level);
   return `你是学科变式命题教师，任务是${
     repair
@@ -1237,7 +1265,7 @@ function generationInstructions(
         policy.sourceIds.includes(source.id),
       ),
       policy,
-      perQuestionMetrics: analysis.questions.map(question => ({
+      perQuestionMetrics: scoped.questions.map(question => ({
         questionId: question.id,
         metrics: applicableChallengeMetrics(
           analysis.subject,
@@ -1246,7 +1274,7 @@ function generationInstructions(
           analysis.materials,
         ),
       })),
-      perQuestionDirections: analysis.questions.map(question => ({
+      perQuestionDirections: scoped.questions.map(question => ({
         questionId: question.id,
         directions: applicableChallengeDirections(
           analysis.subject,
@@ -1255,7 +1283,7 @@ function generationInstructions(
           analysis.materials,
         ),
       })),
-      perQuestionMastery: perQuestionMastery(analysis, level),
+      perQuestionMastery: perQuestionMastery(scoped, level),
     },
   )}
 本轮采用选题升档而非全题强制升档：以整卷非听力叶子小题数为分母（包括非听力保留题，排除听力），1/2/3档分别至少20%/40%/65%，向上取整，当前至少${
@@ -1280,11 +1308,259 @@ function generationInstructions(
 独立求解、自检及图文一致性一律按本变式实际条件、数据与同步新图进行，源卷旧值仅用于知识范围及原→新比较，不能当成新答案真值。other只是已确认课程的路由分类，必须按analysis.subjectIdentification.courseName选该实际课程的适用分支，不能让美术、音乐等借信息技术/通用技术目录新增知识。
 英语听力题及选项、材料、图完全保留；没有原录音或明确原文转写时答案只能requires_audio、明确待原录音核验，不能猜选项或拿学生作答当真值。其它已升档题答案status为verified并独立求解；保留题无法可靠求解时明确requires_review待核，给出解析和评分点；选择答案用原选项label表示，多选不重复，作文给高要求下的范文/要点和评分参考，不能只有泛化建议。
 材料变种不能破坏关联小题可解性，保持听力共享材料不动。图形不能丢掉：只可原框复用已确认不含学生作答的source图，坐标/标记不得伪改；含学生标记的图须按原几何关系/数据重绘为drawing（左上坐标系，width/height及line/circle/rect/text元素），新条件不得与图矛盾。无法安全重建时原题原图保留；原图保留题可忠实带原有笔迹，其它升档题仍不得输出原作答。
-输出完整JSON，字段结构例如${JSON.stringify(
-    paperExample(analysis, level),
-  )}。示例只展示一道题的字段结构，实际必须按原顺序输出全部题与恰好匹配的全部答案，保留空数组/明确null；示例占位文字不是可用题目或证据，必须替换为真实变种与解答。新卷stem/material不得夹带答案、学生原作答、评审文字或模型指令。数学表示使用可直接阅读的Unicode或ASCII，不使用待渲染LaTeX/HTML。不要仅返回改动差异。
+本次分批只处理questionIds=${JSON.stringify(
+    questionIds,
+  )}。只返回本批实际升档题的完整question与对应answer；没有改动、不能可靠升档或必须保留的题不返回题干、选项和答案，程序直接从原卷按原位置补回。全批都不升档时返回{questions:[],answers:[]}；可用retainedReasons按题ID简短说明保留原因，不重复原题正文。不返回其它批次题、听力或强制保留题。不输出整卷、题组、总分、时间、标题或学生原作答。
+输出JSON格式如${JSON.stringify({
+    questions: example.questions,
+    answers: example.answers,
+    materials: [],
+    figures: [],
+  })}。materials/figures只返回确实修改的关联对象，未修改时省略或空数组；还有其它批次或保留题使用的共享材料/图形必须沿用currentAssets，不改条件，只有带学生标记的图可等内容重绘并保持原caption。题干、选项、答案及全部本档指标、方向证据和learningGuide仍须完整；不能因分批而降低深度或漏掉学习说明。没有返回的原题不算升档，也不要求模型重新核验其答案。题目中的数学表示采用Unicode或ASCII，不使用待渲染LaTeX/HTML。
 允许个别题原样保留，不因单题解析异常、内容不完整或无法升档拒绝整卷。因解析异常而不足原目标时正常输出完整试卷与答案，待核题原图按原位置保留，答案明确待核；存在解析异常且coverage.limitedByAnalysis=true时coverage.required也仅作参考，不再因比例拒绝输出；优先尽量升档可靠题，不得因低于coverage.targetRequired返回cannotUpgrade，不得伪造升档或超纲凑指标。`;
 }
+async function generateQuestionPatches(
+  id: string,
+  runId: string,
+  analysis: ExamAnalysis,
+  level: ChallengeLevel,
+  options: ChallengeRunOptions,
+  roundtableSize: ChallengeRoundtableSize,
+  state: {
+    checkpoint?: ChallengeGenerationProgress;
+    candidate?: ChallengePaper;
+    feedback?: unknown;
+  } = {},
+): Promise<ChallengePaper> {
+  const forced = requiredRetentionIds(analysis);
+  const eligible = analysis.questions
+    .filter(question => !forced.has(question.id))
+    .map(question => question.id);
+  let completed = new Set<string>();
+  let paper = state.candidate || generationSeed(analysis, level);
+  if (
+    !state.candidate &&
+    canResumeGeneration(state.checkpoint, analysis, level)
+  ) {
+    try {
+      const pending = eligible.filter(
+        questionId =>
+          !state.checkpoint!.completedQuestionIds.includes(questionId),
+      );
+      paper = validateChallengePaper(state.checkpoint.paper, analysis, level, {
+        pendingQuestionIds: pending,
+        skipCoverage: true,
+      });
+      completed = new Set(state.checkpoint.completedQuestionIds);
+    } catch (_) {
+      // A mismatched or damaged draft is never published or replayed as valid.
+      paper = generationSeed(analysis, level);
+    }
+  }
+  if (state.candidate) {
+    completed = new Set(eligible);
+  }
+  const save = async () =>
+    progress(
+      id,
+      runId,
+      {
+        analysis,
+        generationProgress: generationCheckpoint(
+          analysis,
+          level,
+          [...completed],
+          paper,
+        ),
+        progress: `已保存${completed.size}/${
+          eligible.length
+        }道候选题处理结果，实际升档${
+          challengeCoverage(analysis, level, paper).upgraded
+        }题`,
+      },
+      options,
+    );
+  const size = Math.max(
+    1,
+    Math.min(3, Math.floor(options.settings.maxOutputTokens / 16000)),
+  );
+  let feedback = state.feedback;
+  const declined = new Map<string, string>();
+  let activeIds: string[] = [];
+  for (let pass = 0; pass < 2; pass += 1) {
+    const repair = !!state.candidate || pass > 0;
+    const reportedIds =
+      (feedback as {issues?: {questionId?: string}[]})?.issues?.map(
+        issue => issue.questionId,
+      ) || [];
+    const repairPool =
+      state.candidate && pass === 0
+        ? eligible.filter(
+            questionId =>
+              !isRetainedQuestion(
+                paper.questions.find(question => question.id === questionId)!,
+              ),
+          )
+        : eligible;
+    const targets = repair
+      ? repairPool.filter(
+          questionId =>
+            !reportedIds.length ||
+            reportedIds.includes('*') ||
+            reportedIds.includes(questionId),
+        )
+      : eligible.filter(questionId => !completed.has(questionId));
+    await runAdaptiveBatches(
+      targets,
+      size,
+      async ids => {
+        ensureRunning(options.signal);
+        activeIds = ids;
+        const scope = batchAnalysis(analysis, ids);
+        const contexts = questionContextIds(analysis, ids);
+        const nextCompleted = new Set([...completed, ...ids]);
+        const pending = eligible.filter(
+          questionId => !nextCompleted.has(questionId),
+        );
+        const accept = (value: unknown) =>
+          validateChallengePaper(
+            mergeGenerationPatch(value, analysis, paper, ids, [...completed]),
+            analysis,
+            level,
+            {pendingQuestionIds: pending, skipCoverage: true},
+          );
+        paper = await requestJson(
+          id,
+          runId,
+          repair ? 'repair' : 'generation',
+          `${repair ? '修订' : '生成'}升${level}档·本批${ids.length}题·已保存${
+            completed.size
+          }/${eligible.length}`,
+          JSON.stringify({
+            task: repair ? '挑战试卷修订' : '挑战试卷生成',
+            phase: 'question_patches',
+            questionIds: ids,
+            level,
+            analysis: scope,
+            wholePaperCoverage: challengeCoverage(analysis, level, paper),
+            currentAssets: {
+              materials: paper.materials.filter(material =>
+                scope.materials.some(source => source.id === material.id),
+              ),
+              figures: paper.figures.filter(figure =>
+                scope.figures.some(source => source.id === figure.id),
+              ),
+            },
+            dependencyQuestions: analysis.questions
+              .filter(
+                question =>
+                  contexts.has(question.id) && !ids.includes(question.id),
+              )
+              .map(source => ({
+                source,
+                current: paper.questions.find(
+                  question => question.id === source.id,
+                ),
+                answer: paper.answers.find(
+                  answer => answer.questionId === source.id,
+                ),
+              })),
+            ...(repair
+              ? {
+                  candidate: {
+                    ...paper,
+                    questions: paper.questions.filter(question =>
+                      ids.includes(question.id),
+                    ),
+                    answers: paper.answers.filter(answer =>
+                      ids.includes(answer.questionId),
+                    ),
+                  },
+                  check: feedback,
+                }
+              : {}),
+          }),
+          generationInstructions(analysis, level, repair, roundtableSize, ids),
+          options,
+          accept,
+          reason => {
+            ids.forEach(questionId => declined.set(questionId, reason));
+            return accept({
+              questions: [],
+              answers: [],
+              retainedReasons: Object.fromEntries(
+                ids.map(questionId => [questionId, reason]),
+              ),
+            });
+          },
+        );
+        completed = nextCompleted;
+        await save();
+      },
+      {
+        signal: options.signal,
+        onSplit: async ids => {
+          await progress(
+            id,
+            runId,
+            {
+              progress:
+                ids.length > 1
+                  ? `本批${ids.length}题输出超限，自动拆小批次；已保存的${completed.size}题不重生成`
+                  : `单题输出超限，重试当前题；已保存的${completed.size}题不重生成`,
+            },
+            options,
+          );
+        },
+      },
+    ).catch(error => {
+      if (error instanceof ModelOutputTruncatedError) {
+        throw new Error(
+          `第${activeIds
+            .map(
+              questionId =>
+                analysis.questions.find(question => question.id === questionId)
+                  ?.number || questionId,
+            )
+            .join('、')}题仍超过模型输出上限，已保存${completed.size}/${
+            eligible.length
+          }题；再次升档会继续未完成的题。请检查单次输出预算，已完成题不会重生成。`,
+        );
+      }
+      throw error;
+    });
+    // Once all omissions are known, restore originals and freeze all of their dependencies.
+    paper = mergeGenerationPatch(
+      {questions: [], answers: []},
+      analysis,
+      paper,
+      [],
+      eligible,
+    );
+    completed = new Set(eligible);
+    await save();
+    if (
+      !challengeCoverage(analysis, level).limitedByAnalysis &&
+      eligible.length &&
+      eligible.every(questionId => declined.has(questionId)) &&
+      !challengeCoverage(analysis, level, paper).upgraded
+    ) {
+      throw new ChallengeBlockedError(
+        [...new Set(declined.values())].join('；'),
+      );
+    }
+    try {
+      return validateChallengePaper(paper, analysis, level);
+    } catch (error) {
+      if (!(error instanceof ChallengeValidationError) || pass === 1) {
+        throw error;
+      }
+      feedback = {issues: [], validationIssues: error.issues};
+    }
+  }
+  throw new Error('分批试卷尚未通过整卷校验');
+}
+
 function qualityInstructions(
   paper: ChallengePaper,
   role: ChallengeReviewRole,
@@ -1315,25 +1591,25 @@ function qualityInstructions(
     roundtableSize === 0
       ? '综合承担全部学科、范围、难度、答案与图文检查。'
       : focus[role]
-  } 每位仍须覆盖全部题目并报告发现的实质问题，不能因别的角色负责而放过明确错误；同一候选版本须全部角色通过才发布，任何反对均会汇总修复并全员重审。
+  } 每位仍须覆盖本次列出的全部升档题并报告发现的实质问题，不能因别的角色负责而放过明确错误；同一候选版本须全部角色通过才发布，任何反对均会汇总修复并全员重审。
 当前提供结构化新卷、绘图数据及本次附带的原图，题面呈现检查针对内容、材料图形关系与作答空间规划；最终PDF尚待通过后渲染，不得假称已看到或逐页验收最终PDF。
-按已定稿标准检查：逐题同类型与原顺序/分值、知识点实际内容不超原题（不能只看自报标签）、所选档位指标有真实增量、题目可解且答案唯一/评分点成立、作文要求更高而文体不变、听力题与材料完全不动、缺音频答案必须待核、升档题不含学生作答、图文与版式可用；原图保留题允许忠实包含原有笔迹，不能据此当参考答案。
+本次只评审candidate.questions中实际升档的题，对应原题仅作为同题型、原核心范围和难度增量的比较依据；dependencyQuestions只供理解前问上下文，不能另出其评审意见。不要评审、重算或返回未升档原题、听力题，也不要声称复审了整张原卷。原题顺序和内容保留、整卷升档数量及比例由程序核对，本任务不重新评审这些原题或计算整卷配额。
+只核本次升档题：题号、题型、分值与对应原题一致，实际知识范围不超原核心，所选档位指标和深度有真实增量，题目可解且答案唯一或开放评分判据成立，题图与实际条件一致，答案学习说明完整，不混入学生原作答。
 独立核对本科学科蓝图：本档质性目标、典型错误机制、题型设计和掌握验收是否在新题及答案中有实际落点，不能仅满足通用数量；全部导航和并列要求须按原题实际维度择用，不允许全章/兄弟子点或其它科目混入。
-先按整卷非听力叶子题为分母记录原目标1/2/3档20%/40%/65%，听力与retained题不计升档。无解析异常造成的覆盖限制时仍按coverage.required检查最低题数；存在coverage.limitedByAnalysis=true时它仅作参考，不构成失败门槛；解析异常及其依赖需原样保留，coverage.limitedByAnalysis=true时低于原目标属于正常完成，不能因此判revise或拒绝输出。全部题均待核时也允许全卷原样保留，不伪造升档。原题识别不完整、原图模糊和保留题答案待核是已声明的来源局限，只核对是否保留在原位置与是否明确待核，不能要求补拍/补齐后才通过，也不能编造条件修复。保留题逐字复现原题、原条件及关联材料图，依赖前问也保持；不能一边标保留一边暗改共享材料。保留题只要求可靠原答案或明确requires_review待核，不强加变式迁移配额；已升档题仍必须满足全部本档深度、指标和五维掌握要求。不可为凑比例削弱单题质量或超纲。下面的深化和v3学习说明要求仅用于upgraded题。
 重点独立核查深化证据：方向符合原任务且相对原题新增或加强，引用确实支持所称思路和解题步骤，必要性是所给有效解法的实际作用而非声称唯一解法；多个方法共同推进且整体连通，不能同一步换名、并列标签凑档。数学允许由原知识形成新策略或更短巧解，不以新增步骤数替代深度；focused路线须逐项验证不同关键决策与真实边界，普通代入/移项/重复配对或例行验算不能充数。检查不变量对全部允许操作成立、端点对全局的控制依据、反例确属定义域、图形已知没有取自外观或学生作答。其它学科逐项验证模型适用、证据限度、因果链/反事实或任务语体等方向在本题中实际起作用，拒绝只换术语。选择/填空不许新增独立证明任务，完整推理可在答案解析中。正式来源用于确定方向，三档阈值是项目规则而非官方评分线。
 再逐原核心审查v3五维掌握训练：题目是否实际触发所称易错难点，答案是否讲清原理与适用条件、错误推理/错因/纠正、原题→变式的不变关系及调整、可执行自检及真实预期；不能让题目仍浅而只把解析加长。目录命中不授予整章知识或另一学段许可，source_specific必须有原题引文和合理缺项/不适用说明。learningGuide的引用存在只是结构证据，必须独立判断引文是否实质支持本知识点，纠错是否真纠正，反事实是否真改变可行性/结论，自检能否暴露具体错解，不能同义重写凑数。每核心五维完整，但数量按全题不同错误来源/迁移对照/自检种类累计，跨核心共用只计一次；3档须原→新和条件反事实两种迁移以及条件/推理/结果三类自检。阅读/作文按原文体和任务深化，不套不相干公式验算或另出试题。masteryStatus只可training_only；没有学生后续新作答，不得从生成成功、旧卷填写或详解内容推断其已经完全掌握、具体缺陷或个人正确率，需审查学习说明中此类无依据结论并要求修复。原阅读材料中的人物叙述不当作对当前用户的能力认证。
 额外核对史料原引文和事实未被伪改，假设没有冒充史实；续写与叙事的合理新细节是否遵守原事实/动机/线索，不能误禁有据想象。开放题按合理答案和证据判据审查，不强加唯一措辞。
-若完整原卷存在真实不相关混科或原识科本身错误，用code:'subject_mismatch'或'mixed_subjects'指出原题证据，不能为标题/先前抽样强套科目；程序将作废科票与加载绑定并停止本次生成。若仅新题越过原范围而原科正确，应报告普通scope问题并修新题，不能误作识科冲突。
+若本次升档题的原题证据与已确认科目确有冲突，用code:'subject_mismatch'或'mixed_subjects'指出原题证据，不能为标题/先前抽样强套科目；程序将作废科票与加载绑定并停止本次生成。若仅新题越过原范围而原科正确，应报告普通scope问题并修新题，不能误作识科冲突。
 本变式解答、自检与图文核对须依据新题实际条件/新数据，不能用源卷旧值冒充真值；other目录须再核实际courseName分支，不能把不同课程的同名词当知识许可。
 输出{role:'${role}',verdict:'approve'或'revise',checkedQuestionIds:${JSON.stringify(
     paper.questions.map(question => question.id),
   )},summary:'综合校核说明',issues:[{questionId:'实际题ID或全卷*',code:'问题类别',comment:'指出具体可验证问题',fix:'可直接执行的修法'}]}。
-必须逐一检查全部题，approve仅在issues为空且全部符合时使用，不能为满足校验虚构通过。反对意见保留实质缺陷，指明题号/知识范围/错误答案/不真实指标或图文矛盾，并给具体修复意见。${
+必须逐一检查本次列出的全部升档题，checkedQuestionIds恰好对应这些题，approve仅在issues为空且全部符合时使用，不能为满足校验虚构通过。反对意见保留实质缺陷，指明题号/知识范围/错误答案/不真实指标或图文矛盾，并给具体修复意见。${
     visualPage === undefined
-      ? '本轮无待核图页，按全部原卷解析与新卷逐题检查。'
+      ? '本轮无需附图，仅对列出的升档题及其对应原题依据逐题检查。'
       : `本次附原试卷第${
           visualPage + 1
-        }页图片；额外逐图核对该页相关source框有无学生作答、重绘drawing是否保留真实关系/数据、图文是否一致。其余题仍作全卷文字与解题检查，其他图页将另行校核，不能假称已看到未附图片。`
+        }页图片；额外逐图核对该页相关source框有无学生作答、重绘drawing是否保留真实关系/数据、图文是否一致。本批其它升档题仍作文字与解题检查，其他相关图页将另行校核，不能假称已看到未附图片。`
   }`;
 }
 async function checkPaper(
@@ -1351,93 +1627,151 @@ async function checkPaper(
   },
 ): Promise<ChallengeReview> {
   const {role, roundtableSize} = context;
-  const visualPages = [
-    ...new Set(
-      analysis.figures
-        .filter(figure => paper.figures.some(item => item.id === figure.id))
-        .map(figure => figure.pageIndex)
-        .concat(
-          analysis.questions.flatMap(
-            question =>
-              question.originalRegions?.map(region => region.pageIndex) || [],
-          ),
-        ),
-    ),
-  ];
+  const targets = paper.questions.filter(
+    question => !isRetainedQuestion(question),
+  );
+  const groups = new Map<number, Set<string>>();
+  for (const question of targets) {
+    const scoped = batchAnalysis(analysis, [question.id]);
+    const pages = [...new Set(scoped.figures.map(figure => figure.pageIndex))];
+    for (const page of pages.length ? pages : [-1]) {
+      const ids = groups.get(page) || new Set<string>();
+      ids.add(question.id);
+      groups.set(page, ids);
+    }
+  }
   const results: ChallengeReview[] = [];
   const policy = getChallengePolicy(analysis.subject, paper.level);
-  for (const visualPage of visualPages.length ? visualPages : [undefined]) {
+  const size = Math.max(
+    1,
+    Math.min(8, Math.floor(options.settings.maxOutputTokens / 4000)),
+  );
+  for (const [page, questionIds] of groups) {
     ensureRunning(options.signal);
-    const text = JSON.stringify({
-      task: '挑战标准一致性校核',
-      role,
-      roundtableSize,
-      round: context.round,
-      candidateRevision: context.candidateRevision,
-      reviewProtocolVersion: CHALLENGE_REVIEW_PROTOCOL_VERSION,
-      policyVersion: CHALLENGE_POLICY_VERSION,
-      scopePolicy: CHALLENGE_RULES.scopePolicy,
-      metricDefinitions: CHALLENGE_RULES.metricDefinitions,
-      depthPolicy: CHALLENGE_RULES.depthPolicy,
-      masteryFramework: CHALLENGE_RULES.masteryFramework,
-      coverage: challengeCoverage(analysis, paper.level),
-      requiredRetentionIds: [...requiredRetentionIds(analysis)],
-      sources: CHALLENGE_RULES.sources.filter(source =>
-        policy.sourceIds.includes(source.id),
-      ),
-      policy,
-      perQuestionMetrics: analysis.questions.map(question => ({
-        questionId: question.id,
-        metrics: applicableChallengeMetrics(
-          analysis.subject,
-          paper.level,
-          question,
-          analysis.materials,
-        ),
-      })),
-      perQuestionDirections: analysis.questions.map(question => ({
-        questionId: question.id,
-        directions: applicableChallengeDirections(
-          analysis.subject,
-          paper.level,
-          question,
-          analysis.materials,
-        ),
-      })),
-      perQuestionMastery: perQuestionMastery(analysis, paper.level),
-      analysis,
-      candidate: paper,
-    });
-    const input: ModelInput =
-      visualPage === undefined
-        ? text
-        : [
-            {
-              role: 'user',
-              content: [
-                {type: 'input_text', text},
-                {
-                  type: 'input_image',
-                  image_url: await imageAsDataUri(pageUris[visualPage]),
-                  detail: 'high',
-                },
-              ],
-            },
-          ];
-    results.push(
-      await requestJson(
-        id,
-        runId,
-        'review',
-        `第${context.round}轮·${challengeReviewRoleLabel(
+    const image = page >= 0 ? await imageAsDataUri(pageUris[page]) : undefined;
+    await runAdaptiveBatches(
+      [...questionIds],
+      size,
+      async ids => {
+        const scoped = batchAnalysis(analysis, ids);
+        const reviewPaper: ChallengePaper = {
+          ...paper,
+          questions: targets.filter(question => ids.includes(question.id)),
+          answers: paper.answers.filter(answer =>
+            ids.includes(answer.questionId),
+          ),
+          sections: paper.sections.filter(section =>
+            scoped.sections.some(original => original.id === section.id),
+          ),
+          materials: paper.materials.filter(material =>
+            scoped.materials.some(original => original.id === material.id),
+          ),
+          figures: paper.figures.filter(figure =>
+            scoped.figures.some(original => original.id === figure.id),
+          ),
+        };
+        const dependencies = questionContextIds(analysis, ids);
+        const text = JSON.stringify({
+          task: '挑战标准一致性校核',
           role,
           roundtableSize,
-        )}${visualPage === undefined ? '' : `·第${visualPage + 1}页图题`}`,
-        input,
-        qualityInstructions(paper, role, roundtableSize, visualPage),
-        options,
-        value => validateChallengeReview(value, role, paper),
-      ),
+          round: context.round,
+          candidateRevision: context.candidateRevision,
+          reviewQuestionIds: ids,
+          reviewProtocolVersion: CHALLENGE_REVIEW_PROTOCOL_VERSION,
+          policyVersion: CHALLENGE_POLICY_VERSION,
+          scopePolicy: CHALLENGE_RULES.scopePolicy,
+          metricDefinitions: CHALLENGE_RULES.metricDefinitions,
+          depthPolicy: CHALLENGE_RULES.depthPolicy,
+          masteryFramework: CHALLENGE_RULES.masteryFramework,
+          sources: CHALLENGE_RULES.sources.filter(source =>
+            policy.sourceIds.includes(source.id),
+          ),
+          policy,
+          perQuestionMetrics: scoped.questions.map(question => ({
+            questionId: question.id,
+            metrics: applicableChallengeMetrics(
+              analysis.subject,
+              paper.level,
+              question,
+              analysis.materials,
+            ),
+          })),
+          perQuestionDirections: scoped.questions.map(question => ({
+            questionId: question.id,
+            directions: applicableChallengeDirections(
+              analysis.subject,
+              paper.level,
+              question,
+              analysis.materials,
+            ),
+          })),
+          perQuestionMastery: perQuestionMastery(scoped, paper.level),
+          analysis: scoped,
+          candidate: reviewPaper,
+          dependencyQuestions: analysis.questions
+            .filter(
+              question =>
+                dependencies.has(question.id) && !ids.includes(question.id),
+            )
+            .map(source => ({
+              source,
+              current: paper.questions.find(
+                question => question.id === source.id,
+              ),
+              answer: paper.answers.find(
+                answer => answer.questionId === source.id,
+              ),
+            })),
+        });
+        const input: ModelInput = image
+          ? [
+              {
+                role: 'user',
+                content: [
+                  {type: 'input_text', text},
+                  {type: 'input_image', image_url: image, detail: 'high'},
+                ],
+              },
+            ]
+          : text;
+        results.push(
+          await requestJson(
+            id,
+            runId,
+            'review',
+            `第${context.round}轮·${challengeReviewRoleLabel(
+              role,
+              roundtableSize,
+            )}·${ids.length}道升档题${page >= 0 ? `·第${page + 1}页图题` : ''}`,
+            input,
+            qualityInstructions(
+              reviewPaper,
+              role,
+              roundtableSize,
+              page >= 0 ? page : undefined,
+            ),
+            options,
+            value => validateChallengeReview(value, role, reviewPaper),
+          ),
+        );
+      },
+      {
+        signal: options.signal,
+        onSplit: async ids => {
+          await progress(
+            id,
+            runId,
+            {
+              progress: `${challengeReviewRoleLabel(
+                role,
+                roundtableSize,
+              )}评审输出超限，缩小当前${ids.length}题批次；已完成批次保留`,
+            },
+            options,
+          );
+        },
+      },
     );
   }
   const issues = results
@@ -1454,7 +1788,7 @@ async function checkPaper(
       results.every(result => result.verdict === 'approve') && !issues.length
         ? 'approve'
         : 'revise',
-    checkedQuestionIds: paper.questions.map(question => question.id),
+    checkedQuestionIds: targets.map(question => question.id),
     summary: results.map(result => result.summary).join('\n'),
     issues,
   };
@@ -1471,7 +1805,9 @@ async function checkRound(
   roundtableSize: ChallengeRoundtableSize,
   options: ChallengeRunOptions,
 ): Promise<ChallengeRecord> {
-  const roles = getChallengeReviewRoles(roundtableSize);
+  const roles = paper.questions.some(question => !isRetainedQuestion(question))
+    ? getChallengeReviewRoles(roundtableSize)
+    : [];
   const assertCurrent = (saved: ChallengeRecord) => {
     ensureRunning(options.signal);
     if (
@@ -1658,10 +1994,15 @@ export function upgradeChallenge(
     }
     loadChallengeSubjectRules(identification.subject);
     const roundtableSize = options.settings.roundtableSize;
+    const resumeCheckpoint =
+      current.status === 'failed' || current.status === 'cancelled'
+        ? current.generationProgress
+        : undefined;
     const runId = newRecordId('run');
     await notify(
       await updateChallenge(id, {
         status: 'generating',
+        generationProgress: resumeCheckpoint,
         analysis,
         runId,
         policyVersion: CHALLENGE_POLICY_VERSION,
@@ -1691,55 +2032,17 @@ export function upgradeChallenge(
         current.pageUris,
         options,
       );
+      analysis = generationAnalysis(analysis);
       await progress(id, runId, {analysis}, options);
-      const retainAll = () => {
-        analysis = {
-          ...analysis,
-          questions: analysis.questions.map(question => ({
-            ...question,
-            originalRegions: question.originalRegions?.length
-              ? question.originalRegions
-              : [...new Set(question.sourceRefs.map(ref => ref.pageIndex))].map(
-                  pageIndex => ({
-                    pageIndex,
-                    box: {x: 0, y: 0, width: 1, height: 1},
-                  }),
-                ),
-          })),
-          warnings: [
-            ...analysis.warnings,
-            '解析异常使目标不可达，本次未形成可可靠发布的变式，全部原题保留；零升档也正常完成。',
-          ],
-        };
-        return validateChallengePaper(
-          retainEntirePaper(analysis, level),
-          analysis,
-          level,
-        );
-      };
-      let paper =
-        coverage.eligible === 0
-          ? validateChallengePaper(
-              retainEntirePaper(analysis, level),
-              analysis,
-              level,
-            )
-          : await requestJson(
-              id,
-              runId,
-              'generation',
-              `生成升${level}档试卷`,
-              JSON.stringify({task: '挑战试卷生成', analysis, level}),
-              generationInstructions(analysis, level, false, roundtableSize),
-              options,
-              value =>
-                validateChallengePaper(
-                  preserveRequiredOriginals(value, analysis, level),
-                  analysis,
-                  level,
-                ),
-              coverage.limitedByAnalysis ? retainAll : undefined,
-            );
+      let paper = await generateQuestionPatches(
+        id,
+        runId,
+        analysis,
+        level,
+        options,
+        roundtableSize,
+        {checkpoint: resumeCheckpoint},
+      );
       for (let round = 1; round <= MAX_REVIEW_ROUNDS; round += 1) {
         const snapshot = JSON.stringify(paper);
         const frozenPaper = JSON.parse(snapshot) as ChallengePaper;
@@ -1750,10 +2053,11 @@ export function upgradeChallenge(
             status: 'reviewing',
             analysis,
             candidate: JSON.parse(snapshot) as ChallengePaper,
-            progress:
-              roundtableSize === 0
-                ? `第${round}轮：按标准综合校核`
-                : `第${round}轮：${roundtableSize}角色按学科标准独立评审`,
+            progress: paper.questions.every(isRetainedQuestion)
+              ? '无升档题，原题保留，跳过模型评审'
+              : roundtableSize === 0
+              ? `第${round}轮：按标准综合校核`
+              : `第${round}轮：${roundtableSize}角色按学科标准独立评审`,
           },
           options,
         );
@@ -1859,27 +2163,14 @@ export function upgradeChallenge(
           },
           options,
         );
-        paper = await requestJson(
+        paper = await generateQuestionPatches(
           id,
           runId,
-          'repair',
-          '修复试卷与答案',
-          JSON.stringify({
-            task: '挑战试卷修订',
-            analysis,
-            candidate: paper,
-            check: review,
-            previousChecks: reviewed.reviewRounds,
-          }),
-          generationInstructions(analysis, level, true, roundtableSize),
+          analysis,
+          level,
           options,
-          value =>
-            validateChallengePaper(
-              preserveRequiredOriginals(value, analysis, level),
-              analysis,
-              level,
-            ),
-          coverage.limitedByAnalysis ? retainAll : undefined,
+          roundtableSize,
+          {candidate: paper, feedback: review},
         );
       }
       throw new Error('试卷尚未通过标准校核');

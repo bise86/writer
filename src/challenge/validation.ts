@@ -93,7 +93,7 @@ function transcriptSourceExists(
   }
   return false;
 }
-function sameJson(first: unknown, second: unknown): boolean {
+export function sameJson(first: unknown, second: unknown): boolean {
   if (first === second) {
     return true;
   }
@@ -1577,6 +1577,10 @@ export function validateChallengePaper(
   value: unknown,
   analysis: ExamAnalysis,
   level: ChallengeLevel,
+  partial: {
+    pendingQuestionIds?: readonly string[];
+    skipCoverage?: boolean;
+  } = {},
 ): ChallengePaper {
   analysis = prepareRetainedAnalysis(analysis);
   if (
@@ -1589,6 +1593,7 @@ export function validateChallengePaper(
   }
   const data = root(value);
   const check = new Check();
+  const pending = new Set(partial.pendingQuestionIds || []);
   check.require(analysis.isExam === true, '原卷必须确认为试卷');
   check.require(
     [1, 2, 3].includes(level) && data.level === level,
@@ -1604,7 +1609,10 @@ export function validateChallengePaper(
   const retainedQuestionIds = new Set(
     Array.isArray(data.questions)
       ? data.questions
-          .filter((item: any) => item?.upgrade?.mode === 'retained')
+          .filter(
+            (item: any) =>
+              item?.upgrade?.mode === 'retained' && !pending.has(item.id),
+          )
           .map((item: any) => item.id)
       : [],
   );
@@ -1723,6 +1731,9 @@ export function validateChallengePaper(
       );
       const source = analysis.questions[index];
       if (!object(item) || !source) {
+        return;
+      }
+      if (pending.has(source.id)) {
         return;
       }
       for (const key of [
@@ -2000,7 +2011,9 @@ export function validateChallengePaper(
     });
     const coverage = challengeCoverage(analysis, level, data as ChallengePaper);
     check.require(
-      coverage.limitedByAnalysis || coverage.upgraded >= coverage.required,
+      partial.skipCoverage ||
+        coverage.limitedByAnalysis ||
+        coverage.upgraded >= coverage.required,
       `整卷升${level}档至少${coverage.minimumPercent}%题实质升档：共${coverage.total}道非听力题须至少${coverage.required}题，实际${coverage.upgraded}题；听力及保留题不计入升档`,
     );
   }

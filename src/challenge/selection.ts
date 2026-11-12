@@ -335,7 +335,7 @@ export function preserveRequiredOriginals(
             source.analysisIssues?.join('；') ||
             (source.isListening
               ? '听力保持不变，沿用原录音。'
-              : '与解析待核题存在依赖，保持原题。'),
+              : '与保留题存在前问依赖，保持原题。'),
           scopeExplanation: '保持原题及其原有位置、材料和条件，不计入升档。',
         },
       };

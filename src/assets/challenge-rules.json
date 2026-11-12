@@ -9,7 +9,7 @@
     "英语听力题、选项、共享听力材料和图形完全不变；缺少原录音或转写时答案标待核，不编造正确选项。",
     "三档指标是本项目最低训练要求，规则制定与修订的固定五角色审查已完成；新卷运行时按生成记录快照的0/3/5设置执行评审协议。不是平移原分数，不以加大数字、冗长文字或新增知识拔高。",
     "若单题范围或类型不能支持所选档位，可原样保留；解析异常及其依赖导致整卷升档比例低于原目标时仍正常完成，报告实际比例与保留原因，不得为了凑指标超纲、改题型或伪造数据。",
-    "规则制定的五角色与新卷运行时评审分别记录。新卷0保留一次基础综合校核且不称圆桌；3真实调用subject/difficulty/answers；5真实调用subject/scope/difficulty/answers/presentation。各角色按该科已审规则评同一candidateRevision，本轮全部配置角色通过才发布试卷及答案两个PDF；不能把一次综合校核复制成多票。",
+    "规则制定的五角色与新卷运行时评审分别记录。新卷0保留一次基础综合校核且不称圆桌；3真实调用subject/difficulty/answers；5真实调用subject/scope/difficulty/answers/presentation。各角色按该科已审规则只评同一candidateRevision中的实际升档题，保留原题不发起模型评审，本轮全部配置角色通过才发布试卷及答案两个PDF；不能把一次综合校核复制成多票。",
     "升档题只复现可核实的印刷条件，剔除学生填写与批改；解析异常题则在原位置忠实保留原图片段，必要时保留对应原页，允许原有笔迹而不将其当作参考答案。遮挡不猜补，不要求先补拍才能生成其余题。",
     "新增推理、线索、证据和条件指标必须逐项在changes或解答解析中指出对应内容；专项指标仅对原题已有对应材料或任务适用，不对纯术语识记题强加实验、变量控制、史料比较或数学步骤。",
     "题数、题型、选项标签、每题分值及总分上限不变；增加易错点和评分点不是新增小题或自动加分，答案评分点应细化原分值，答题留白可按解题需要调整。",
@@ -6776,8 +6776,8 @@
     }
   },
   "runtimeReviewPolicy": {
-    "id": "challenge-runtime-review-v1",
-    "version": 1,
+    "id": "challenge-runtime-review-v2",
+    "version": 2,
     "settingsKey": "roundtableSize",
     "authorization": "explicit_user_request",
     "standardReviewBoundary": "规则制定的固定五角色已完成对既审103目录、11科框架及流程的审查；本协议是用户明确授权的运行时配置变更，不声称对103内容重新五角色评审。",
@@ -6788,7 +6788,7 @@
         "roles": [],
         "basicComprehensiveCheck": true,
         "basicReviewRole": "answers",
-        "description": "0表示不启用圆桌，仍有一次基础综合校核；该调用覆盖规则一致性，不称一角色圆桌。",
+        "description": "0表示不启用圆桌；有升档题时仍做一次基础综合校核，只覆盖升档题，不称一角色圆桌；无升档题无需模型评审。",
         "roleReportsPerRound": 1
       },
       "3": {
@@ -6832,7 +6832,7 @@
     "repairInvalidatesAllPriorApprovals": true,
     "repairRequiresFullRosterAgain": true,
     "retainAllRoundRecords": true,
-    "publicationGate": "只有当前同一candidateRevision的本轮全部配置角色通过（0模式为基础综合校核通过）才发布试卷PDF和答案PDF；缺票、异议、失败、取消或超过3轮均不发布，不能跨修订版拼票。",
+    "publicationGate": "有升档题时，只有同一candidateRevision的本轮全部配置角色对全部升档题通过（0模式为基础综合校核）才发布两份PDF；无升档题不调用模型评审，空报告轮次表示无需评审，由程序核对原题保留后发布，不伪造通过票。",
     "repairPolicy": "本轮先保留逐角色结果并汇总全部异议，再按规则修复为新candidateRevision；不得在仍有角色审旧稿时改变稿件并沿用其票。修复后按快照原人数调用全部原角色完整重审，最多3轮；第三轮仍未全通过则停止且不发布两个PDF。",
     "roundRecordFields": [
       "round",
@@ -6846,11 +6846,14 @@
     "snapshot": {
       "protocolVersionRecordKey": "reviewProtocolVersion",
       "roundtableSizeRecordKey": "reviewRoundtableSize",
-      "protocolVersion": "challenge-runtime-review-v1:1",
+      "protocolVersion": "challenge-runtime-review-v2:2",
       "newRecords": "新生成记录保存当次roundtableSize设置及本协议版本，中途设置变化不能改动该记录人数或本轮角色表。",
-      "existingRecords": "旧卷沿已保存历史人数和协议，缺少新快照字段的旧卷按历史基础综合校核处理；不以当前设置倒填3/5，也不伪造历史逐角色调用。"
+      "existingRecords": "历史challenge-runtime-review-v1:1与缺协议版本的旧卷继续按当时全卷题目验证历史评审记录；新卷v2只评审实际升档题，不改写历史checkedQuestionIds或补造角色票。"
     },
-    "requestAccounting": "roleReportsPerRound统计每轮角色报告/票数，不是HTTP或模型请求数；0的一份为基础综合报告。每席须真实独立检查，多页图题可逐图页校核，JSON纠正或请求重试也可多次调用，但须合并为该角色在同一candidateRevision的一份报告，不将图页数、重试数冒充角色人数或多票。"
+    "requestAccounting": "每轮每角色只形成一份报告；题数多或截断时可分批实际调用，按升档题ID合并同一角色的子报告，所有子批次及本轮配置角色均完成且同意才通过。不把批次数、图页数、重试数冒充角色人数；无升档题实际评审模型调用和角色报告均为0。",
+    "reviewTargets": "upgraded_non_listening_questions_only",
+    "unchangedQuestions": "Retained originals and listening are reassembled and checked locally; do not send them for model review. Corresponding source questions and necessary dependencies are comparison/context only, never separate review targets.",
+    "noUpgrades": "When there are no upgraded questions, make no model review calls and record an empty review round. Publish only after local original-fidelity validation; never fabricate role approvals."
   },
   "selectionPolicy": {
     "id": "challenge-selection-v2",
@@ -6868,5 +6871,13 @@
     "insufficientCoverage": "Keep the full non-listening denominator and original tier target visible. When parsing uncertainty and its dependency closure make the target unreachable, normally complete using the reliable remainder, even zero upgrades; report the actual count, percentage and retention reasons. Do not label this outcome failed. Under this exception, the remaining questions may also be retained when a valid within-scope variant is not feasible; the attainable count is advisory rather than a new hard minimum.",
     "standardReviewBoundary": "The v3 subject depth/mastery criteria retain their existing review record. This explicitly requested selection and navigation workflow is recorded separately and does not claim a new independent five-role standard review.",
     "attainableCount": "If parsing uncertainty forces retention, min(original target count, reliably eligible count); when this is below the original target it is advisory, never a failure threshold. Keep the actual non-listening denominator unchanged."
+  },
+  "generationPolicy": {
+    "id": "question-patches-v1",
+    "authorization": "explicit_user_request",
+    "response": "分批仅输出实际升档的question及对应answer，以及确实修改的关联材料或图示。未升档题不重复返回正文或答案，由程序按原ID和原位置补回。",
+    "limits": "批大小按输出预算限制；截断后只拆小当前批或重试单题，不拼接不完整JSON，不重跑已完成批次，不降低思考级别或单题标准。",
+    "checkpoint": "每个通过校验的批次保存本地进度；相同原卷、档次及规则版本的失败/取消任务可继续，已完成题不重复生成。重新解析原卷或改变档次不沿用旧草稿。",
+    "publication": "逐批校验不得代替整卷完整性与原题保留校验。全部组装后按v3逐题指标及本轮覆盖规则检验，再只对实际升档题按设置人数评审并生成PDF。"
   }
 }

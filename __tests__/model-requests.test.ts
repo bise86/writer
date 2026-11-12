@@ -3,6 +3,7 @@ import type {ResponseInput} from 'openai/resources/responses/responses';
 import {DEFAULT_SETTINGS, validateSettings} from '../src/settings';
 import {AppSettings, ModelCall} from '../src/types';
 import {runResponse, visionResponse} from '../src/services/openai';
+import {ModelOutputTruncatedError} from '../src/shared/model/request';
 import {
   contextBudget,
   estimateInputTokens,
@@ -421,12 +422,10 @@ test('GPT 原生压缩只收到历史，完整压缩输出与当前原文一起�
 test('SDK 每次重试独立计数，失败与成功分别保留', async () => {
   jest.useFakeTimers();
   const onCall = jest.fn(async (_call: ModelCall) => {});
-  create
-    .mockRejectedValueOnce(failure(503))
-    .mockResolvedValueOnce({
-      ...done(),
-      usage: {input_tokens: 100, output_tokens: 20},
-    });
+  create.mockRejectedValueOnce(failure(503)).mockResolvedValueOnce({
+    ...done(),
+    usage: {input_tokens: 100, output_tokens: 20},
+  });
   const pending = runResponse(
     '原文',
     '规则',
@@ -585,6 +584,18 @@ test('实际模型上下文超限明确失败，不盲目删减后重试', async
   await expect(
     runResponse('原文', '规则', {...settings, retryCount: 1}),
   ).rejects.toThrow('实际上下文限制');
+  expect(create).toHaveBeenCalledTimes(1);
+});
+
+test('输出超限保留可识别的异常类型，供分批层拆分，不把不完整JSON当成功', async () => {
+  create.mockResolvedValue({
+    status: 'incomplete',
+    incomplete_details: {reason: 'max_output_tokens'},
+    output_text: '{"questions":[',
+  });
+  await expect(
+    runResponse('本批原题', '只返回升档题', settings),
+  ).rejects.toBeInstanceOf(ModelOutputTruncatedError);
   expect(create).toHaveBeenCalledTimes(1);
 });
 

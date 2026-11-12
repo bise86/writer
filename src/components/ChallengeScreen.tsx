@@ -43,6 +43,8 @@ import {
   challengeReviewRoleLabel,
   getChallengeReviewRoles,
   hasPassedChallengeReview,
+  CHALLENGE_REVIEW_PROTOCOL_VERSION,
+  challengeReviewQuestionIds,
 } from '../challenge/review';
 import {
   discardChallengePdf,
@@ -205,6 +207,18 @@ function ReviewRoundSummary({
   record: ChallengeRecord;
   showDetails: boolean;
 }) {
+  if (
+    !!record.candidate?.questions.length &&
+    record.reviewProtocolVersion === CHALLENGE_REVIEW_PROTOCOL_VERSION &&
+    challengeReviewQuestionIds(record).length === 0 &&
+    round.reviews.length === 0
+  ) {
+    return (
+      <View style={styles.question}>
+        <Text style={styles.notice}>无升档题，原题保留，无需模型评审。</Text>
+      </View>
+    );
+  }
   const size = round.roundtableSize ?? record.reviewRoundtableSize;
   const planned =
     size === undefined ? undefined : getChallengeReviewRoles(size);
@@ -1247,7 +1261,7 @@ export default function ChallengeScreen({
                   {settings.roundtableSize
                     ? `由${settings.roundtableSize}个角色按规则独立评审`
                     : '进行基础综合校核'}
-                  ，发现问题修正后重审。
+                  ，仅评审实际升档题，发现问题修正后重审；保留原题不评审，无升档题则跳过模型评审。
                 </Text>
               </Card>
               {!!pdfReady && record?.candidate && finalCoverage && (

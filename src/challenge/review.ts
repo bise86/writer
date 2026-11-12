@@ -6,8 +6,22 @@ import {
   CHALLENGE_REVIEW_ROLES,
 } from './types';
 import {CHALLENGE_RULES} from './rules';
+import {isRetainedQuestion} from './selection';
 
 export const CHALLENGE_REVIEW_PROTOCOL_VERSION = `${CHALLENGE_RULES.runtimeReviewPolicy.id}:${CHALLENGE_RULES.runtimeReviewPolicy.version}`;
+export const LEGACY_CHALLENGE_REVIEW_PROTOCOL_VERSION =
+  'challenge-runtime-review-v1:1';
+
+export function challengeReviewQuestionIds(
+  record: Pick<ChallengeRecord, 'candidate' | 'reviewProtocolVersion'>,
+): string[] {
+  const questions = record.candidate?.questions || [];
+  return (
+    record.reviewProtocolVersion === CHALLENGE_REVIEW_PROTOCOL_VERSION
+      ? questions.filter(question => !isRetainedQuestion(question))
+      : questions
+  ).map(question => question.id);
+}
 
 export function isChallengeRoundtableSize(
   value: unknown,
@@ -69,7 +83,10 @@ export function challengeReviewRoundComplete(
     record.reviewProtocolVersion !== undefined;
   if (modern) {
     if (
-      record.reviewProtocolVersion !== CHALLENGE_REVIEW_PROTOCOL_VERSION ||
+      ![
+        CHALLENGE_REVIEW_PROTOCOL_VERSION,
+        LEGACY_CHALLENGE_REVIEW_PROTOCOL_VERSION,
+      ].includes(record.reviewProtocolVersion || '') ||
       record.reviewRoundtableSize === undefined ||
       round.roundtableSize !== size
     ) {
@@ -78,8 +95,27 @@ export function challengeReviewRoundComplete(
   } else if (round.roundtableSize !== undefined) {
     return false;
   }
+  const allIds = record.candidate.questions.map(question => question?.id);
+  if (
+    !allIds.length ||
+    allIds.some(id => typeof id !== 'string' || !id.trim()) ||
+    new Set(allIds).size !== allIds.length ||
+    (record.analysis &&
+      (record.analysis.questions.length !== allIds.length ||
+        record.analysis.questions.some(
+          (question, index) => question.id !== allIds[index],
+        )))
+  ) {
+    return false;
+  }
   const roles = getChallengeReviewRoles(size);
-  const ids = record.candidate.questions.map(question => question.id);
+  const ids = challengeReviewQuestionIds(record);
+  if (
+    !ids.length &&
+    record.reviewProtocolVersion === CHALLENGE_REVIEW_PROTOCOL_VERSION
+  ) {
+    return Array.isArray(round.reviews) && round.reviews.length === 0;
+  }
   if (
     !ids.length ||
     new Set(ids).size !== ids.length ||

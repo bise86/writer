@@ -312,6 +312,14 @@ export interface ChallengeCall {
   stage: ChallengeStage;
   call: ModelCall;
 }
+export interface ChallengeGenerationProgress {
+  version: 'question-patches-v1';
+  sourceSignature: string;
+  level: ChallengeLevel;
+  policyVersion: string;
+  completedQuestionIds: string[];
+  paper: ChallengePaper;
+}
 export interface ChallengeRecord {
   id: string;
   title: string;
@@ -328,6 +336,7 @@ export interface ChallengeRecord {
   subjectIdentification?: SubjectIdentification;
   subjectVerification?: SubjectVerification;
   loadedSubjectRules?: {subject: ChallengeSubject; policyVersion: string};
+  generationProgress?: ChallengeGenerationProgress;
   pages: ChallengePage[];
   candidate?: ChallengePaper;
   candidateRevision?: number;
