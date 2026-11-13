@@ -187,6 +187,70 @@ beforeEach(() => {
 });
 afterEach(() => jest.restoreAllMocks());
 
+test('真实试卷PDF完成后答案文档失败，回调保留前份文件，恢复时只绘制答案', async () => {
+  const {analysis, paper} = fixture();
+  const createDocument = PDFDocument.create.bind(PDFDocument);
+  let documents = 0;
+  const create = jest
+    .spyOn(PDFDocument, 'create')
+    .mockImplementation(async () => {
+      if (++documents === 2) {throw new Error('答案文档初始化失败');}
+      return createDocument();
+    });
+  let paperBase64 = '';
+  const saved = jest.fn(async (kind: 'paper' | 'answers', base64: string) => {
+    if (kind === 'paper') {paperBase64 = base64;}
+  });
+  await expect(
+    buildChallengePdfs(analysis, paper, [], undefined, {onDocument: saved}),
+  ).rejects.toThrow('答案文档初始化失败');
+  expect(saved).toHaveBeenCalledTimes(1);
+  expect((await PDFDocument.load(paperBase64)).getPageCount()).toBeGreaterThan(
+    0,
+  );
+  create.mockRestore();
+  const draw = jest.spyOn(PDFPage.prototype, 'drawText');
+  saved.mockClear();
+  const result = await buildChallengePdfs(analysis, paper, [], undefined, {
+    paperBase64,
+    onDocument: saved,
+  });
+  expect(result.paperBase64).toBe(paperBase64);
+  expect(saved).toHaveBeenCalledTimes(1);
+  expect(saved.mock.calls[0][0]).toBe('answers');
+  const rendered = draw.mock.calls.map(call => call[0]).join('\n');
+  expect(rendered).toContain('答案与解析');
+  expect(rendered).not.toContain('姓名：');
+  expect(
+    (await PDFDocument.load(result.answersBase64)).getPageCount(),
+  ).toBeGreaterThan(0);
+});
+
+test('双PDF缓存可跳过绘制，仍拒绝缺题、错序和无效缓存', async () => {
+  const {analysis, paper} = fixture();
+  const pdfs = await buildChallengePdfs(analysis, paper, []);
+  const create = jest.spyOn(PDFDocument, 'create');
+  expect(
+    await buildChallengePdfs(analysis, paper, [], undefined, pdfs),
+  ).toEqual(pdfs);
+  expect(create).not.toHaveBeenCalled();
+  await expect(
+    buildChallengePdfs(
+      analysis,
+      {...paper, questions: [...paper.questions].reverse()},
+      [],
+      undefined,
+      pdfs,
+    ),
+  ).rejects.toThrow('顺序或答案对应不完整');
+  await expect(
+    buildChallengePdfs(analysis, paper, [], undefined, {
+      ...pdfs,
+      paperBase64: 'broken',
+    }),
+  ).rejects.toThrow('保存的PDF内容无效');
+});
+
 test('生成两个独立真实PDF，试卷保留题型编号选项和留白，不含答案或原作答', async () => {
   const {analysis, paper} = fixture();
   const draw = jest.spyOn(PDFPage.prototype, 'drawText');

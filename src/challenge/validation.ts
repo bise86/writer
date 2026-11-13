@@ -280,8 +280,8 @@ function drawingFigure(value: DrawingFigure, field: string, check: Check) {
     }
   });
 }
-function sections(value: unknown, check: Check): PaperSection[] {
-  if (!check.array(value, 'sections', 1, 100)) {
+function sections(value: unknown, check: Check, minimum = 1): PaperSection[] {
+  if (!check.array(value, 'sections', minimum, 100)) {
     return [];
   }
   value.forEach((item, index) => {
@@ -883,15 +883,20 @@ function validateExamContent(
   value: unknown,
   pages: ChallengePage[],
   samplingDraft: boolean,
+  partial = false,
 ): ExamAnalysis | ExamDraft {
   const parsed = root(value);
   const data: Record<string, any> = prepareRetainedAnalysis(
     {
       ...parsed,
+      unresolvedIssues: partial ? [] : parsed.unresolvedIssues,
       subjectIdentification: undefined,
     } as ExamAnalysis,
-    pages,
+    partial ? [] : pages,
   );
+  if (partial) {
+    data.unresolvedIssues = parsed.unresolvedIssues;
+  }
   const check = new Check();
   check.require(
     data.isExam === true,
@@ -943,7 +948,7 @@ function validateExamContent(
   );
   check.texts(data.warnings, 'warnings');
   check.texts(data.unresolvedIssues, 'unresolvedIssues');
-  if (pages.some(page => page.unreadableParts.length)) {
+  if (!partial && pages.some(page => page.unreadableParts.length)) {
     check.require(
       Array.isArray(data.unresolvedIssues) && data.unresolvedIssues.length,
       '原页仍有辨认不清内容，必须保留unresolvedIssues，不能凭空补齐',
@@ -972,7 +977,11 @@ function validateExamContent(
       'figures 必须完整保留原页图形清单',
     );
   }
-  const parsedSections = sections(data.sections, check);
+  const parsedSections = sections(
+    data.sections,
+    check,
+    partial && !data.questions?.length ? 0 : 1,
+  );
   const parsedMaterials = materials(
     data.materials,
     sourceFigures.map(item => item?.id),
@@ -992,7 +1001,7 @@ function validateExamContent(
       );
     }
   });
-  if (check.array(data.questions, 'questions', 1, 300)) {
+  if (check.array(data.questions, 'questions', partial ? 0 : 1, 300)) {
     data.questions.forEach((item: unknown, index: number) => {
       const field = `questions[${index}]`;
       question(
@@ -1050,7 +1059,8 @@ function validateExamContent(
             item.dependsOnQuestionIds.every(
               (id: string) =>
                 id !== item.id &&
-                data.questions.some((other: any) => other?.id === id),
+                (partial ||
+                  data.questions.some((other: any) => other?.id === id)),
             ),
             `${field} 前问依赖必须指向真实的其它原小题`,
           );
@@ -1202,8 +1212,9 @@ function validateExamContent(
 export function validateExamDraft(
   value: unknown,
   pages: ChallengePage[],
+  options: {partial?: boolean} = {},
 ): ExamDraft {
-  return validateExamContent(value, pages, true) as ExamDraft;
+  return validateExamContent(value, pages, true, options.partial) as ExamDraft;
 }
 
 export function validateExamAnalysis(

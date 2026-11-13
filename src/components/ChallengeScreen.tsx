@@ -343,6 +343,7 @@ export default function ChallengeScreen({
   >();
   const [panel, setPanel] = useState<'main' | 'manage'>('main');
   const [addingPages, setAddingPages] = useState(false);
+  const [savedPagesFor, setSavedPagesFor] = useState<string>();
   const imageImport = useImageImport();
   const [, setTaskVersion] = useState(0);
   const task = record ? getChallengeTask(record.id) : undefined;
@@ -580,7 +581,11 @@ export default function ChallengeScreen({
       finish(request);
     }
   };
-  const run = async (upgrade: boolean, analysisMode?: 'resume' | 'restart') => {
+  const run = async (
+    upgrade: boolean,
+    analysisMode?: 'resume' | 'restart',
+    upgradeMode?: 'resume' | 'restart',
+  ) => {
     if (!record) {
       return;
     }
@@ -602,6 +607,7 @@ export default function ChallengeScreen({
         settings,
         upgrade ? level : undefined,
         upgrade ? undefined : analysisMode,
+        upgrade ? upgradeMode : undefined,
       );
       signal = getChallengeTask(active.id)?.signal;
       // File operations lock the view; model work stays with the app task.
@@ -742,7 +748,7 @@ export default function ChallengeScreen({
     if (record.analysis) {
       Alert.alert(
         '是否重新解析试卷？',
-        '继续解析会复用已识别页面；重新解析会重新识别全部原卷，并更新解析与后续生成结果。',
+        '继续解析会复用已保存的页面、草稿和识科结果，只处理未完成阶段；完整解析已经保存时不会重复请求模型。重新解析会从原卷重新开始，并清除后续生成进度。',
         [
           {text: '取消', style: 'cancel'},
           {text: '继续解析', onPress: () => launch('resume')},
@@ -789,6 +795,17 @@ export default function ChallengeScreen({
   const coverage = analysis ? challengeCoverage(analysis, level) : undefined;
   const canUpgrade =
     !!analysis && analysis.questions.some(question => !question.isListening);
+  const savedDraft =
+    record?.analysisProgress?.draft ||
+    record?.analysisProgress?.draftBatches?.partial;
+  const partialAnalysis = !analysis && !!(record?.pages.length || savedDraft);
+  const continuingUpgrade =
+    !!analysis &&
+    !!record?.generationProgress &&
+    (record.status === 'failed' || record.status === 'cancelled') &&
+    record.level === level;
+  const continuingPdf =
+    continuingUpgrade && !!record && hasPassedChallengeReview(record);
   const pageUris = record?.pageUris || [];
   const pdfReady = hasReadyPdfs(record);
   const pdfUri =
@@ -948,7 +965,7 @@ export default function ChallengeScreen({
           )}
           <View style={styles.actions} accessibilityLabel="试卷操作">
             <Button
-              title="解析试卷"
+              title={partialAnalysis ? '继续解析试卷' : '解析试卷'}
               disabled={!!busy}
               onPress={requestAnalysis}
             />
@@ -963,12 +980,80 @@ export default function ChallengeScreen({
               onChange={setLevel}
             />
             <Button
-              title="升档"
+              title={
+                continuingPdf
+                  ? '继续生成PDF'
+                  : continuingUpgrade
+                  ? '继续升档'
+                  : '升档'
+              }
               disabled={!canUpgrade || !!busy}
               onPress={() => {
-                run(true);
+                run(true, undefined, continuingUpgrade ? 'resume' : undefined);
               }}
             />
+            {partialAnalysis && (
+              <Button
+                title="重新解析"
+                secondary
+                disabled={!!busy}
+                onPress={() => {
+                  if (!record) {
+                    return;
+                  }
+                  const selected = record.id;
+                  Alert.alert(
+                    '重新解析试卷？',
+                    '将清除本卷已保存的解析和后续生成进度，从第一页重新开始。',
+                    [
+                      {text: '取消', style: 'cancel'},
+                      {
+                        text: '重新解析',
+                        onPress: () => {
+                          if (
+                            mounted.current &&
+                            selectedId.current === selected
+                          ) {
+                            run(false, 'restart');
+                          }
+                        },
+                      },
+                    ],
+                  );
+                }}
+              />
+            )}
+            {continuingUpgrade && (
+              <Button
+                title="重新升档"
+                secondary
+                disabled={!!busy}
+                onPress={() => {
+                  if (!record) {
+                    return;
+                  }
+                  const selected = record.id;
+                  Alert.alert(
+                    '重新升档？',
+                    '将重新选题、生成和评审，清除本次已保存的升档与PDF进度。',
+                    [
+                      {text: '取消', style: 'cancel'},
+                      {
+                        text: '重新升档',
+                        onPress: () => {
+                          if (
+                            mounted.current &&
+                            selectedId.current === selected
+                          ) {
+                            run(true, undefined, 'restart');
+                          }
+                        },
+                      },
+                    ],
+                  );
+                }}
+              />
+            )}
           </View>
           {!!analysis?.unresolvedIssues.length && (
             <Text style={styles.notice}>
@@ -1016,6 +1101,48 @@ export default function ChallengeScreen({
               {record.error}
             </Text>
           )}
+          {!!record &&
+            !busy &&
+            (record.status === 'failed' || record.status === 'cancelled') &&
+            (!!record.pages.length || !!record.generationProgress) && (
+              <Card>
+                <Text style={styles.heading}>已保存进度，可继续</Text>
+                <Text style={styles.body}>
+                  已识别 {record.pages.length}/{record.pageUris.length} 页
+                  {savedDraft
+                    ? `，原题结构已保存 ${savedDraft.questions.length} 题`
+                    : ''}
+                  。
+                </Text>
+                {!!record.generationProgress && (
+                  <Text style={styles.body}>
+                    已保存{' '}
+                    {record.generationProgress.completedQuestionIds.length}{' '}
+                    道选中题的处理结果，待处理{' '}
+                    {record.generationProgress.pendingQuestionIds?.length || 0}{' '}
+                    题。
+                  </Text>
+                )}
+                {!!record.reviewProgress && (
+                  <Text style={styles.body}>
+                    本轮已保存 {record.reviewProgress.batches.length}{' '}
+                    批独立评审，已完成{' '}
+                    {record.reviewRounds[record.reviewRounds.length - 1]
+                      ?.reviews.length || 0}{' '}
+                    份角色报告。
+                  </Text>
+                )}
+                {!!record.pdfProgress && (
+                  <Text style={styles.body}>
+                    {record.pdfProgress.paperUri ? '试卷PDF已保存。' : ''}
+                    {record.pdfProgress.answersUri ? '答案PDF已保存。' : ''}
+                  </Text>
+                )}
+                <Text style={styles.muted}>
+                  继续操作会跳过已经成功的阶段；尚未完整返回的当前批次会重新请求。
+                </Text>
+              </Card>
+            )}
           {!!busy && (
             <Card>
               <ActivityIndicator color="#A55B17" />
@@ -1061,6 +1188,47 @@ export default function ChallengeScreen({
               </Card>
               {!analysis ? (
                 <Card>
+                  {!!record?.pages.length && (
+                    <>
+                      <Text style={styles.heading}>已保存的解析结果</Text>
+                      <Text style={styles.body}>
+                        已识别 {record.pages.length}/{record.pageUris.length}{' '}
+                        页。
+                        {savedDraft
+                          ? `原题结构 ${savedDraft.questions.length} 题已保存，继续未完成批次与科目核验。`
+                          : '继续解析会从未完成处接续。'}
+                      </Text>
+                      <Button
+                        title={
+                          savedPagesFor === record.id
+                            ? '收起已识别文字'
+                            : '查看已识别文字'
+                        }
+                        secondary
+                        onPress={() =>
+                          setSavedPagesFor(
+                            savedPagesFor === record.id ? undefined : record.id,
+                          )
+                        }
+                      />
+                      {savedPagesFor === record.id &&
+                        record.pages.map(page => (
+                          <View key={page.pageIndex}>
+                            <Text style={styles.label}>
+                              第 {page.pageIndex + 1} 页
+                            </Text>
+                            <Text selectable style={styles.body}>
+                              {page.text}
+                            </Text>
+                            {page.unreadableParts.map((part, index) => (
+                              <Text key={index} style={styles.notice}>
+                                {part}
+                              </Text>
+                            ))}
+                          </View>
+                        ))}
+                    </>
+                  )}
                   <Text style={styles.muted}>
                     完成原卷解析后，这里展示逐题分析、难度分布和知识范围。
                   </Text>

@@ -36,6 +36,7 @@ import type {
 const mockClone = <T>(value: T): T => JSON.parse(JSON.stringify(value));
 let mockRecord: ChallengeRecord | undefined;
 let mockStandardApproved = true;
+const mockPdfDocuments = new Map<string, string>();
 
 jest.mock('react-native-fs', () => ({
   DocumentDirectoryPath: '/documents',
@@ -103,6 +104,48 @@ jest.mock('../src/challenge/store', () => ({
       return mockClone(mockRecord);
     },
   ),
+  loadChallengePdfDocuments: jest.fn(
+    async (value: ChallengeRecord, expected: any) => {
+      const saved = value.pdfProgress;
+      if (
+        !saved ||
+        saved.candidateSignature !== expected.candidateSignature ||
+        saved.sourceSignature !== expected.sourceSignature ||
+        saved.candidateRevision !== expected.candidateRevision ||
+        saved.round !== expected.round
+      ) {
+        return {};
+      }
+      return {
+        paperBase64: mockPdfDocuments.get(saved.paperUri || ''),
+        answersBase64: mockPdfDocuments.get(saved.answersUri || ''),
+      };
+    },
+  ),
+  saveChallengePdfDocument: jest.fn(
+    async (
+      _id: string,
+      runId: string,
+      kind: 'paper' | 'answers',
+      base64: string,
+      _expected: unknown,
+      signal?: AbortSignal,
+    ) => {
+      if (!mockRecord || mockRecord.runId !== runId) {
+        throw new Error('挑战记录已删除或过期');
+      }
+      if (signal?.aborted) {
+        throw new Error('已停止');
+      }
+      const uri = `file:///documents/challenges/challenge_test/staged-${kind}-${runId}.pdf`;
+      mockPdfDocuments.set(uri, base64);
+      mockRecord.pdfProgress = {
+        ...mockRecord.pdfProgress!,
+        [`${kind}Uri`]: uri,
+      };
+      return mockClone(mockRecord);
+    },
+  ),
   publishChallengePdfs: jest.fn(
     async (
       _id: string,
@@ -121,6 +164,7 @@ jest.mock('../src/challenge/store', () => ({
         status: 'completed',
         paperPdfUri: 'file:///documents/paper.pdf',
         answersPdfUri: 'file:///documents/answers.pdf',
+        pdfProgress: undefined,
       };
       return mockClone(mockRecord);
     },
@@ -603,6 +647,72 @@ function variantPatch(ids: string[], level: ChallengeLevel = 1) {
   };
 }
 
+function parsingFixture(count: number) {
+  const draft = mockClone(analysis);
+  const originalPage = mockClone(page);
+  draft.questions = Array.from({length: count}, (_, index) => ({
+    ...mockClone(analysis.questions[0]),
+    id: `q${index + 1}`,
+    number: String(index + 1),
+    stem: `${index + 1}. ${analysis.questions[0].stem}`,
+    sourceRefs: [
+      {pageIndex: 0, quote: `${index + 1}. ${analysis.questions[0].stem}`},
+    ],
+  }));
+  draft.totalScore = count * 5;
+  originalPage.text = `数学试卷\n一、解答\n${draft.questions
+    .map(question => question.stem)
+    .join('\n')}`;
+  originalPage.questionRegions = draft.questions.map((question, index) => ({
+    number: question.number,
+    box: {x: 0, y: index / count, width: 1, height: 1 / count},
+  }));
+  return {draft, originalPage};
+}
+function draftSummary(draft: ExamAnalysis) {
+  const {
+    isExam,
+    title,
+    subject,
+    subjectLabel,
+    educationLevel,
+    difficultySummary,
+    answerState,
+    totalScore,
+    timeLimitMinutes,
+    warnings,
+    unresolvedIssues,
+    titleEvidence,
+  } = draft;
+  return {
+    isExam,
+    title,
+    subject,
+    subjectLabel,
+    educationLevel,
+    difficultySummary,
+    answerState,
+    totalScore,
+    timeLimitMinutes,
+    warnings,
+    unresolvedIssues,
+    titleEvidence,
+  };
+}
+function draftBatch(payload: any, draft: ExamAnalysis) {
+  const remaining = draft.questions.filter(
+    question =>
+      !payload.knownQuestions.some((saved: any) => saved.id === question.id),
+  );
+  return {
+    pageComplete: remaining.length <= payload.maxQuestions,
+    questions: remaining.slice(0, payload.maxQuestions),
+    sections: draft.sections,
+    materials: draft.materials,
+    majorQuestions: draft.majorQuestions,
+  };
+}
+
 // Pin an already saved selection to exercise downstream dependency and recovery
 // behavior. Fresh task selection and call limits have separate regressions.
 function resumeSelectedWork(original: ExamAnalysis, level: ChallengeLevel = 1) {
@@ -623,6 +733,7 @@ function resumeSelectedWork(original: ExamAnalysis, level: ChallengeLevel = 1) {
 
 beforeEach(() => {
   jest.clearAllMocks();
+  mockPdfDocuments.clear();
   mockRecord = record();
   mockStandardApproved = true;
   sampler
@@ -3043,6 +3154,8 @@ test('非听力混合升档卷可完成评审和PDF发布，保留题不被误�
       ]),
     }),
     expect.anything(),
+    undefined,
+    expect.objectContaining({onDocument: expect.any(Function)}),
   );
   expect(publisher).toHaveBeenCalledTimes(1);
 });
@@ -3102,7 +3215,7 @@ test.each(['resume', 'restart'] as const)(
     expect(pages).toHaveLength(analysisMode === 'resume' ? 0 : 1);
     expect(
       request.mock.calls.filter(call => task(call[0]) === '挑战科目识别'),
-    ).toHaveLength(1);
+    ).toHaveLength(analysisMode === 'resume' ? 0 : 1);
   },
 );
 
@@ -3115,6 +3228,616 @@ test('失败后继续解析保留已完成页面，只重做后续结构与科�
     '挑战整卷分析',
     '挑战科目识别',
   ]);
+});
+
+test('末段结构解析截断仅缩当前批，断网保存已完成题，续做不重识页面或前批', async () => {
+  mockRecord = record(false);
+  const {draft, originalPage} = parsingFixture(4);
+  let interrupted = true;
+  const savedCounts: number[] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === 'page') {
+      return response(originalPage);
+    }
+    if (payload.phase === 'draft') {
+      savedCounts.push(payload.knownQuestions.length);
+      if (payload.maxQuestions > 2) {
+        throw new ModelOutputTruncatedError();
+      }
+      if (interrupted && payload.knownQuestions.length === 2) {
+        throw new Error('末段结构断网');
+      }
+      return response(draftBatch(payload, draft));
+    }
+    if (payload.phase === 'draft_summary') {
+      expect(payload).not.toHaveProperty('questions');
+      expect(payload.parsedQuestions).toHaveLength(4);
+      expect(payload.parsedQuestions[0]).not.toHaveProperty('stem');
+      return response(draftSummary(draft));
+    }
+    if (payload.task === '挑战科目识别') {
+      return response(identificationFor(input));
+    }
+    return route(input);
+  });
+  const large = {...settings, maxOutputTokens: 16000};
+  await expect(
+    analyzeChallenge('challenge_test', {settings: large}),
+  ).rejects.toThrow('末段结构断网');
+  expect(mockRecord?.analysisProgress?.draftBatches).toMatchObject({
+    questionLimit: 2,
+    partial: {questions: [{id: 'q1'}, {id: 'q2'}]},
+  });
+  expect(mockRecord?.pages).toEqual([originalPage]);
+  interrupted = false;
+  request.mockClear();
+  const result = await analyzeChallenge('challenge_test', {
+    settings: large,
+    analysisMode: 'resume',
+  });
+  expect(savedCounts).toEqual([0, 0, 2, 2]);
+  expect(request.mock.calls.some(call => task(call[0]) === 'page')).toBe(false);
+  expect(result.analysis?.questions.map(question => question.id)).toEqual([
+    'q1',
+    'q2',
+    'q3',
+    'q4',
+  ]);
+  expect(result.status).toBe('analyzed');
+});
+
+test('最后标题难度汇总截断后，继续只重试轻量汇总，所有原题结构已持久保存', async () => {
+  mockRecord = record(false);
+  const {draft, originalPage} = parsingFixture(3);
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === 'page') {
+      return response(originalPage);
+    }
+    if (payload.phase === 'draft') {
+      return response(draftBatch(payload, draft));
+    }
+    if (payload.phase === 'draft_summary') {
+      if (interrupted) {
+        throw new ModelOutputTruncatedError();
+      }
+      return response(draftSummary(draft));
+    }
+    if (payload.task === '挑战科目识别') {
+      return response(identificationFor(input));
+    }
+    return route(input);
+  });
+  await expect(analyzeChallenge('challenge_test', {settings})).rejects.toThrow(
+    '截断',
+  );
+  expect(
+    mockRecord?.analysisProgress?.draftBatches?.partial.questions,
+  ).toHaveLength(3);
+  expect(
+    mockRecord?.analysisProgress?.draftBatches?.completedPageIndices,
+  ).toEqual([0]);
+  interrupted = false;
+  request.mockClear();
+  const result = await analyzeChallenge('challenge_test', {
+    settings,
+    analysisMode: 'resume',
+  });
+  expect(
+    request.mock.calls.map(
+      call => requestPayload(call[0]).phase || task(call[0]),
+    ),
+  ).toEqual(['draft_summary', 'progressive_vote']);
+  expect(result.analysis?.questions).toHaveLength(3);
+});
+
+test('单题仍截断时保留前批，续做只请求该未完成原题而不丢前面解析', async () => {
+  mockRecord = record(false);
+  const {draft, originalPage} = parsingFixture(2);
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === 'page') {
+      return response(originalPage);
+    }
+    if (payload.phase === 'draft') {
+      if (interrupted && payload.knownQuestions.length) {
+        throw new ModelOutputTruncatedError();
+      }
+      return response(draftBatch(payload, draft));
+    }
+    if (payload.phase === 'draft_summary') {
+      return response(draftSummary(draft));
+    }
+    if (payload.task === '挑战科目识别') {
+      return response(identificationFor(input));
+    }
+    return route(input);
+  });
+  const small = {...settings, maxOutputTokens: 4000};
+  await expect(
+    analyzeChallenge('challenge_test', {settings: small}),
+  ).rejects.toThrow('已保存1题');
+  expect(
+    mockRecord?.analysisProgress?.draftBatches?.partial.questions,
+  ).toHaveLength(1);
+  interrupted = false;
+  request.mockClear();
+  await analyzeChallenge('challenge_test', {
+    settings: small,
+    analysisMode: 'resume',
+  });
+  const calls = request.mock.calls.filter(
+    call => requestPayload(call[0]).phase === 'draft',
+  );
+  expect(calls).toHaveLength(1);
+  expect(
+    requestPayload(calls[0][0]).knownQuestions.map(
+      (question: any) => question.id,
+    ),
+  ).toEqual(['q1']);
+});
+
+test('科目确认后的末段核验仅返回分析字段，截断拆批并保存，续做不重抽样或重写题干', async () => {
+  mockRecord = record(false);
+  const {draft, originalPage} = parsingFixture(5);
+  let interrupted = true;
+  const batches: string[][] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === 'page') {
+      return response(originalPage);
+    }
+    if (payload.phase === 'draft') {
+      return response({...draft, subject: 'unknown'});
+    }
+    if (payload.phase === 'confirmed_reanalysis') {
+      expect(payload).not.toHaveProperty('previousDraft');
+      expect(payload.batchMode).toBe('question_metadata');
+      batches.push([...payload.questionIds]);
+      if (payload.questionIds.length > 2) {
+        throw new ModelOutputTruncatedError();
+      }
+      if (interrupted && payload.questionIds.includes('q3')) {
+        throw new Error('核验后批断网');
+      }
+      return response({
+        questions: payload.questions.map((question: any) => ({
+          id: question.id,
+          knowledgePoints: question.knowledgePoints,
+          difficulty: {
+            ...question.difficulty,
+            explanation: '已核实原题推理障碍',
+          },
+        })),
+      });
+    }
+    if (payload.phase === 'confirmed_summary') {
+      return response(draftSummary(draft));
+    }
+    if (payload.task === '挑战科目识别') {
+      return response(identificationFor(input));
+    }
+    return route(input);
+  });
+  const small = {...settings, maxOutputTokens: 8000};
+  await expect(
+    analyzeChallenge('challenge_test', {settings: small}),
+  ).rejects.toThrow('核验后批断网');
+  expect(
+    mockRecord?.analysisProgress?.confirmedBatches?.completedQuestionIds,
+  ).toEqual(['q1', 'q2']);
+  expect(mockRecord?.subjectIdentification?.subject).toBe('math');
+  interrupted = false;
+  batches.length = 0;
+  request.mockClear();
+  const result = await analyzeChallenge('challenge_test', {
+    settings: small,
+    analysisMode: 'resume',
+  });
+  expect(batches.flat()).not.toContain('q1');
+  expect(batches.flat()).not.toContain('q2');
+  expect(
+    request.mock.calls.every(call => task(call[0]) === '挑战整卷分析'),
+  ).toBe(true);
+  expect(result.analysis?.questions.map(question => question.stem)).toEqual(
+    draft.questions.map(question => question.stem),
+  );
+  expect(result.status).toBe('analyzed');
+});
+
+test('科目核验全批完成但最后摘要失败，继续只重试该摘要，原票据和分析批次均复用', async () => {
+  mockRecord = record(false);
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.phase === 'draft') {
+      return response({...analysis, subject: 'unknown'});
+    }
+    if (payload.phase === 'confirmed_reanalysis') {
+      return response({
+        questions: payload.questions.map((question: any) => ({
+          id: question.id,
+          knowledgePoints: question.knowledgePoints,
+          difficulty: question.difficulty,
+        })),
+      });
+    }
+    if (payload.phase === 'confirmed_summary') {
+      if (interrupted) {
+        throw new ModelOutputTruncatedError();
+      }
+      return response(draftSummary(analysis));
+    }
+    if (payload.task === '挑战科目识别') {
+      return response(identificationFor(input));
+    }
+    return route(input);
+  });
+  await expect(analyzeChallenge('challenge_test', {settings})).rejects.toThrow(
+    '科目确认后原卷摘要汇总',
+  );
+  expect(
+    mockRecord?.analysisProgress?.confirmedBatches?.completedQuestionIds,
+  ).toEqual(['q1']);
+  expect(mockRecord?.subjectIdentification?.subject).toBe('math');
+  interrupted = false;
+  request.mockClear();
+  const result = await analyzeChallenge('challenge_test', {
+    settings,
+    analysisMode: 'resume',
+  });
+  expect(request.mock.calls.map(call => requestPayload(call[0]).phase)).toEqual(
+    ['confirmed_summary'],
+  );
+  expect(result.status).toBe('analyzed');
+});
+
+test('识科已保存前三票，追加样题断网后只续原来同一追加题，不重新随机或重复前三票', async () => {
+  mockRecord = record(false);
+  const {draft, originalPage} = parsingFixture(5);
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === 'page') {
+      return response(originalPage);
+    }
+    if (payload.phase === 'draft') {
+      return response(draft);
+    }
+    if (payload.task === '挑战科目识别') {
+      if (payload.samples.length === 1 && interrupted) {
+        throw new Error('追加识科断网');
+      }
+      return response({
+        votes: payload.samples.map((sample: any, index: number) => ({
+          questionId: sample.question.id,
+          subject: index === 2 ? 'english' : 'math',
+          courseName: index === 2 ? '英语' : '数学',
+          integrated: false,
+          reason: '按原题印刷任务核验',
+          evidence: sample.question.sourceRefs,
+        })),
+      });
+    }
+    return route(input);
+  });
+  await expect(analyzeChallenge('challenge_test', {settings})).rejects.toThrow(
+    '追加识科断网',
+  );
+  const saved = mockClone(mockRecord!.subjectVerification!);
+  expect(saved.votes).toHaveLength(3);
+  expect(saved.samples).toHaveLength(4);
+  interrupted = false;
+  request.mockClear();
+  const result = await analyzeChallenge('challenge_test', {
+    settings,
+    analysisMode: 'resume',
+  });
+  expect(request.mock.calls).toHaveLength(1);
+  expect(
+    requestPayload(request.mock.calls[0][0]).samples.map(
+      (sample: any) => sample.question.id,
+    ),
+  ).toEqual([saved.samples[3].selectedQuestionId]);
+  expect(result.subjectVerification?.candidateOrder).toEqual(
+    saved.candidateOrder,
+  );
+  expect(result.subjectVerification?.votes).toHaveLength(4);
+  expect(sampler).toHaveBeenCalledTimes(1);
+});
+
+test('长跨页原题保留完整原文上下文，分批只输出指定页新题，不能丢掉远页公共材料', async () => {
+  mockRecord = record(false);
+  mockRecord.pageUris = ['file:///p0.png', 'file:///p1.png', 'file:///p2.png'];
+  mockRecord.sources[0].pageUris = [...mockRecord.pageUris];
+  const sourcePages: ChallengePage[] = [
+    {...page, text: '数学试卷\n一、解答\n跨页共同条件：四个整数。'},
+    {
+      ...page,
+      pageIndex: 1,
+      documentType: 'exam_continuation',
+      text: '公共条件续页：将1、2、3、4分成两组。',
+    },
+    {
+      ...page,
+      pageIndex: 2,
+      documentType: 'exam_continuation',
+      text: `1. ${analysis.questions[0].stem}`,
+    },
+  ];
+  const draft = {
+    ...mockClone(analysis),
+    questions: [
+      {
+        ...mockClone(analysis.questions[0]),
+        sourceRefs: [{pageIndex: 2, quote: analysis.questions[0].stem}],
+        materialIds: ['shared'],
+      },
+    ],
+    materials: [
+      {
+        id: 'shared',
+        title: '原卷公共条件',
+        text: '跨页共同条件：四个整数。\n公共条件续页：将1、2、3、4分成两组。',
+        isListening: false,
+        figureIds: [],
+      },
+    ],
+  };
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === 'page') {
+      const textPart = (input as any)[0].content.find(
+        (part: any) => part.type === 'input_text',
+      ).text;
+      const index = Number(textPart.match(/pageIndex=(\d+)/)[1]);
+      return response(sourcePages[index]);
+    }
+    if (payload.phase === 'draft') {
+      expect(payload.pages).toHaveLength(3);
+      return response({
+        pageComplete: true,
+        questions: payload.pageIndex === 2 ? draft.questions : [],
+        sections: draft.sections,
+        majorQuestions: draft.majorQuestions,
+        materials: payload.pageIndex === 0 ? draft.materials : [],
+      });
+    }
+    if (payload.phase === 'draft_summary') {
+      return response(draftSummary(draft));
+    }
+    if (payload.task === '挑战科目识别') {
+      expect(payload.samples[0].materials[0].text).toContain('公共条件续页');
+      return response(identificationFor(input));
+    }
+    return route(input);
+  });
+  const result = await analyzeChallenge('challenge_test', {settings});
+  expect(result.analysis?.materials).toEqual(draft.materials);
+  expect(result.analysis?.questions).toHaveLength(1);
+  expect(result.analysis?.questions[0].sourceRefs[0].pageIndex).toBe(2);
+});
+
+test('识科断网后复用完整草稿与题池，完成解析后再继续不调模型也不清除已有新卷', async () => {
+  mockRecord = record(false);
+  request.mockImplementation(async (input: ModelInput) => {
+    if (task(input) === '挑战科目识别') {
+      throw new Error('识科断网');
+    }
+    return route(input);
+  });
+  await expect(analyzeChallenge('challenge_test', {settings})).rejects.toThrow(
+    '识科断网',
+  );
+  expect(mockRecord?.analysisProgress?.draft?.questions).toHaveLength(1);
+  const verification = mockClone(mockRecord?.subjectVerification);
+  request.mockReset().mockImplementation(route);
+  await analyzeChallenge('challenge_test', {settings, analysisMode: 'resume'});
+  expect(request.mock.calls.map(call => task(call[0]))).toEqual([
+    '挑战科目识别',
+  ]);
+  expect(sampler).toHaveBeenCalledTimes(1);
+  expect(mockRecord?.subjectVerification?.candidateOrder).toEqual(
+    verification?.candidateOrder,
+  );
+  const upgraded = await upgradeChallenge('challenge_test', 1, {settings});
+  request.mockClear();
+  const complete = await analyzeChallenge('challenge_test', {
+    settings,
+    analysisMode: 'resume',
+  });
+  expect(request).not.toHaveBeenCalled();
+  expect(complete.candidate).toEqual(upgraded.candidate);
+  expect(complete.paperPdfUri).toEqual(upgraded.paperPdfUri);
+});
+
+test('解析JSON纠正失败仍保存当前完整回复与反馈，续做保留纠错上下文和原页', async () => {
+  mockRecord = record(false);
+  request.mockImplementation(async (input: ModelInput) =>
+    task(input) === '挑战整卷分析'
+      ? {text: '{malformed-but-complete-response'}
+      : route(input),
+  );
+  await expect(
+    analyzeChallenge('challenge_test', {settings}),
+  ).rejects.toThrow();
+  expect(mockRecord?.analysisRequestProgress?.history).toHaveLength(2);
+  request.mockReset().mockImplementation(route);
+  await analyzeChallenge('challenge_test', {settings, analysisMode: 'resume'});
+  expect(
+    request.mock.calls.filter(call => task(call[0]) === 'page'),
+  ).toHaveLength(0);
+  expect(request.mock.calls[0][4]?.history?.[0]).toMatchObject({
+    role: 'assistant',
+    content: '{malformed-but-complete-response',
+  });
+  expect(mockRecord?.analysisRequestProgress).toBeUndefined();
+});
+
+test('五角色评审一席断网，续做只请求缺席角色，保留原五席快照和候选修订版', async () => {
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战标准一致性校核') {
+      if (interrupted && payload.role === 'presentation') {
+        throw new Error('呈现评审断网');
+      }
+      return response(roleReview(input));
+    }
+    return route(input);
+  });
+  await expect(
+    upgradeChallenge('challenge_test', 1, {
+      settings: {...settings, roundtableSize: 5},
+    }),
+  ).rejects.toThrow('呈现评审断网');
+  expect(mockRecord?.reviewRounds[0].reviews).toHaveLength(4);
+  expect(mockRecord?.reviewProgress?.batches).toHaveLength(4);
+  const revision = mockRecord!.candidateRevision;
+  interrupted = false;
+  request.mockClear();
+  const result = await upgradeChallenge('challenge_test', 1, {
+    settings: {...settings, roundtableSize: 3},
+  });
+  expect(request.mock.calls.map(call => requestPayload(call[0]).role)).toEqual([
+    'presentation',
+  ]);
+  expect(result.candidateRevision).toBe(revision);
+  expect(result.reviewRoundtableSize).toBe(5);
+  expect(result.reviewRounds).toHaveLength(1);
+  expect(result.reviewRounds[0].reviews).toHaveLength(5);
+  expect(result.status).toBe('completed');
+});
+
+test('同一角色分批评审中断，重试预算改变也只评审未完成题，已完成子批不重复请求', async () => {
+  const original = patchExam(8);
+  resumeSelectedWork(original, 3);
+  let interrupted = true;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      return response(variantPatch(payload.questionIds, 3));
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      if (payload.reviewQuestionIds.length > 2) {
+        throw new ModelOutputTruncatedError();
+      }
+      if (interrupted && payload.reviewQuestionIds.includes('q3')) {
+        throw new Error('本席后批断网');
+      }
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  await expect(
+    upgradeChallenge('challenge_test', 3, {
+      settings: {...settings, maxOutputTokens: 16000},
+    }),
+  ).rejects.toThrow('本席后批断网');
+  expect(
+    mockRecord?.reviewProgress?.batches.flatMap(batch => batch.questionIds),
+  ).toEqual(['q1', 'q2']);
+  expect(mockRecord?.reviewRounds[0].reviews).toHaveLength(0);
+  interrupted = false;
+  request.mockClear();
+  const result = await upgradeChallenge('challenge_test', 3, {
+    settings: {...settings, maxOutputTokens: 12000},
+  });
+  expect(
+    request.mock.calls.every(call => task(call[0]) === '挑战标准一致性校核'),
+  ).toBe(true);
+  const ids = request.mock.calls.flatMap(
+    call => requestPayload(call[0]).reviewQuestionIds,
+  );
+  expect(ids).not.toContain('q1');
+  expect(ids).not.toContain('q2');
+  expect(result.reviewRounds).toHaveLength(1);
+  expect(result.reviewRounds[0].reviews[0].checkedQuestionIds).toHaveLength(8);
+  expect(result.status).toBe('completed');
+});
+
+test('PDF渲染失败后继续直接导出，已完成命题和评审不再调用模型', async () => {
+  builder.mockRejectedValueOnce(new Error('字体读取失败'));
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings}),
+  ).rejects.toThrow('字体读取失败');
+  const revision = mockRecord!.candidateRevision;
+  request.mockClear();
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(request).not.toHaveBeenCalled();
+  expect(result.candidateRevision).toBe(revision);
+  expect(result.reviewRounds).toHaveLength(1);
+  expect(result.status).toBe('completed');
+});
+
+test('试卷PDF完成而答案PDF失败时保存独立文件断点，续做只渲染缺少的答案文档', async () => {
+  builder.mockImplementationOnce(
+    async (_analysis, _paper, _pages, _font, options) => {
+      await options!.onDocument!('paper', 'JVBERi0=');
+      throw new Error('答案PDF字体读取失败');
+    },
+  );
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings}),
+  ).rejects.toThrow('答案PDF字体读取失败');
+  expect(mockRecord?.pdfProgress?.paperUri).toBeTruthy();
+  expect(mockRecord?.paperPdfUri).toBeUndefined();
+  expect(mockRecord?.answersPdfUri).toBeUndefined();
+  request.mockClear();
+  builder.mockClear();
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(request).not.toHaveBeenCalled();
+  expect(builder.mock.calls[0][4]).toMatchObject({paperBase64: 'JVBERi0='});
+  expect(result.status).toBe('completed');
+});
+
+test('双PDF都保存后发布失败，继续复用两份文件直接发布，不再渲染或请求模型', async () => {
+  publisher.mockRejectedValueOnce(new Error('双PDF发布存储失败'));
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings}),
+  ).rejects.toThrow('双PDF发布存储失败');
+  expect(mockRecord?.pdfProgress?.paperUri).toBeTruthy();
+  expect(mockRecord?.pdfProgress?.answersUri).toBeTruthy();
+  expect(mockRecord?.paperPdfUri).toBeUndefined();
+  request.mockClear();
+  builder.mockClear();
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(request).not.toHaveBeenCalled();
+  expect(builder).not.toHaveBeenCalled();
+  expect(result.status).toBe('completed');
+});
+
+test('续做不能绕过三轮评审上限，只有明确重新升档才开启新命题', async () => {
+  let revise = true;
+  request.mockImplementation(async (input: ModelInput) =>
+    task(input) === '挑战标准一致性校核'
+      ? response(roleReview(input, revise ? 'revise' : 'approve'))
+      : route(input),
+  );
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings}),
+  ).rejects.toThrow('连续3轮');
+  request.mockClear();
+  await expect(
+    upgradeChallenge('challenge_test', 1, {settings}),
+  ).rejects.toThrow('连续3轮');
+  expect(request).not.toHaveBeenCalled();
+  revise = false;
+  const result = await upgradeChallenge('challenge_test', 1, {
+    settings,
+    upgradeMode: 'restart',
+  });
+  expect(
+    request.mock.calls.some(call => task(call[0]) === '挑战试卷生成'),
+  ).toBe(true);
+  expect(result.reviewRounds).toHaveLength(1);
+  expect(result.status).toBe('completed');
 });
 
 test('同学科有效识科票据的课程别名和说明差异不再误挡升档', async () => {

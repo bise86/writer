@@ -312,6 +312,57 @@ export interface ChallengeCall {
   stage: ChallengeStage;
   call: ModelCall;
 }
+export interface ChallengeAnalysisProgress {
+  version: 'analysis-steps-v1';
+  sourceSignature: string;
+  pagesSignature: string;
+  stage: 'pages' | 'draft' | 'subject' | 'confirmed_analysis' | 'completed';
+  draft?: ExamDraft;
+  confirmedAnalysis?: ExamAnalysis;
+  draftBatches?: ChallengeDraftBatches;
+  confirmedBatches?: ChallengeConfirmedBatches;
+}
+export interface ChallengeDraftBatches {
+  version: 'draft-question-batches-v1';
+  partial: ExamDraft;
+  completedPageIndices: number[];
+  questionLimit: number;
+}
+export interface ChallengeConfirmedBatches {
+  subject: ChallengeSubject;
+  partial: ExamDraft;
+  completedQuestionIds: string[];
+}
+export interface ChallengeAnalysisRequestProgress {
+  sourceSignature: string;
+  requestSignature: string;
+  history: {role: 'assistant' | 'user'; content: string}[];
+}
+export interface ChallengeCandidateCheckpoint {
+  sourceSignature: string;
+  candidateSignature: string;
+  candidateRevision: number;
+  policyVersion: string;
+  reviewProtocolVersion: string;
+  roundtableSize: ChallengeRoundtableSize;
+}
+export interface ChallengeReviewBatch {
+  role: ChallengeReviewRole;
+  pageIndex: number;
+  questionIds: string[];
+  report: ChallengeReview;
+}
+export interface ChallengeReviewProgress extends ChallengeCandidateCheckpoint {
+  version: 'review-batches-v1';
+  round: number;
+  batches: ChallengeReviewBatch[];
+}
+export interface ChallengePdfProgress extends ChallengeCandidateCheckpoint {
+  version: 'pdf-documents-v1';
+  round: number;
+  paperUri?: string;
+  answersUri?: string;
+}
 export interface ChallengeGenerationProgress {
   version: 'question-patches-v1';
   sourceSignature: string;
@@ -349,7 +400,11 @@ export interface ChallengeRecord {
   subjectIdentification?: SubjectIdentification;
   subjectVerification?: SubjectVerification;
   loadedSubjectRules?: {subject: ChallengeSubject; policyVersion: string};
+  analysisProgress?: ChallengeAnalysisProgress;
+  analysisRequestProgress?: ChallengeAnalysisRequestProgress;
   generationProgress?: ChallengeGenerationProgress;
+  reviewProgress?: ChallengeReviewProgress;
+  pdfProgress?: ChallengePdfProgress;
   pages: ChallengePage[];
   candidate?: ChallengePaper;
   candidateRevision?: number;
@@ -365,6 +420,7 @@ export interface ChallengeRecord {
 export interface ChallengeRunOptions {
   settings: AppSettings;
   analysisMode?: 'resume' | 'restart';
+  upgradeMode?: 'resume' | 'restart';
   signal?: AbortSignal;
   onUpdate?: (record: ChallengeRecord) => void;
 }

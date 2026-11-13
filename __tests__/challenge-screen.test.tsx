@@ -26,7 +26,10 @@ import {
   CHALLENGE_REVIEW_PROTOCOL_VERSION,
   getChallengeReviewRoles,
 } from '../src/challenge/review';
-import {generationSeed} from '../src/challenge/generation';
+import {
+  generationSeed,
+  generationCheckpoint,
+} from '../src/challenge/generation';
 import {
   discardChallengePdf,
   pickChallengePdf,
@@ -731,6 +734,97 @@ test('失败或待解析记录直接续解析，老确认框不能作用于另�
   await press('‹ 返回挑战');
   await act(async () => stale());
   expect(analyzeChallenge).toHaveBeenCalledTimes(1);
+});
+
+test('末段解析失败展示已保存原题批次和原页文字，继续按钮保留断点', async () => {
+  const failed: ChallengeRecord = {
+    ...base,
+    status: 'failed',
+    pages: [
+      {
+        pageIndex: 0,
+        documentType: 'exam',
+        text: '已保存的印刷原题文字',
+        hasStudentAnswers: false,
+        unreadableParts: [],
+        figures: [],
+      },
+    ],
+    analysisProgress: {
+      version: 'analysis-steps-v1',
+      stage: 'draft',
+      sourceSignature: 'source',
+      pagesSignature: 'pages',
+      draftBatches: {
+        version: 'draft-question-batches-v1',
+        questionLimit: 1,
+        completedPageIndices: [],
+        partial: {...analysis, subjectIdentification: undefined},
+      },
+    },
+  };
+  await openSaved(failed);
+  expect(text()).toContain('已保存进度，可继续');
+  expect(text()).toContain('原题结构已保存 1 题');
+  await press('查看已识别文字');
+  expect(text()).toContain('已保存的印刷原题文字');
+  await press('继续解析试卷');
+  await settle();
+  expect(analyzeChallenge).toHaveBeenLastCalledWith(
+    base.id,
+    expect.objectContaining({analysisMode: 'resume'}),
+  );
+});
+
+test.each([false, true])(
+  '升档中断后展示对应继续入口（评审已通过：%s），点击使用resume模式',
+  async passed => {
+    const ready = roundtableRecord(3);
+    const failed: ChallengeRecord = {
+      ...ready,
+      status: 'failed',
+      paperPdfUri: undefined,
+      answersPdfUri: undefined,
+      generationProgress: generationCheckpoint(analysis, 1, ['q1'], candidate),
+      reviewRounds: passed
+        ? ready.reviewRounds
+        : ready.reviewRounds.map(round => ({
+            ...round,
+            reviews: round.reviews.slice(0, 1),
+          })),
+    };
+    await openSaved(failed, 3);
+    await press(passed ? '继续生成PDF' : '继续升档');
+    await settle();
+    expect(upgradeChallenge).toHaveBeenLastCalledWith(
+      base.id,
+      1,
+      expect.objectContaining({upgradeMode: 'resume'}),
+    );
+  },
+);
+
+test('重新升档需明确确认，确认后传递restart模式', async () => {
+  const failed: ChallengeRecord = {
+    ...analyzed,
+    status: 'failed',
+    generationProgress: generationCheckpoint(
+      analysis,
+      1,
+      [],
+      generationSeed(analysis, 1),
+    ),
+  };
+  await openSaved(failed);
+  await press('重新升档');
+  expect(upgradeChallenge).not.toHaveBeenCalled();
+  await confirm('重新升档');
+  await settle();
+  expect(upgradeChallenge).toHaveBeenLastCalledWith(
+    base.id,
+    1,
+    expect.objectContaining({upgradeMode: 'restart'}),
+  );
 });
 
 test('逐题分析、难度分布、知识范围只在分析页卡，原卷始终在页卡外', async () => {

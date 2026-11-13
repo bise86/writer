@@ -5,7 +5,13 @@ import {join} from 'path';
 import {Buffer as mockBuffer} from 'buffer';
 import type {ModelCall} from '../src/types';
 import {CHALLENGE_POLICY_VERSION} from '../src/challenge/rules';
-import type {ChallengePaper, ChallengeSource} from '../src/challenge/types';
+import type {
+  ChallengePaper,
+  ChallengeSource,
+  ChallengePdfProgress,
+  ExamAnalysis,
+} from '../src/challenge/types';
+import {candidateCheckpoint} from '../src/challenge/checkpoints';
 import {
   CHALLENGE_REVIEW_PROTOCOL_VERSION,
   getChallengeReviewRoles,
@@ -261,6 +267,50 @@ async function configuredRecord(size: 0 | 3 | 5) {
   });
 }
 
+async function stagedRecord() {
+  let value = await configuredRecord(0);
+  const candidate = value.candidate!;
+  const analysis: ExamAnalysis = {
+    isExam: true,
+    title: '数学原卷',
+    subject: 'math',
+    subjectLabel: '数学',
+    educationLevel: 'middle',
+    knowledgePoints: ['加法'],
+    difficultySummary: '原卷难度',
+    difficultyBasis: 'estimated',
+    answerState: 'blank',
+    sections: candidate.sections,
+    materials: [],
+    figures: [],
+    questions: candidate.questions.map(question => ({
+      ...question,
+      sourceRefs: [{pageIndex: 0, quote: '原条件'}],
+      difficulty: {rating: 1, reasoningSteps: 1, explanation: '直接计算'},
+    })),
+    totalScore: 5,
+    timeLimitMinutes: 5,
+    warnings: [],
+    unresolvedIssues: [],
+  };
+  const identity: ChallengePdfProgress = {
+    ...candidateCheckpoint(
+      analysis,
+      candidate,
+      value.pageUris,
+      value.candidateRevision!,
+      0,
+    ),
+    version: 'pdf-documents-v1',
+    round: 1,
+  };
+  value = await store.updateChallenge(value.id, {
+    analysis,
+    pdfProgress: identity,
+  });
+  return {value, identity};
+}
+
 beforeEach(() => {
   jest.resetModules();
   jest.clearAllMocks();
@@ -274,6 +324,160 @@ beforeEach(() => {
   store = require('../src/challenge/store');
 });
 afterEach(() => rmSync(directory, {recursive: true, force: true}));
+
+test('每份PDF独立持久化为私有断点，重载可续做且公开下载须等待双文件发布', async () => {
+  const {value, identity} = await stagedRecord();
+  const saved = await store.saveChallengePdfDocument(
+    value.id,
+    'run_current',
+    'paper',
+    pdfs.paperBase64,
+    identity,
+  );
+  expect(saved.paperPdfUri).toBeUndefined();
+  expect(saved.answersPdfUri).toBeUndefined();
+  expect(saved.pdfProgress?.paperUri).toContain('staged-paper-run_current.pdf');
+  const restored = (await store.getChallenge(value.id))!;
+  expect(await store.loadChallengePdfDocuments(restored, identity)).toEqual({
+    paperBase64: pdfs.paperBase64,
+  });
+  await store.saveChallengePdfDocument(
+    value.id,
+    'run_current',
+    'answers',
+    pdfs.answersBase64,
+    identity,
+  );
+  const completed = await store.publishChallengePdfs(
+    value.id,
+    'run_current',
+    pdfs,
+  );
+  expect(completed.status).toBe('completed');
+  expect(completed.pdfProgress).toBeUndefined();
+  expect(mockFiles.has(mockPath(saved.pdfProgress!.paperUri!))).toBe(false);
+  expect(mockFiles.has(mockPath(completed.paperPdfUri!))).toBe(true);
+});
+
+test('PDF断点来源或候选修订改变时不可复用；文件缺失或损坏时只重建缺失文档', async () => {
+  const {value, identity} = await stagedRecord();
+  await store.saveChallengePdfDocument(
+    value.id,
+    'run_current',
+    'paper',
+    pdfs.paperBase64,
+    identity,
+  );
+  const both = await store.saveChallengePdfDocument(
+    value.id,
+    'run_current',
+    'answers',
+    pdfs.answersBase64,
+    identity,
+  );
+  expect(
+    await store.loadChallengePdfDocuments(both, {
+      ...identity,
+      candidateRevision: identity.candidateRevision + 1,
+    }),
+  ).toEqual({});
+  expect(
+    await store.loadChallengePdfDocuments(both, {
+      ...identity,
+      sourceSignature: 'different-source',
+    }),
+  ).toEqual({});
+  expect(
+    await store.loadChallengePdfDocuments(
+      {...both, pdfProgress: {...identity, version: 'old' as any}},
+      identity,
+    ),
+  ).toEqual({});
+  await store.updateChallenge(value.id, {
+    pdfProgress: {...both.pdfProgress!, version: 'old' as any},
+  });
+  await expect(
+    store.saveChallengePdfDocument(
+      value.id,
+      'run_current',
+      'answers',
+      pdfs.answersBase64,
+      identity,
+    ),
+  ).rejects.toThrow('已改变');
+  await store.updateChallenge(value.id, {pdfProgress: both.pdfProgress});
+  mockFiles.delete(mockPath(both.pdfProgress!.answersUri!));
+  expect(await store.loadChallengePdfDocuments(both, identity)).toEqual({
+    paperBase64: pdfs.paperBase64,
+  });
+  mockFiles.set(
+    mockPath(both.pdfProgress!.answersUri!),
+    mockBuffer.from('broken-pdf'),
+  );
+  expect(await store.loadChallengePdfDocuments(both, identity)).toEqual({
+    paperBase64: pdfs.paperBase64,
+  });
+  await store.updateChallenge(value.id, {
+    candidate: {...value.candidate!, title: '新修订试卷'},
+  });
+  await expect(
+    store.saveChallengePdfDocument(
+      value.id,
+      'run_current',
+      'answers',
+      pdfs.answersBase64,
+      identity,
+    ),
+  ).rejects.toThrow('已改变');
+});
+
+test('中止或写盘失败不会保存虚假PDF完成断点', async () => {
+  const {value, identity} = await stagedRecord();
+  const controller = new AbortController();
+  controller.abort();
+  await expect(
+    store.saveChallengePdfDocument(
+      value.id,
+      'run_current',
+      'paper',
+      pdfs.paperBase64,
+      identity,
+      controller.signal,
+    ),
+  ).rejects.toThrow('停止');
+  (fs.writeFile as jest.Mock).mockRejectedValueOnce(new Error('disk full'));
+  await expect(
+    store.saveChallengePdfDocument(
+      value.id,
+      'run_current',
+      'paper',
+      pdfs.paperBase64,
+      identity,
+    ),
+  ).rejects.toThrow('disk full');
+  const restored = (await store.getChallenge(value.id))!;
+  expect(restored.pdfProgress?.paperUri).toBeUndefined();
+  expect(await store.loadChallengePdfDocuments(restored, identity)).toEqual({});
+});
+
+test('PDF断点只读取本记录规范私有文件路径，不读取原图或目录外文件', async () => {
+  const {value, identity} = await stagedRecord();
+  const readFile = fs.readFile as jest.Mock;
+  readFile.mockClear();
+  for (const uri of [
+    value.pageUris[0],
+    'file:///other.pdf',
+    `file:///documents/challenges/${value.id}/../staged-paper-run_current.pdf`,
+  ]) {
+    expect(
+      await store.loadChallengePdfDocuments(
+        {...value, pdfProgress: {...identity, paperUri: uri}},
+        identity,
+      ),
+    ).toEqual({});
+  }
+  expect(readFile).not.toHaveBeenCalled();
+});
 
 test('导入复制到持久目录，记录与重载独立于原相机临时文件', async () => {
   const created = await store.createChallenge([source]);

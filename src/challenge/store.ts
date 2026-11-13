@@ -4,7 +4,17 @@ import {Image, Platform} from 'react-native';
 import ImageEditor from '@react-native-community/image-editor';
 import {ModelCall} from '../types';
 import {newRecordId} from '../services/usage';
-import {ChallengeRecord, ChallengeSource, ChallengeStage} from './types';
+import {
+  ChallengeRecord,
+  ChallengeSource,
+  ChallengeStage,
+  ChallengePdfProgress,
+} from './types';
+import {
+  candidateCheckpoint,
+  checkpointSignature,
+  sameCandidateCheckpoint,
+} from './checkpoints';
 import {CHALLENGE_POLICY_VERSION, challengeStandardApproved} from './rules';
 import {hasPassedChallengeReview} from './review';
 
@@ -318,6 +328,119 @@ export function appendChallengeCall(
       : [...current.calls, {stage, call: snapshot}],
   }));
 }
+export async function loadChallengePdfDocuments(
+  record: ChallengeRecord,
+  expected: ChallengePdfProgress,
+) {
+  const saved = record.pdfProgress;
+  const result: {paperBase64?: string; answersBase64?: string} = {};
+  if (
+    saved?.version !== expected.version ||
+    saved.round !== expected.round ||
+    !sameCandidateCheckpoint(saved, expected)
+  ) {
+    return result;
+  }
+  for (const kind of ['paper', 'answers'] as const) {
+    const uri = saved[`${kind}Uri`];
+    const prefix = `file://${folder(record.id)}/`;
+    if (
+      !uri?.startsWith(prefix) ||
+      !new RegExp(`^staged-${kind}-run_[a-zA-Z0-9_-]+\\.pdf$`).test(
+        uri.slice(prefix.length),
+      )
+    ) {
+      continue;
+    }
+    try {
+      const value = await RNFS.readFile(path(uri), 'base64');
+      if (value.startsWith('JVBER')) {
+        result[`${kind}Base64`] = value;
+      }
+    } catch (_) {
+      /* Rebuild just the missing or damaged document. */
+    }
+  }
+  return result;
+}
+export async function saveChallengePdfDocument(
+  id: string,
+  runId: string,
+  kind: 'paper' | 'answers',
+  base64: string,
+  expected: ChallengePdfProgress,
+  signal?: AbortSignal,
+): Promise<ChallengeRecord> {
+  folder(id);
+  if (
+    !/^run_[a-zA-Z0-9_-]+$/.test(runId) ||
+    !base64.startsWith('JVBER') ||
+    !['paper', 'answers'].includes(kind)
+  ) {
+    throw new Error('PDF断点内容或编号无效');
+  }
+  return serial(id, async () => {
+    const database = await db();
+    const record = await read(database, id);
+    if (!record) {
+      throw new ChallengeDeletedError();
+    }
+    if (signal?.aborted) {
+      throw new Error('已停止生成PDF');
+    }
+    if (
+      record.runId !== runId ||
+      record.status !== 'exporting' ||
+      !record.candidate ||
+      record.candidateRevision !== expected.candidateRevision ||
+      checkpointSignature(record.candidate) !== expected.candidateSignature ||
+      !record.analysis ||
+      !sameCandidateCheckpoint(
+        candidateCheckpoint(
+          record.analysis,
+          record.candidate,
+          record.pageUris,
+          record.candidateRevision,
+          expected.roundtableSize,
+        ),
+        expected,
+      ) ||
+      record.policyVersion !== expected.policyVersion ||
+      record.reviewProtocolVersion !== expected.reviewProtocolVersion ||
+      record.reviewRoundtableSize !== expected.roundtableSize ||
+      record.pdfProgress?.version !== expected.version ||
+      !sameCandidateCheckpoint(record.pdfProgress, expected) ||
+      record.pdfProgress?.round !== expected.round ||
+      !hasPassedChallengeReview(record)
+    ) {
+      throw new Error('PDF断点对应的试卷或评审配置已改变');
+    }
+    const file = `${folder(id)}/staged-${kind}-${runId}.pdf`;
+    try {
+      await RNFS.writeFile(file, base64, 'base64');
+      if (signal?.aborted) {
+        throw new Error('已停止生成PDF');
+      }
+      if (deleted.has(id)) {
+        throw new ChallengeDeletedError();
+      }
+      const saved: ChallengeRecord = {
+        ...record,
+        pdfProgress: {...record.pdfProgress!, [`${kind}Uri`]: `file://${file}`},
+        progress:
+          kind === 'paper'
+            ? '试卷PDF已保存，继续生成答案PDF'
+            : '答案PDF已保存，正在完成两份PDF发布',
+        updatedAt: new Date().toISOString(),
+      };
+      await write(database, saved);
+      return saved;
+    } catch (error) {
+      await RNFS.unlink(file).catch(() => undefined);
+      throw error;
+    }
+  });
+}
 export async function publishChallengePdfs(
   id: string,
   runId: string,
@@ -370,11 +493,25 @@ export async function publishChallengePdfs(
         status: 'completed',
         paperPdfUri: `file://${paper}`,
         answersPdfUri: `file://${answers}`,
+        pdfProgress: undefined,
         progress: '按升档标准校核完成，试卷与答案PDF已生成',
         error: '',
         updatedAt: new Date().toISOString(),
       };
       await write(database, completed);
+      const prefix = `file://${folder(id)}/`;
+      await Promise.allSettled(
+        [record.pdfProgress?.paperUri, record.pdfProgress?.answersUri]
+          .filter(
+            (uri): uri is string =>
+              !!uri &&
+              uri.startsWith(prefix) &&
+              /^staged-(?:paper|answers)-run_[a-zA-Z0-9_-]+\.pdf$/.test(
+                uri.slice(prefix.length),
+              ),
+          )
+          .map(uri => RNFS.unlink(path(uri))),
+      );
       return completed;
     } catch (error) {
       await Promise.allSettled([RNFS.unlink(paper), RNFS.unlink(answers)]);

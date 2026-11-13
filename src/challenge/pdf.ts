@@ -498,12 +498,19 @@ function writeLearningGuides(
   }
 }
 
+export interface ChallengePdfBuildOptions {
+  paperBase64?: string;
+  answersBase64?: string;
+  onDocument?: (kind: 'paper' | 'answers', base64: string) => Promise<void>;
+}
+
 /** Build separate printable artifacts from the validated candidate only. */
 export async function buildChallengePdfs(
   analysis: ExamAnalysis,
   paper: ChallengePaper,
   pageUris: string[],
   fontData?: string | Uint8Array,
+  resume?: ChallengePdfBuildOptions,
 ): Promise<{paperBase64: string; answersBase64: string}> {
   analysis = prepareRetainedAnalysis(analysis);
   if (!analysis.isExam || !paper.title.trim() || !paper.questions.length) {
@@ -538,276 +545,296 @@ export async function buildChallengePdfs(
   ) {
     throw new Error('解析异常题必须原样保留，不得把待核题当作已升档题输出');
   }
-  const writer = await newWriter(analysis, paper, false, fontData);
-  writer.text(paper.title, 18, 26);
-  writer.text(
-    `${analysis.subjectLabel}  ·  升${paper.level}档${
-      paper.totalScore === null ? '' : `  ·  满分 ${paper.totalScore} 分`
-    }${
-      paper.timeLimitMinutes === null
-        ? ''
-        : `  ·  ${paper.timeLimitMinutes} 分钟`
-    }`,
-    10,
-    18,
-    MUTED,
-  );
-  writer.text('姓名：________________  班级：________________', 11, 20);
-  if (paper.questions.some(question => question.isListening)) {
-    writer.text('听力题保持原样，请配合原卷录音作答。', 10, 17, MUTED);
+  if (
+    [resume?.paperBase64, resume?.answersBase64].some(
+      value => value !== undefined && !value.startsWith('JVBER'),
+    )
+  ) {
+    throw new Error('保存的PDF内容无效，不能复用');
   }
-  writer.gap();
-  const materialLabels = new Map(
-    paper.materials.map((material, index) => [
-      material.id,
-      `材料 ${index + 1}`,
-    ]),
-  );
-  const figureLabels = new Map(
-    paper.figures.map((figure, index) => [figure.id, `图 ${index + 1}`]),
-  );
-  const materialIds = new Set<string>();
-  const figureIds = new Set<string>();
-  const figure = async (id: string) => {
-    if (figureIds.has(id)) {
-      return;
-    }
-    const item: ChallengeFigure | undefined = paper.figures.find(
-      value => value.id === id,
+  let paperBase64 = resume?.paperBase64;
+  if (!paperBase64) {
+    const writer = await newWriter(analysis, paper, false, fontData);
+    writer.text(paper.title, 18, 26);
+    writer.text(
+      `${analysis.subjectLabel}  ·  升${paper.level}档${
+        paper.totalScore === null ? '' : `  ·  满分 ${paper.totalScore} 分`
+      }${
+        paper.timeLimitMinutes === null
+          ? ''
+          : `  ·  ${paper.timeLimitMinutes} 分钟`
+      }`,
+      10,
+      18,
+      MUTED,
     );
-    if (!item) {
-      throw new Error('试卷缺少题目引用的图示');
+    writer.text('姓名：________________  班级：________________', 11, 20);
+    if (paper.questions.some(question => question.isListening)) {
+      writer.text('听力题保持原样，请配合原卷录音作答。', 10, 17, MUTED);
     }
-    writer.ensure(70);
-    writer.text(figureLabels.get(id)!, 10, 17, MUTED);
-    if (item.kind === 'source') {
-      writer.image(await croppedSourceImage(writer, item, analysis, pageUris));
-    } else {
-      writer.drawing(item);
-    }
-    if (item.caption.trim()) {
-      writer.text(item.caption, 10, 17, MUTED);
-    }
-    writer.gap(5);
-    figureIds.add(id);
-  };
-  let sectionId = '';
-  for (const question of paper.questions) {
-    if (sectionId !== question.sectionId) {
-      const section = paper.sections.find(
-        item => item.id === question.sectionId,
-      );
-      if (!section) {
-        throw new Error('试卷缺少题目所属部分');
+    writer.gap();
+    const materialLabels = new Map(
+      paper.materials.map((material, index) => [
+        material.id,
+        `材料 ${index + 1}`,
+      ]),
+    );
+    const figureLabels = new Map(
+      paper.figures.map((figure, index) => [figure.id, `图 ${index + 1}`]),
+    );
+    const materialIds = new Set<string>();
+    const figureIds = new Set<string>();
+    const figure = async (id: string) => {
+      if (figureIds.has(id)) {
+        return;
       }
-      writer.ensure(72);
-      writer.text(section.title, 14, 23);
-      if (section.instructions.trim()) {
-        writer.text(section.instructions, 11, 18);
+      const item: ChallengeFigure | undefined = paper.figures.find(
+        value => value.id === id,
+      );
+      if (!item) {
+        throw new Error('试卷缺少题目引用的图示');
+      }
+      writer.ensure(70);
+      writer.text(figureLabels.get(id)!, 10, 17, MUTED);
+      if (item.kind === 'source') {
+        writer.image(
+          await croppedSourceImage(writer, item, analysis, pageUris),
+        );
+      } else {
+        writer.drawing(item);
+      }
+      if (item.caption.trim()) {
+        writer.text(item.caption, 10, 17, MUTED);
       }
       writer.gap(5);
-      sectionId = section.id;
-    }
-    const source = analysis.questions.find(item => item.id === question.id)!;
-    for (const id of question.materialIds) {
-      if (materialIds.has(id)) {
-        continue;
+      figureIds.add(id);
+    };
+    let sectionId = '';
+    for (const question of paper.questions) {
+      if (sectionId !== question.sectionId) {
+        const section = paper.sections.find(
+          item => item.id === question.sectionId,
+        );
+        if (!section) {
+          throw new Error('试卷缺少题目所属部分');
+        }
+        writer.ensure(72);
+        writer.text(section.title, 14, 23);
+        if (section.instructions.trim()) {
+          writer.text(section.instructions, 11, 18);
+        }
+        writer.gap(5);
+        sectionId = section.id;
       }
-      const material = paper.materials.find(item => item.id === id);
-      if (!material) {
-        throw new Error('试卷缺少题目引用的材料');
-      }
-      const label = materialLabels.get(id)!;
-      writer.ensure(65);
-      writer.text(
-        `${label}${material.title.trim() ? ` · ${material.title}` : ''}`,
-        12,
-        20,
-      );
-      writer.setContext(label);
-      writer.text(material.text);
-      for (const idOfFigure of material.figureIds) {
-        const item = paper.figures.find(value => value.id === idOfFigure);
-        if (
-          question.upgrade.mode === 'retained' &&
-          source.originalRegions?.length &&
-          item?.kind === 'source' &&
-          item.containsStudentMarks
-        ) {
+      const source = analysis.questions.find(item => item.id === question.id)!;
+      for (const id of question.materialIds) {
+        if (materialIds.has(id)) {
           continue;
         }
-        await figure(idOfFigure);
+        const material = paper.materials.find(item => item.id === id);
+        if (!material) {
+          throw new Error('试卷缺少题目引用的材料');
+        }
+        const label = materialLabels.get(id)!;
+        writer.ensure(65);
+        writer.text(
+          `${label}${material.title.trim() ? ` · ${material.title}` : ''}`,
+          12,
+          20,
+        );
+        writer.setContext(label);
+        writer.text(material.text);
+        for (const idOfFigure of material.figureIds) {
+          const item = paper.figures.find(value => value.id === idOfFigure);
+          if (
+            question.upgrade.mode === 'retained' &&
+            source.originalRegions?.length &&
+            item?.kind === 'source' &&
+            item.containsStudentMarks
+          ) {
+            continue;
+          }
+          await figure(idOfFigure);
+        }
+        writer.setContext('');
+        writer.gap();
+        materialIds.add(id);
       }
-      writer.setContext('');
-      writer.gap();
-      materialIds.add(id);
-    }
-    if (
-      question.upgrade.mode === 'retained' &&
-      source.originalRegions?.length
-    ) {
+      if (
+        question.upgrade.mode === 'retained' &&
+        source.originalRegions?.length
+      ) {
+        const label = `第 ${question.number} 题`;
+        writer.ensure(55);
+        writer.text(`${label} · 原题保留（原图）`, 12, 21);
+        writer.setContext(label);
+        const regions = [...source.originalRegions];
+        const relatedFigures = new Set([
+          ...source.figureIds,
+          ...analysis.materials
+            .filter(material => source.materialIds.includes(material.id))
+            .flatMap(material => material.figureIds),
+        ]);
+        for (const original of analysis.figures.filter(item =>
+          relatedFigures.has(item.id),
+        )) {
+          if (
+            !regions.some(
+              region =>
+                region.pageIndex === original.pageIndex &&
+                region.box.x <= original.box.x &&
+                region.box.y <= original.box.y &&
+                region.box.x + region.box.width >=
+                  original.box.x + original.box.width &&
+                region.box.y + region.box.height >=
+                  original.box.y + original.box.height,
+            )
+          ) {
+            regions.push({pageIndex: original.pageIndex, box: original.box});
+          }
+        }
+        for (const region of regions) {
+          if (
+            region.box.x === 0 &&
+            region.box.y === 0 &&
+            region.box.width === 1 &&
+            region.box.height === 1
+          ) {
+            writer.text(
+              `本题保留原卷第 ${region.pageIndex + 1} 页，请按原题号作答。`,
+              10,
+              17,
+              MUTED,
+            );
+          }
+          // This explicitly retained original may include the learner's writing.
+          // It is never interpreted as an answer or reused by an upgraded item.
+          writer.image(await cropOriginalRegion(writer, region, pageUris), 640);
+        }
+        writer.setContext('');
+        writer.gap(13);
+        continue;
+      }
+      writer.ensure(60);
       const label = `第 ${question.number} 题`;
-      writer.ensure(55);
-      writer.text(`${label} · 原题保留（原图）`, 12, 21);
+      writer.text(
+        `${label} · ${question.type}${
+          question.score === null ? '' : `（${question.score}分）`
+        }`,
+        12,
+        21,
+      );
       writer.setContext(label);
-      const regions = [...source.originalRegions];
-      const relatedFigures = new Set([
-        ...source.figureIds,
-        ...analysis.materials
-          .filter(material => source.materialIds.includes(material.id))
-          .flatMap(material => material.figureIds),
-      ]);
-      for (const original of analysis.figures.filter(item =>
-        relatedFigures.has(item.id),
-      )) {
-        if (
-          !regions.some(
-            region =>
-              region.pageIndex === original.pageIndex &&
-              region.box.x <= original.box.x &&
-              region.box.y <= original.box.y &&
-              region.box.x + region.box.width >=
-                original.box.x + original.box.width &&
-              region.box.y + region.box.height >=
-                original.box.y + original.box.height,
-          )
-        ) {
-          regions.push({pageIndex: original.pageIndex, box: original.box});
-        }
+      if (question.materialIds.length) {
+        writer.text(
+          `依据${question.materialIds
+            .map(id => materialLabels.get(id))
+            .join('、')}`,
+          9,
+          16,
+          MUTED,
+        );
       }
-      for (const region of regions) {
-        if (
-          region.box.x === 0 &&
-          region.box.y === 0 &&
-          region.box.width === 1 &&
-          region.box.height === 1
-        ) {
-          writer.text(
-            `本题保留原卷第 ${region.pageIndex + 1} 页，请按原题号作答。`,
-            10,
-            17,
-            MUTED,
-          );
-        }
-        // This explicitly retained original may include the learner's writing.
-        // It is never interpreted as an answer or reused by an upgraded item.
-        writer.image(await cropOriginalRegion(writer, region, pageUris), 640);
+      writer.text(question.stem);
+      for (const option of question.options) {
+        writer.text(`${option.label}. ${option.text}`, 12, 19);
       }
+      if (question.figureIds.length) {
+        writer.text(
+          `图示：${question.figureIds
+            .map(id => figureLabels.get(id) || id)
+            .join('、')}`,
+          9,
+          16,
+          MUTED,
+        );
+      }
+      for (const id of question.figureIds) {
+        await figure(id);
+      }
+      writer.answerSpace(question.answerLines);
       writer.setContext('');
       writer.gap(13);
-      continue;
     }
-    writer.ensure(60);
-    const label = `第 ${question.number} 题`;
-    writer.text(
-      `${label} · ${question.type}${
-        question.score === null ? '' : `（${question.score}分）`
-      }`,
-      12,
-      21,
+    paperBase64 = await writer.finish();
+    await resume?.onDocument?.('paper', paperBase64);
+  }
+  let answersBase64 = resume?.answersBase64;
+  if (!answersBase64) {
+    const answers = await newWriter(analysis, paper, true, fontData);
+    answers.text(`${paper.title} · 答案与解析`, 18, 26);
+    answers.text(
+      `${analysis.subjectLabel}  ·  升${paper.level}档  ·  题号与新试卷一致`,
+      10,
+      18,
+      MUTED,
     );
-    writer.setContext(label);
-    if (question.materialIds.length) {
-      writer.text(
-        `依据${question.materialIds
-          .map(id => materialLabels.get(id))
-          .join('、')}`,
-        9,
-        16,
+    if (paper.answers.some(answer => answer.status === 'requires_audio')) {
+      answers.text(
+        '听力题沿用原卷；缺少可靠原录音或转写时，相关答案标为待核，不作确定答案。',
+        10,
+        17,
         MUTED,
       );
     }
-    writer.text(question.stem);
-    for (const option of question.options) {
-      writer.text(`${option.label}. ${option.text}`, 12, 19);
-    }
-    if (question.figureIds.length) {
-      writer.text(
-        `图示：${question.figureIds
-          .map(id => figureLabels.get(id) || id)
-          .join('、')}`,
-        9,
-        16,
+    answers.gap();
+    for (const question of paper.questions) {
+      const answer = paper.answers.find(
+        item => item.questionId === question.id,
+      )!;
+      if (
+        (answer.status === 'verified' && !answer.answer.trim()) ||
+        !answer.explanation.trim() ||
+        (answer.status === 'requires_audio' && !question.isListening)
+      ) {
+        throw new Error('答案或解析不完整，不能生成 PDF');
+      }
+      const label = `第 ${question.number} 题`;
+      answers.ensure(66);
+      answers.text(
+        `${label} · ${question.type}${
+          question.score === null ? '' : `（${question.score}分）`
+        }`,
+        13,
+        22,
+      );
+      answers.setContext(label);
+      if (answer.status === 'requires_audio') {
+        answers.text('听力答案待核：需结合原录音或可靠听力转写核验。', 12, 20);
+        answers.text(`核验说明：${answer.explanation}`, 11, 18);
+      } else if (answer.status === 'verified') {
+        answers.text(`参考答案：${answer.answer}`);
+        answers.text(`解析：${answer.explanation}`, 11, 18);
+        answer.scoringPoints.forEach((point, index) =>
+          answers.text(`评分点 ${index + 1}：${point}`, 11, 18),
+        );
+      } else if (
+        answer.status === 'requires_review' &&
+        question.upgrade.mode === 'retained'
+      ) {
+        answers.text('原题保留，参考答案待核。', 12, 20);
+        answers.text(`核验说明：${answer.explanation}`, 11, 18);
+      } else {
+        throw new Error('答案核验状态无效');
+      }
+      answers.text(
+        `知识点：${question.knowledgePoints.join('；') || '待核（原题保留）'}`,
+        10,
+        17,
         MUTED,
       );
+      if (
+        !question.isListening &&
+        question.upgrade.mode !== 'retained' &&
+        answer.learningGuide?.length
+      ) {
+        writeLearningGuides(answers, answer.learningGuide, label);
+      }
+      answers.setContext('');
+      answers.gap(15);
     }
-    for (const id of question.figureIds) {
-      await figure(id);
-    }
-    writer.answerSpace(question.answerLines);
-    writer.setContext('');
-    writer.gap(13);
+    answersBase64 = await answers.finish();
+    await resume?.onDocument?.('answers', answersBase64);
   }
-  const paperBase64 = await writer.finish();
-  const answers = await newWriter(analysis, paper, true, fontData);
-  answers.text(`${paper.title} · 答案与解析`, 18, 26);
-  answers.text(
-    `${analysis.subjectLabel}  ·  升${paper.level}档  ·  题号与新试卷一致`,
-    10,
-    18,
-    MUTED,
-  );
-  if (paper.answers.some(answer => answer.status === 'requires_audio')) {
-    answers.text(
-      '听力题沿用原卷；缺少可靠原录音或转写时，相关答案标为待核，不作确定答案。',
-      10,
-      17,
-      MUTED,
-    );
-  }
-  answers.gap();
-  for (const question of paper.questions) {
-    const answer = paper.answers.find(item => item.questionId === question.id)!;
-    if (
-      (answer.status === 'verified' && !answer.answer.trim()) ||
-      !answer.explanation.trim() ||
-      (answer.status === 'requires_audio' && !question.isListening)
-    ) {
-      throw new Error('答案或解析不完整，不能生成 PDF');
-    }
-    const label = `第 ${question.number} 题`;
-    answers.ensure(66);
-    answers.text(
-      `${label} · ${question.type}${
-        question.score === null ? '' : `（${question.score}分）`
-      }`,
-      13,
-      22,
-    );
-    answers.setContext(label);
-    if (answer.status === 'requires_audio') {
-      answers.text('听力答案待核：需结合原录音或可靠听力转写核验。', 12, 20);
-      answers.text(`核验说明：${answer.explanation}`, 11, 18);
-    } else if (answer.status === 'verified') {
-      answers.text(`参考答案：${answer.answer}`);
-      answers.text(`解析：${answer.explanation}`, 11, 18);
-      answer.scoringPoints.forEach((point, index) =>
-        answers.text(`评分点 ${index + 1}：${point}`, 11, 18),
-      );
-    } else if (
-      answer.status === 'requires_review' &&
-      question.upgrade.mode === 'retained'
-    ) {
-      answers.text('原题保留，参考答案待核。', 12, 20);
-      answers.text(`核验说明：${answer.explanation}`, 11, 18);
-    } else {
-      throw new Error('答案核验状态无效');
-    }
-    answers.text(
-      `知识点：${question.knowledgePoints.join('；') || '待核（原题保留）'}`,
-      10,
-      17,
-      MUTED,
-    );
-    if (
-      !question.isListening &&
-      question.upgrade.mode !== 'retained' &&
-      answer.learningGuide?.length
-    ) {
-      writeLearningGuides(answers, answer.learningGuide, label);
-    }
-    answers.setContext('');
-    answers.gap(15);
-  }
-  return {paperBase64, answersBase64: await answers.finish()};
+  return {paperBase64, answersBase64};
 }

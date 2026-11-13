@@ -94,6 +94,60 @@ test('同一任务去重，不同操作或档位不能在同一份试卷上重�
   await first;
 });
 
+test('继续升档与明确重做模式传到管线，同档次不同模式也不能覆盖运行任务', async () => {
+  const pending = deferred<ChallengeRecord>();
+  (upgradeChallenge as jest.Mock).mockReturnValueOnce(pending.promise);
+  const first = startChallengeTask(
+    record.id,
+    'upgrade',
+    DEFAULT_SETTINGS,
+    2,
+    undefined,
+    'resume',
+  );
+  expect(
+    startChallengeTask(
+      record.id,
+      'upgrade',
+      DEFAULT_SETTINGS,
+      2,
+      undefined,
+      'resume',
+    ),
+  ).toBe(first);
+  await expect(
+    startChallengeTask(
+      record.id,
+      'upgrade',
+      DEFAULT_SETTINGS,
+      2,
+      undefined,
+      'restart',
+    ),
+  ).rejects.toThrow('正在处理');
+  await Promise.resolve();
+  expect(upgradeChallenge).toHaveBeenCalledWith(
+    record.id,
+    2,
+    expect.objectContaining({upgradeMode: 'resume'}),
+  );
+  pending.resolve(record);
+  await first;
+  await startChallengeTask(
+    record.id,
+    'upgrade',
+    DEFAULT_SETTINGS,
+    2,
+    undefined,
+    'restart',
+  );
+  expect(upgradeChallenge).toHaveBeenLastCalledWith(
+    record.id,
+    2,
+    expect.objectContaining({upgradeMode: 'restart'}),
+  );
+});
+
 test('主动停止只取消对应试卷，其他试卷可以并行继续处理', async () => {
   const one = deferred<ChallengeRecord>();
   const two = deferred<ChallengeRecord>();

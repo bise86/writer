@@ -5,6 +5,7 @@ import {ChallengeLevel, ChallengeRecord} from './types';
 export interface ChallengeTask {
   kind: 'analysis' | 'upgrade';
   analysisMode?: 'resume' | 'restart';
+  upgradeMode?: 'resume' | 'restart';
   level?: ChallengeLevel;
   signal: AbortSignal;
   record?: ChallengeRecord;
@@ -50,13 +51,15 @@ export function startChallengeTask(
   settings: AppSettings,
   level?: ChallengeLevel,
   analysisMode?: 'resume' | 'restart',
+  upgradeMode?: 'resume' | 'restart',
 ): Promise<ChallengeRecord> {
   const selectedLevel = kind === 'upgrade' ? level ?? 1 : undefined;
   const existing = tasks.get(id);
   if (existing) {
     return existing.kind === kind &&
       existing.level === selectedLevel &&
-      (kind !== 'analysis' || existing.analysisMode === analysisMode)
+      (kind !== 'analysis' || existing.analysisMode === analysisMode) &&
+      (kind !== 'upgrade' || existing.upgradeMode === upgradeMode)
       ? existing.promise
       : Promise.reject(new Error('这份试卷正在处理，请先停止或等待完成'));
   }
@@ -65,6 +68,7 @@ export function startChallengeTask(
   const task: RunningTask = {
     kind,
     analysisMode: kind === 'analysis' ? analysisMode : undefined,
+    upgradeMode: kind === 'upgrade' ? upgradeMode : undefined,
     level: selectedLevel,
     signal: controller.signal,
     controller,
@@ -73,6 +77,7 @@ export function startChallengeTask(
       const options = {
         settings: taskSettings,
         analysisMode,
+        upgradeMode,
         signal: controller.signal,
         onUpdate: (record: ChallengeRecord) => {
           task.record = record;
