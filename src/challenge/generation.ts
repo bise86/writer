@@ -5,6 +5,7 @@ import {
   preserveRequiredOriginals,
   requiredRetentionIds,
   retainEntirePaper,
+  sourceRequiresRetention,
 } from './selection';
 import {
   ChallengeGenerationProgress,
@@ -15,6 +16,8 @@ import {
 } from './types';
 import {ChallengeValidationError, sameJson} from './validation';
 import {canonicalizePaperEvidence} from './evidence';
+
+export const CHALLENGE_GENERATION_SELECTION_VERSION = 'local-selection-v1';
 
 export function generationSignature(analysis: ExamAnalysis): string {
   return JSON.stringify({
@@ -42,6 +45,29 @@ export function generationAnalysis(input: ExamAnalysis): ExamAnalysis {
   const analysis = prepareRetainedAnalysis(input);
   return {
     ...analysis,
+    warnings: [
+      ...new Set([
+        ...analysis.warnings,
+        ...analysis.questions
+          .filter(sourceRequiresRetention)
+          .flatMap(question =>
+            (question.originalRegions || [])
+              .filter(
+                region =>
+                  region.box.x === 0 &&
+                  region.box.y === 0 &&
+                  region.box.width === 1 &&
+                  region.box.height === 1,
+              )
+              .map(
+                region =>
+                  `第${
+                    region.pageIndex + 1
+                  }页部分保留题无法精确定位，按原题位置附对应原页，不影响其余题升档。`,
+              ),
+          ),
+      ]),
+    ],
     questions: analysis.questions.map(question => {
       const figures = analysis.figures.filter(
         figure =>
@@ -100,6 +126,8 @@ export function generationCheckpoint(
     | 'afterEvidencePhase'
     | 'evidenceBasePaper'
     | 'lockedAssetIds'
+    | 'selectionVersion'
+    | 'selectedQuestionIds'
   > = {},
 ): ChallengeGenerationProgress {
   return {
@@ -108,6 +136,10 @@ export function generationCheckpoint(
     sourceSignature: generationSignature(analysis),
     level,
     integrityVersion: 2,
+    selectionVersion: resume.selectionVersion,
+    selectedQuestionIds: resume.selectedQuestionIds
+      ? [...resume.selectedQuestionIds]
+      : undefined,
     completedQuestionIds: [...completed],
     phase: resume.phase || 'generation',
     pendingQuestionIds: resume.pendingQuestionIds
@@ -153,6 +185,9 @@ export function canResumeGeneration(
       checkpoint.integrityVersion === 2) &&
     checkpoint.level === level &&
     checkpoint.sourceSignature === generationSignature(analysis) &&
+    (checkpoint.selectionVersion === undefined ||
+      (checkpoint.selectionVersion === CHALLENGE_GENERATION_SELECTION_VERSION &&
+        validPendingIds(checkpoint.selectedQuestionIds))) &&
     Array.isArray(checkpoint.completedQuestionIds) &&
     new Set(checkpoint.completedQuestionIds).size ===
       checkpoint.completedQuestionIds.length &&
@@ -167,6 +202,12 @@ export function canResumeGeneration(
       validPendingIds(checkpoint.pendingQuestionIds)) &&
     (checkpoint.evidenceQuestionIds === undefined ||
       validPendingIds(checkpoint.evidenceQuestionIds)) &&
+    (checkpoint.selectionVersion === undefined ||
+      [
+        ...checkpoint.completedQuestionIds,
+        ...(checkpoint.pendingQuestionIds || []),
+        ...(checkpoint.evidenceQuestionIds || []),
+      ].every(id => checkpoint.selectedQuestionIds!.includes(id))) &&
     (checkpoint.lockedAssetIds === undefined ||
       (Array.isArray(checkpoint.lockedAssetIds) &&
         new Set(checkpoint.lockedAssetIds).size ===

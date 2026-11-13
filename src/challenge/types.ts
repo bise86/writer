@@ -318,6 +318,8 @@ export interface ChallengeGenerationProgress {
   level: ChallengeLevel;
   policyVersion: string;
   integrityVersion?: number;
+  selectionVersion?: 'local-selection-v1';
+  selectedQuestionIds?: string[];
   completedQuestionIds: string[];
   // Older drafts omit phase and resume their initial generation pass.
   phase?: 'generation' | 'repair' | 'evidence';

@@ -1,4 +1,4 @@
-import React, {useEffect, useRef, useState} from 'react';
+import React, {useEffect, useMemo, useRef, useState} from 'react';
 import {
   ActivityIndicator,
   Alert,
@@ -60,6 +60,7 @@ import {
   sourceRequiresRetention,
 } from '../challenge/selection';
 import {prepareRetainedAnalysis} from '../challenge/retention';
+import {selectUpgradeQuestions} from '../challenge/planning';
 type ChallengeTab = 'analysis' | 'plan' | 'paper' | 'answers' | 'usage';
 import ChallengeManager from './ChallengeManager';
 import ChallengeUsageDetails from './ChallengeUsageDetails';
@@ -758,9 +759,17 @@ export default function ChallengeScreen({
     }
   };
 
-  const analysis = record?.analysis
-    ? prepareRetainedAnalysis(record.analysis, record.pages)
-    : undefined;
+  const analysis = useMemo(
+    () =>
+      record?.analysis
+        ? prepareRetainedAnalysis(record.analysis, record.pages)
+        : undefined,
+    [record?.analysis, record?.pages],
+  );
+  const selectedQuestions = useMemo(
+    () => (analysis ? selectUpgradeQuestions(analysis, level) : []),
+    [analysis, level],
+  );
   const identification = record?.subjectIdentification;
   const confirmedSubject =
     analysis &&
@@ -1215,11 +1224,17 @@ export default function ChallengeScreen({
                   按非听力小题总数计算目标，题数向上取整；听力保持不变。解析异常或不完整的题原样保留；因此达不到原目标时仍正常完成，并如实展示实际比例。
                 </Text>
                 {!!coverage && (
-                  <Text style={styles.body}>
-                    本卷 {coverage.total} 道非听力小题，原目标升档{' '}
-                    {coverage.targetRequired} 题；当前可可靠选用{' '}
-                    {coverage.eligible} 题。
-                  </Text>
+                  <>
+                    <Text style={styles.body}>
+                      本卷 {coverage.total} 道非听力小题，原目标升档{' '}
+                      {coverage.targetRequired} 题；当前可可靠选用{' '}
+                      {coverage.eligible} 题。
+                    </Text>
+                    <Text style={styles.muted}>
+                      本地初选 {selectedQuestions.length}{' '}
+                      题交给模型升档，其余原题直接保留；如选中题无法升档，只按差额补选。
+                    </Text>
+                  </>
                 )}
                 {!!coverage?.limitedByAnalysis && (
                   <Text style={styles.notice}>

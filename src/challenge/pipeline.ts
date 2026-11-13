@@ -25,17 +25,17 @@ import {
   questionContextIds,
   affectedGenerationIds,
   questionGenerationOrder,
-  questionSuccessorIds,
   sharedAssetRepairIds,
+  CHALLENGE_GENERATION_SELECTION_VERSION,
 } from './generation';
+import {selectUpgradeQuestions} from './planning';
 import {
   challengeCoverage,
   CHALLENGE_SELECTION_POLICY_VERSION,
   requiredRetentionIds,
   isRetainedQuestion,
-  sourceRequiresRetention,
 } from './selection';
-import {prepareRetainedAnalysis, validOriginalRegion} from './retention';
+import {prepareRetainedAnalysis} from './retention';
 import {buildChallengePdfs} from './pdf';
 import {
   CHALLENGE_REVIEW_PROTOCOL_VERSION,
@@ -76,7 +76,6 @@ import {
   SubjectIdentification,
   SubjectVerification,
   SubjectSampleVote,
-  OriginalQuestionRegion,
   ChallengeGenerationProgress,
 } from './types';
 import {
@@ -653,122 +652,6 @@ async function clearPreviousFiles(record: ChallengeRecord) {
   }
 }
 
-async function locateRetainedOriginals(
-  id: string,
-  runId: string,
-  analysis: ExamAnalysis,
-  pageUris: string[],
-  options: ChallengeRunOptions,
-): Promise<ExamAnalysis> {
-  const wholePage = (region: OriginalQuestionRegion) =>
-    region.box.x === 0 &&
-    region.box.y === 0 &&
-    region.box.width === 1 &&
-    region.box.height === 1;
-  const questions = analysis.questions.map(question => ({...question}));
-  const warnings = [...analysis.warnings];
-  for (let pageIndex = 0; pageIndex < pageUris.length; pageIndex += 1) {
-    const targets = questions.filter(
-      question =>
-        sourceRequiresRetention(question) &&
-        question.originalRegions?.some(
-          region => region.pageIndex === pageIndex && wholePage(region),
-        ),
-    );
-    if (!targets.length) {
-      continue;
-    }
-    try {
-      const image = await imageAsDataUri(pageUris[pageIndex]);
-      const regions = await requestJson(
-        id,
-        runId,
-        'analysis',
-        `定位第${pageIndex + 1}页保留题`,
-        [
-          {
-            role: 'user',
-            content: [
-              {
-                type: 'input_text',
-                text: JSON.stringify({
-                  task: '挑战保留原题定位',
-                  pageIndex,
-                  questions: targets.map(question => ({
-                    questionId: question.id,
-                    number: question.number,
-                    sourceRefs: question.sourceRefs,
-                  })),
-                }),
-              },
-              {type: 'input_image', image_url: image, detail: 'high'},
-            ],
-          },
-        ],
-        '只定位原图范围，不重新解析或修改任何题。输出{regions:[{questionId:"给定ID",boxes:[{x:0.05,y:0.1,width:0.9,height:0.2}]}]}。框相对左上角归一化，必须完整覆盖该题在本页的原题干、选项、材料图示和答题位置；不要裁掉模糊、遮挡或已作答的部分，不删笔迹、不补字。跨页只框本页片段，依赖共同母题时包含必要共同条件。无法可靠定位的题boxes为空或省略，不猜框；程序将保留对应原页。不得因为解析异常或无法定位拒绝其它题生成。',
-        options,
-        value => {
-          const result = value as {
-            regions?: {
-              questionId: string;
-              boxes: OriginalQuestionRegion['box'][];
-            }[];
-          };
-          if (
-            !Array.isArray(result?.regions) ||
-            result.regions.length > targets.length ||
-            new Set(result.regions.map(region => region?.questionId)).size !==
-              result.regions.length ||
-            result.regions.some(
-              region =>
-                !targets.some(question => question.id === region?.questionId) ||
-                !Array.isArray(region.boxes) ||
-                region.boxes.length > 10 ||
-                region.boxes.some(
-                  box => !validOriginalRegion({pageIndex, box}),
-                ),
-            )
-          ) {
-            throw new ChallengeValidationError([
-              '保留题定位必须只引用给定题ID及本页内有效矩形，不能猜补题文',
-            ]);
-          }
-          return result.regions;
-        },
-      );
-      for (const target of targets) {
-        const boxes = regions.find(
-          region => region.questionId === target.id,
-        )?.boxes;
-        if (boxes?.length) {
-          target.originalRegions = target.originalRegions!.flatMap(region =>
-            region.pageIndex === pageIndex && wholePage(region)
-              ? boxes.map(box => ({pageIndex, box: {...box}}))
-              : [region],
-          );
-        }
-      }
-    } catch (_) {
-      ensureRunning(options.signal);
-      await requiredRecord(id);
-      // Failure to improve layout must not become a new parsing gate.
-    }
-    if (
-      targets.some(question =>
-        question.originalRegions?.some(
-          region => region.pageIndex === pageIndex && wholePage(region),
-        ),
-      )
-    ) {
-      warnings.push(
-        `第${
-          pageIndex + 1
-        }页部分保留题无法精确定位，按原题位置附对应原页，不影响其余题升档。`,
-      );
-    }
-  }
-  return {...analysis, questions, warnings: [...new Set(warnings)]};
-}
 function examDraftInstructions(confirmed?: SubjectIdentification) {
   return `挑战整卷草稿解析。依据完整逐页印刷文字提取原卷标题、大小题层级、全部叶子题、材料、图和实际核心知识与难度估计；此时不加载任何学科升档标准，不把草稿科目当已确认，不提前生成新题。${UNTRUSTED}
 输出完整JSON，结构如${JSON.stringify({
@@ -1703,7 +1586,8 @@ async function generateQuestionPatches(
   ).orderedIds;
   const eligibleSet = new Set(eligible);
   let completed = new Set<string>();
-  let pending = new Set(eligible);
+  let pending = new Set(selectUpgradeQuestions(analysis, level));
+  let selected = new Set(pending);
   let phase: GenerationPhase = state.candidate ? 'repair' : 'generation';
   let feedback = state.feedback;
   let paper = state.candidate || generationSeed(analysis, level);
@@ -1741,8 +1625,16 @@ async function generateQuestionPatches(
     );
   };
   if (state.candidate) {
-    completed = new Set(eligible);
+    const previous = canResumeGeneration(state.checkpoint, analysis, level)
+      ? state.checkpoint
+      : undefined;
+    completed = new Set(previous?.completedQuestionIds || variantIds(paper));
     pending = reviewTargets(paper, feedback);
+    selected = new Set([
+      ...(previous?.selectedQuestionIds || []),
+      ...completed,
+      ...pending,
+    ]);
   } else if (canResumeGeneration(state.checkpoint, analysis, level)) {
     try {
       const checkpoint = state.checkpoint;
@@ -1835,14 +1727,58 @@ async function generateQuestionPatches(
           ],
         };
       }
+      if (
+        checkpoint.selectionVersion !== CHALLENGE_GENERATION_SELECTION_VERSION
+      ) {
+        const variants = variantIds(paper);
+        pending = new Set(
+          selectUpgradeQuestions(analysis, level, {
+            upgradedQuestionIds: variants,
+            attemptedQuestionIds: [...completed],
+            pendingQuestionIds: [...pending].filter(
+              questionId =>
+                variants.includes(questionId) ||
+                (!quoteDraftUsable && quotePending.includes(questionId)),
+            ),
+          }),
+        );
+      }
+      selected = new Set([
+        ...(checkpoint.selectedQuestionIds || []),
+        ...completed,
+        ...variantIds(paper),
+        ...pending,
+        ...evidenceIds,
+      ]);
     } catch (_) {
       paper = generationSeed(analysis, level);
       completed = new Set();
-      pending = new Set(eligible);
+      pending = new Set(selectUpgradeQuestions(analysis, level));
+      selected = new Set(pending);
       phase = 'generation';
       feedback = undefined;
+      evidenceIds = [];
+      evidenceBase = undefined;
+      lockedAssets = new Set();
     }
   }
+  paper = {
+    ...paper,
+    questions: paper.questions.map(question =>
+      isRetainedQuestion(question) &&
+      !forced.has(question.id) &&
+      !selected.has(question.id)
+        ? {
+            ...question,
+            upgrade: {
+              ...question.upgrade,
+              retentionReason:
+                '按本档比例选题，本题原样保留，无需生成或模型评审。',
+            },
+          }
+        : question,
+    ),
+  };
   const save = async (
     draft = paper,
     quotes: readonly string[] = [],
@@ -1867,11 +1803,13 @@ async function generateQuestionPatches(
             afterEvidencePhase: quotes.length ? phase : undefined,
             evidenceBasePaper: quotes.length ? trustedBase : undefined,
             lockedAssetIds: [...lockedAssets],
+            selectionVersion: CHALLENGE_GENERATION_SELECTION_VERSION,
+            selectedQuestionIds: [...selected],
           },
         ),
         progress: quotes.length
           ? `已保存本批题目，正在核对${quotes.length}题的证据引文与易错目录`
-          : `已保存${completed.size}/${eligible.length}道候选题处理结果，剩余${
+          : `已保存${completed.size}/${selected.size}道选中题处理结果，剩余${
               waiting.size
             }题，实际升档${
               challengeCoverage(analysis, level, draft).upgraded
@@ -1978,8 +1916,10 @@ async function generateQuestionPatches(
           const scope = batchAnalysis(analysis, ids);
           const contexts = questionContextIds(analysis, ids);
           const before = paper;
-          const confirmed = [...completed].filter(
-            questionId => !pending.has(questionId),
+          const confirmed = eligible.filter(
+            questionId =>
+              !pending.has(questionId) &&
+              (completed.has(questionId) || !selected.has(questionId)),
           );
           let affected = new Set<string>();
           let normalizedImpacts = new Set<string>();
@@ -2056,7 +1996,7 @@ async function generateQuestionPatches(
             repair ? 'repair' : 'generation',
             `${repair ? '修订' : '生成'}升${level}档·本批${
               ids.length
-            }题·已保存${completed.size}/${eligible.length}`,
+            }题·已保存${completed.size}/${selected.size}`,
             JSON.stringify({
               task: repair ? '挑战试卷修订' : '挑战试卷生成',
               phase: 'question_patches',
@@ -2225,12 +2165,30 @@ async function generateQuestionPatches(
                   )?.number || questionId,
               )
               .join('、')}题仍超过模型输出上限，已保存${completed.size}/${
-              eligible.length
+              selected.size
             }题；再次升档会继续未完成的题。请检查单次输出预算，已完成题不会重生成。`,
           );
         }
         throw error;
       });
+      if (
+        !pending.size &&
+        challengeCoverage(analysis, level, paper).upgraded <
+          challengeCoverage(analysis, level).required
+      ) {
+        pending = new Set(
+          selectUpgradeQuestions(analysis, level, {
+            upgradedQuestionIds: variantIds(paper),
+            attemptedQuestionIds: [...completed],
+          }),
+        );
+        if (pending.size) {
+          pending.forEach(questionId => selected.add(questionId));
+          phase = 'generation';
+          feedback = undefined;
+          await save();
+        }
+      }
     }
     const before = paper;
     const assembled = mergeGenerationPatch(
@@ -2283,22 +2241,32 @@ async function generateQuestionPatches(
           : undefined;
         return questionId ? [questionId] : [];
       });
-      const seeds = failed.length
-        ? failed
-        : state.candidate
-        ? variantIds(paper)
-        : eligible.filter(questionId =>
-            isRetainedQuestion(
-              paper.questions.find(question => question.id === questionId)!,
-            ),
-          );
-      pending = questionSuccessorIds(
-        analysis,
-        seeds.length ? seeds : eligible,
-        eligible,
-      );
-      phase = 'repair';
-      feedback = {issues: [], validationIssues: error.issues};
+      const variants = variantIds(paper);
+      const seeds = failed.filter(questionId => variants.includes(questionId));
+      if (seeds.length) {
+        pending = sharedAssetRepairIds(analysis, paper, seeds);
+        phase = 'repair';
+        feedback = {issues: [], validationIssues: error.issues};
+      } else if (
+        !failed.length &&
+        challengeCoverage(analysis, level, paper).upgraded <
+          challengeCoverage(analysis, level).required
+      ) {
+        pending = new Set(
+          selectUpgradeQuestions(analysis, level, {
+            upgradedQuestionIds: variants,
+            attemptedQuestionIds: [...completed],
+          }),
+        );
+        phase = 'generation';
+        feedback = undefined;
+      } else {
+        throw error;
+      }
+      if (!pending.size) {
+        throw error;
+      }
+      pending.forEach(questionId => selected.add(questionId));
       await save();
     }
   }
@@ -2797,20 +2765,13 @@ export function upgradeChallenge(
         reviewRounds: [],
         paperPdfUri: undefined,
         answersPdfUri: undefined,
-        progress: `按升${level}档标准逐题生成变式`,
+        progress: `按升${level}档标准本地选题，只生成选中题的变式`,
         error: '',
       }),
       options,
     );
     return managedRun(id, runId, options, async () => {
       await clearPreviousFiles(current);
-      analysis = await locateRetainedOriginals(
-        id,
-        runId,
-        analysis,
-        current.pageUris,
-        options,
-      );
       analysis = generationAnalysis(analysis);
       await progress(id, runId, {analysis}, options);
       let paper = await generateQuestionPatches(
@@ -2949,7 +2910,11 @@ export function upgradeChallenge(
           level,
           options,
           roundtableSize,
-          {candidate: paper, feedback: review},
+          {
+            candidate: paper,
+            feedback: review,
+            checkpoint: reviewed.generationProgress,
+          },
         );
       }
       throw new Error('试卷尚未通过标准校核');

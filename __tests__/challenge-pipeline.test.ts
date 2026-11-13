@@ -16,6 +16,7 @@ import {
 import {
   generationCheckpoint,
   generationSeed,
+  CHALLENGE_GENERATION_SELECTION_VERSION,
 } from '../src/challenge/generation';
 import type {ModelInput} from '../src/services/context';
 import type {
@@ -602,6 +603,24 @@ function variantPatch(ids: string[], level: ChallengeLevel = 1) {
   };
 }
 
+// Pin an already saved selection to exercise downstream dependency and recovery
+// behavior. Fresh task selection and call limits have separate regressions.
+function resumeSelectedWork(original: ExamAnalysis, level: ChallengeLevel = 1) {
+  const ids = original.questions.map(question => question.id);
+  mockRecord!.generationProgress = generationCheckpoint(
+    original,
+    level,
+    [],
+    generationSeed(original, level),
+    {
+      selectionVersion: CHALLENGE_GENERATION_SELECTION_VERSION,
+      selectedQuestionIds: ids,
+      pendingQuestionIds: ids,
+    },
+  );
+  mockRecord!.status = 'failed';
+}
+
 beforeEach(() => {
   jest.clearAllMocks();
   mockRecord = record();
@@ -626,7 +645,7 @@ test('分批只返回升档题，截断只拆当前批，保留题按原位置�
       expect(payload.phase).toBe('question_patches');
       const ids = payload.questionIds as string[];
       batches.push([...ids]);
-      if (ids.length === 2 && ids[0] === 'q3') {
+      if (ids.length === 2 && ids[0] === 'q1') {
         throw new ModelOutputTruncatedError();
       }
       return response(
@@ -649,13 +668,7 @@ test('分批只返回升档题，截断只拆当前批，保留题按原位置�
     return route(input);
   });
   const result = await upgradeChallenge('challenge_test', 1, {settings});
-  expect(batches).toEqual([
-    ['q1', 'q2'],
-    ['q3', 'q4'],
-    ['q3'],
-    ['q4'],
-    ['q5', 'q6'],
-  ]);
+  expect(batches).toEqual([['q1', 'q2'], ['q1'], ['q2'], ['q3']]);
   expect(reviews).toEqual([['q1', 'q3']]);
   expect(result.status).toBe('completed');
   expect(result.candidate!.questions.map(question => question.id)).toEqual(
@@ -674,12 +687,193 @@ test('分批只返回升档题，截断只拆当前批，保留题按原位置�
     );
     expect(result.candidate!.questions[index].upgrade.mode).toBe('retained');
   }
-  expect(result.generationProgress!.completedQuestionIds).toHaveLength(6);
+  expect(result.generationProgress!.completedQuestionIds).toHaveLength(3);
   expect(publisher).toHaveBeenCalledTimes(1);
 });
 
+test.each([1, 2, 3] as const)(
+  '升%s档仅向模型提交按比例选中的题，未选原题不出题、不求解、不评审',
+  async level => {
+    const original = patchExam(10);
+    const generated: string[] = [];
+    const reviewed: string[] = [];
+    request.mockImplementation(async (input: ModelInput) => {
+      const payload = requestPayload(input);
+      if (payload.task === '挑战试卷生成') {
+        generated.push(...payload.questionIds);
+        expect(
+          payload.analysis.questions.map((question: any) => question.id),
+        ).toEqual(payload.questionIds);
+        return response(variantPatch(payload.questionIds, level));
+      }
+      if (payload.task === '挑战标准一致性校核') {
+        reviewed.push(...payload.reviewQuestionIds);
+        return response({
+          ...roleReview(input),
+          checkedQuestionIds: payload.reviewQuestionIds,
+        });
+      }
+      throw new Error(`不应对保留原题追加请求：${payload.task}`);
+    });
+    const result = await upgradeChallenge('challenge_test', level, {settings});
+    const count = [2, 4, 7][level - 1];
+    const expected = original.questions
+      .slice(0, count)
+      .map(question => question.id);
+    expect(generated).toEqual(expected);
+    expect(reviewed).toEqual(expected);
+    expect(result.generationProgress).toMatchObject({
+      selectionVersion: CHALLENGE_GENERATION_SELECTION_VERSION,
+      selectedQuestionIds: expected,
+      completedQuestionIds: expected,
+      pendingQuestionIds: [],
+    });
+    for (const source of original.questions.slice(count)) {
+      expect(
+        result.candidate!.questions.find(question => question.id === source.id),
+      ).toMatchObject({
+        stem: source.stem,
+        upgrade: {mode: 'retained'},
+      });
+      expect(
+        result.candidate!.answers.find(
+          answer => answer.questionId === source.id,
+        ),
+      ).toMatchObject({
+        status: 'requires_review',
+        answer: '',
+        learningGuide: [],
+      });
+    }
+    expect(result.status).toBe('completed');
+  },
+);
+
+test('保留的前问仅作必要上下文，整份请求不会把它当出题或评审对象', async () => {
+  const original = patchExam(3);
+  original.questions[1].dependsOnQuestionIds = ['q1'];
+  original.questions[2].dependsOnQuestionIds = ['q1'];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      expect(payload.questionIds).toEqual(['q2']);
+      expect(
+        payload.analysis.questions.map((question: any) => question.id),
+      ).toEqual(['q2']);
+      expect(
+        payload.dependencyQuestions.map((item: any) => item.source.id),
+      ).toEqual(['q1']);
+      expect(payload.dependencyQuestions[0].current.stem).toBe(
+        original.questions[0].stem,
+      );
+      return response(variantPatch(['q2']));
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      expect(payload.reviewQuestionIds).toEqual(['q2']);
+      return response({...roleReview(input), checkedQuestionIds: ['q2']});
+    }
+    throw new Error(`不应追加原题请求：${payload.task}`);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(request).toHaveBeenCalledTimes(2);
+  expect(
+    result.candidate!.questions.map(question => question.upgrade.mode),
+  ).toEqual(['retained', 'upgraded', 'retained']);
+});
+
+test('旧版全题待做队列只续做升档差额，已完成变式复用，其余原题不再请求', async () => {
+  const original = patchExam(10);
+  const draft = generationSeed(original, 1);
+  const first = variantPatch(['q1']);
+  draft.questions[0] = first
+    .questions[0] as ChallengePaper['questions'][number];
+  draft.answers[0] = first.answers[0] as ChallengePaper['answers'][number];
+  mockRecord!.generationProgress = generationCheckpoint(
+    original,
+    1,
+    ['q1'],
+    draft,
+    {
+      pendingQuestionIds: original.questions
+        .slice(1)
+        .map(question => question.id),
+    },
+  );
+  mockRecord!.status = 'failed';
+  const generated: string[] = [];
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      generated.push(...payload.questionIds);
+      return response(variantPatch(payload.questionIds));
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(generated).toEqual(['q2']);
+  expect(result.generationProgress!.selectedQuestionIds).toEqual(['q1', 'q2']);
+  expect(result.status).toBe('completed');
+});
+
+test('评审返修后降回原题，只补选缺额且不重复尝试先前已放弃的原题', async () => {
+  patchExam(10);
+  const work: {task: string; ids: string[]}[] = [];
+  let checks = 0;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成' || payload.task === '挑战试卷修订') {
+      work.push({task: payload.task, ids: payload.questionIds});
+      return response(
+        variantPatch(
+          payload.questionIds.filter(
+            (id: string) =>
+              id !== 'q1' && !(payload.task === '挑战试卷修订' && id === 'q2'),
+          ),
+        ),
+      );
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      const revise = checks++ === 0;
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+        verdict: revise ? 'revise' : 'approve',
+        issues: revise
+          ? [
+              {
+                questionId: 'q2',
+                code: 'scope',
+                comment: '该变式不适合原范围',
+                fix: '核实后保留原题并补选',
+              },
+            ]
+          : [],
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 1, {settings});
+  expect(work).toEqual([
+    {task: '挑战试卷生成', ids: ['q1', 'q2']},
+    {task: '挑战试卷生成', ids: ['q3']},
+    {task: '挑战试卷修订', ids: ['q2']},
+    {task: '挑战试卷生成', ids: ['q4']},
+  ]);
+  expect(result.reviewRounds[1].reviews[0].checkedQuestionIds).toEqual([
+    'q3',
+    'q4',
+  ]);
+  expect(result.status).toBe('completed');
+});
+
 test('单题持续超限后保存完成批次，再次升档只继续未完成题', async () => {
-  patchExam(4);
+  patchExam(20);
   const batches: string[][] = [];
   let interrupted = true;
   request.mockImplementation(async (input: ModelInput) => {
@@ -719,7 +913,7 @@ test('单题持续超限后保存完成批次，再次升档只继续未完成�
 });
 
 test('评审截断也只拆当前升档题批次，各角色合并为一票且不评审原题', async () => {
-  patchExam(6);
+  patchExam(15);
   const succeeded: {role: string; ids: string[]}[] = [];
   request.mockImplementation(async (input: ModelInput) => {
     const payload = requestPayload(input);
@@ -1137,7 +1331,7 @@ test('目录缺项可用原题定制，必须补范围说明及本题原句，�
 });
 
 test('易错目录修复中断保留候选和前批，续做只修目录且不重新生成整题', async () => {
-  patchExam(2);
+  patchExam(10);
   const small = {...settings, maxOutputTokens: 16000};
   let interrupted = true;
   const generated: string[] = [];
@@ -1686,7 +1880,7 @@ test('未解析时需先解析，遮挡题干则原样保留并正常完成', as
   expect(builder).toHaveBeenCalledTimes(1);
 });
 
-test('旧记录保留题的原图定位失败时回退对应原页，不把局部布局问题判为失败', async () => {
+test('旧记录保留题缺少题框时本地回退原页，不追加任何模型定位或评审请求', async () => {
   mockRecord!.analysis!.unresolvedIssues = ['第1题题干解析失败'];
   request.mockImplementation(async (input: ModelInput) => {
     if (task(input) === '挑战保留原题定位') {
@@ -1701,6 +1895,7 @@ test('旧记录保留题的原图定位失败时回退对应原页，不把局�
   ]);
   expect(result.analysis!.warnings.join('')).toContain('无法精确定位');
   expect(result.candidate!.questions[0].upgrade.mode).toBe('retained');
+  expect(request).not.toHaveBeenCalled();
   expect(builder).toHaveBeenCalledTimes(1);
   expect(publisher).toHaveBeenCalledTimes(1);
 });
@@ -2958,6 +3153,7 @@ test('乱序原题先按依赖生成，返修前问会同步返修后问但不�
     original.questions[0],
   ];
   mockRecord!.analysis = original;
+  resumeSelectedWork(original);
   const generated: string[] = [];
   const repaired: string[] = [];
   let checked = 0;
@@ -3029,6 +3225,7 @@ test('修订中断后先续修未完成题及其后问，不先花一轮模型�
   const original = patchExam(4);
   original.questions[2].dependsOnQuestionIds = ['q1'];
   mockRecord!.analysis = original;
+  resumeSelectedWork(original);
   const small = {...settings, maxOutputTokens: 16000};
   let interrupted = true;
   let firstReview = true;
@@ -3189,7 +3386,7 @@ test('引文fixes结构纠错只要求fixes与unresolved，不再错误要求完
 });
 
 test('实际预算显示多题评审输入超限时拆批，单题可容纳即可正常完成', async () => {
-  patchExam(8);
+  resumeSelectedWork(patchExam(8), 3);
   const budgetSettings = {...settings, contextWindow: 256000};
   const batches: string[][] = [];
   let exceeded = false;
@@ -3312,7 +3509,7 @@ test('旧坏断点中的原题变式答案清理为待核，同时保留已完�
 });
 
 test('引文候选基础结构也坏且修复断网时，恢复可信前批而不把全部进度重置', async () => {
-  patchExam(2);
+  patchExam(10);
   const small = {...settings, maxOutputTokens: 16000};
   const generated: string[] = [];
   let interrupted = true;
@@ -3417,6 +3614,7 @@ test('同批后问保留导致前问回滚时，同批其它已升档后问也�
   original.questions[1].dependsOnQuestionIds = ['q1'];
   original.questions[2].dependsOnQuestionIds = ['q1'];
   mockRecord!.analysis = original;
+  resumeSelectedWork(original);
   const calls: {task: string; ids: string[]}[] = [];
   request.mockImplementation(async (input: ModelInput) => {
     const payload = requestPayload(input);
@@ -3470,6 +3668,7 @@ test.each(['引文', '易错目录'] as const)(
       id => original.questions.find(question => question.id === id)!,
     );
     mockRecord!.analysis = original;
+    resumeSelectedWork(original);
     const calls: {task: string; ids: string[]}[] = [];
     let interrupted = true;
     request.mockImplementation(async (input: ModelInput) => {
