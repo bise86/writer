@@ -72,7 +72,8 @@ const profiles: Record<
     shortTitle: '作文',
     subtitle: '拍下作文，识别、评分，并把修改建议落到原文。',
     emptyText: '还没有作文，拍一张开始吧。',
-    captureHint: '可连续拍摄或多选作文页；每页可保留原图或裁剪后再识别。',
+    captureHint:
+      '可连续拍摄、多选作文页或上传 PDF；照片可保留原图或裁剪后再识别。',
     rules: rules.chinese,
   },
   english: {
@@ -82,7 +83,8 @@ const profiles: Record<
     shortTitle: '英文作文',
     subtitle: '拍下英文作文，识别、评分，并把语句改进落到原文。',
     emptyText: '还没有英文作文，拍一张开始吧。',
-    captureHint: '支持连续拍摄或多选英文作文页；保留原图并按原段落识别。',
+    captureHint:
+      '支持连续拍摄、多选英文作文页或上传 PDF；保留原图并按原段落识别。',
     rules: rules.english,
   },
 };

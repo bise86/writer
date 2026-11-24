@@ -1,5 +1,6 @@
 import React, {useEffect, useRef, useState} from 'react';
 import {
+  ActivityIndicator,
   Alert,
   Image,
   Pressable,
@@ -29,13 +30,24 @@ import {
   EDUCATION_LEVELS,
   validateSettings,
 } from './src/settings';
-import {discardPreparedImages} from './src/shared/media/images';
+import {discardPreparedImages, persistImage} from './src/shared/media/images';
+import {ImportedSource} from './src/shared/media/types';
 import {useImageImport} from './src/shared/media/useImageImport';
 import Reports from './src/components/Reports';
 import {recentMonth} from './src/services/reports';
 import Startup, {StartupData} from './src/components/Startup';
 import WritingModeChooser from './src/components/WritingModeChooser';
 import {getWritingProfile, normalizeWritingType} from './src/services/writing';
+
+function errorMessage(error: unknown) {
+  if (error instanceof Error) {
+    return error.message;
+  }
+  if (error && typeof error === 'object' && 'message' in error) {
+    return String(error.message);
+  }
+  return String(error);
+}
 
 function Button({
   title,
@@ -73,6 +85,7 @@ function WritingHome({
   essays,
   writingType,
   onCapture,
+  onImportPdf,
   onOpen,
   onBack,
   onSettings,
@@ -83,6 +96,7 @@ function WritingHome({
   essays: Essay[];
   writingType: WritingType;
   onCapture: (camera: boolean) => void;
+  onImportPdf: () => void;
   onOpen: (id: string) => void;
   onBack: () => void;
   onSettings: () => void;
@@ -133,7 +147,19 @@ function WritingHome({
               disabled={capturing}
               onPress={() => onCapture(false)}
             />
+            <Button
+              title="上传 PDF"
+              secondary
+              disabled={capturing}
+              onPress={onImportPdf}
+            />
           </View>
+          {capturing && (
+            <View style={styles.importProgress}>
+              <ActivityIndicator size="small" color="#2563eb" />
+              <Text style={styles.muted}>正在处理导入内容…</Text>
+            </View>
+          )}
         </Card>
         <Text style={styles.sectionTitle}>最近{profile.shortTitle}</Text>
         {essays.length === 0 ? (
@@ -566,10 +592,17 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
   const [settings, setSettings] = useState(initialData.settings);
   const [reportRange, setReportRange] = useState(recentMonth);
   const [detailOrigin, setDetailOrigin] = useState<'home' | 'reports'>('home');
+  const mounted = useRef(true);
   const navigationRequest = useRef(0);
   const captureLock = useRef(false);
   const [capturing, setCapturing] = useState(false);
   const imageImport = useImageImport();
+  useEffect(() => {
+    mounted.current = true;
+    return () => {
+      mounted.current = false;
+    };
+  }, []);
   const [screen, setScreen] = useState<
     | 'landing'
     | 'home'
@@ -634,12 +667,29 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       clearInterval(timer);
     };
   }, [screen, selectedId]);
+  const startCreatedEssay = (essay: Essay) => {
+    if (mounted.current) {
+      setSelected(essay);
+      setDetailOrigin('home');
+      setScreen('detail');
+    }
+    // Start the saved essay even if the following list refresh fails.
+    runEssayPipeline(essay)
+      .then(refresh, refresh)
+      .catch(error => {
+        if (mounted.current) {
+          Alert.alert('无法刷新作文列表', errorMessage(error));
+        }
+      });
+  };
   const capture = async (camera: boolean) => {
     if (captureLock.current) {
       return;
     }
     captureLock.current = true;
     setCapturing(true);
+    const activeWritingType = writingType;
+    const activeEducationLevel = settings.educationLevel;
     const imageUris: string[] = [];
     let committed = false;
     try {
@@ -652,34 +702,92 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       }
       const essay = await createEssay(
         imageUris,
-        writingType,
-        settings.educationLevel,
+        activeWritingType,
+        activeEducationLevel,
       );
       committed = true;
-      setSelected(essay);
-      setDetailOrigin('home');
-      setScreen('detail');
-      // Start the saved essay even if the following list refresh fails.
-      runEssayPipeline(essay)
-        .then(refresh, refresh)
-        .catch(error =>
-          Alert.alert(
-            '无法刷新作文列表',
-            error instanceof Error ? error.message : String(error),
-          ),
-        );
+      startCreatedEssay(essay);
       await refresh();
     } catch (error) {
-      Alert.alert(
-        '无法获取图片',
-        error instanceof Error ? error.message : String(error),
-      );
+      if (mounted.current) {
+        Alert.alert('无法获取图片', errorMessage(error));
+      }
     } finally {
       if (!committed) {
         await discardPreparedImages(imageUris);
       }
       captureLock.current = false;
-      setCapturing(false);
+      if (mounted.current) {
+        setCapturing(false);
+      }
+    }
+  };
+  const importPdf = async () => {
+    if (captureLock.current) {
+      return;
+    }
+    captureLock.current = true;
+    setCapturing(true);
+    const activeWritingType = writingType;
+    const activeEducationLevel = settings.educationLevel;
+    const request = navigationRequest.current;
+    const imageUris: string[] = [];
+    let committed = false;
+    let source: ImportedSource | null = null;
+    let discardPdf: ((value: ImportedSource) => Promise<void>) | undefined;
+    try {
+      // Keep writing startup independent of PDF modules until a PDF is requested.
+      const documents =
+        require('./src/shared/pdf/documents') as typeof import('./src/shared/pdf/documents');
+      discardPdf = documents.discardImportedPdf;
+      source = await documents.pickPdf();
+      if (
+        !source ||
+        !mounted.current ||
+        request !== navigationRequest.current
+      ) {
+        return;
+      }
+      for (const pageUri of source.pageUris) {
+        if (!mounted.current || request !== navigationRequest.current) {
+          return;
+        }
+        imageUris.push(await persistImage(pageUri));
+      }
+      if (
+        !imageUris.length ||
+        !mounted.current ||
+        request !== navigationRequest.current
+      ) {
+        return;
+      }
+      const essay = await createEssay(
+        imageUris,
+        activeWritingType,
+        activeEducationLevel,
+      );
+      committed = true;
+      startCreatedEssay(essay);
+      await refresh().catch(error => {
+        if (mounted.current) {
+          Alert.alert('无法刷新作文列表', errorMessage(error));
+        }
+      });
+    } catch (error) {
+      if (mounted.current && request === navigationRequest.current) {
+        Alert.alert('无法导入 PDF', errorMessage(error));
+      }
+    } finally {
+      if (!committed) {
+        await discardPreparedImages(imageUris);
+      }
+      if (source && discardPdf) {
+        await discardPdf(source).catch(() => undefined);
+      }
+      captureLock.current = false;
+      if (mounted.current) {
+        setCapturing(false);
+      }
     }
   };
   if (imageImport.cropper) {return imageImport.cropper;}
@@ -824,21 +932,32 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
       )}
       capturing={capturing}
       onCapture={capture}
+      onImportPdf={importPdf}
       onBack={() => {
         navigationRequest.current += 1;
         setScreen('landing');
       }}
       onOpen={async id => {
-        setSelected(await getEssay(id));
+        const request = ++navigationRequest.current;
+        const essay = await getEssay(id);
+        if (!mounted.current || request !== navigationRequest.current || !essay) {
+          return;
+        }
+        setSelected(essay);
         setDetailOrigin('home');
         setScreen('detail');
       }}
       onSettings={() => {
+        navigationRequest.current += 1;
         setSettingsOrigin('home');
         setScreen('settings');
       }}
-      onManage={() => setScreen('manage')}
+      onManage={() => {
+        navigationRequest.current += 1;
+        setScreen('manage');
+      }}
       onReports={() => {
+        navigationRequest.current += 1;
         setReportRange(recentMonth());
         setScreen('reports');
       }}
@@ -900,6 +1019,12 @@ const styles = StyleSheet.create({
     marginBottom: 5,
   },
   actionRow: {flexDirection: 'row', gap: 10, marginTop: 14, flexWrap: 'wrap'},
+  importProgress: {
+    flexDirection: 'row',
+    alignItems: 'center',
+    gap: 8,
+    marginTop: 12,
+  },
   button: {
     backgroundColor: '#2563eb',
     borderRadius: 11,

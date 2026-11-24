@@ -12,6 +12,7 @@ import {
   discardPreparedImages,
   persistImage,
 } from '../src/shared/media/images';
+import {discardImportedPdf, pickPdf} from '../src/shared/pdf/documents';
 import {retryEssay, runEssayPipeline} from '../src/services/pipeline';
 
 jest.mock('../src/components/Startup', () => ({
@@ -38,6 +39,10 @@ jest.mock('../src/shared/media/images', () => ({
   cropImage: jest.fn(),
   persistImage: jest.fn(),
   discardPreparedImages: jest.fn(async () => undefined),
+}));
+jest.mock('../src/shared/pdf/documents', () => ({
+  pickPdf: jest.fn(),
+  discardImportedPdf: jest.fn(async () => undefined),
 }));
 jest.mock('../src/services/pipeline', () => ({
   runEssayPipeline: jest.fn(async () => undefined),
@@ -320,4 +325,148 @@ test('离开报表后，尚未完成的打开请求不能把用户拉回详情',
   await act(async () => firstRead.resolve({id: 'first', status: 'completed'}));
   expect(view.root.findAllByType(Detail)).toHaveLength(0);
   expect(JSON.stringify(view.toJSON())).toContain('系统设置');
+});
+
+test.each([
+  ['chinese', '作文批改'],
+  ['english', '英文批改'],
+] as const)(
+  '%s 模式支持上传 PDF，按原页序持久化后启动批改并清理临时 PDF 缓存',
+  async (mode, entryLabel) => {
+    if (mode === 'english') {
+      press('‹ 返回首页');
+      press(entryLabel);
+    }
+    const pdf = {
+      kind: 'pdf' as const,
+      name: 'essay.pdf',
+      uri: 'file:///cache/challenge-imports/source_1/source.pdf',
+      pageUris: [
+        'file:///cache/challenge-imports/pages_1/page_1.jpg',
+        'file:///cache/challenge-imports/pages_1/page_2.jpg',
+      ],
+    };
+    (pickPdf as jest.Mock).mockResolvedValueOnce(pdf);
+    press('上传 PDF');
+    await settle();
+    expect(pickPdf).toHaveBeenCalledTimes(1);
+    expect(persistImage).toHaveBeenNthCalledWith(1, pdf.pageUris[0]);
+    expect(persistImage).toHaveBeenNthCalledWith(2, pdf.pageUris[1]);
+    expect(createEssay).toHaveBeenCalledWith(
+      [
+        'file:///cache/challenge-imports/pages_1/page_1.jpg.saved',
+        'file:///cache/challenge-imports/pages_1/page_2.jpg.saved',
+      ],
+      mode,
+      'middle',
+    );
+    expect(runEssayPipeline).toHaveBeenCalledWith(
+      expect.objectContaining({id: 'essay'}),
+    );
+    expect(view.root.findByType(Detail).props.essay.id).toBe('essay');
+    expect(discardPreparedImages).not.toHaveBeenCalled();
+    expect(discardImportedPdf).toHaveBeenCalledWith(pdf);
+    expect(Alert.alert).not.toHaveBeenCalled();
+  },
+);
+
+test('上传 PDF 取消选择时不报错、不入库，且随后可再次上传', async () => {
+  (pickPdf as jest.Mock).mockResolvedValueOnce(null);
+  press('上传 PDF');
+  await settle();
+  expect(createEssay).not.toHaveBeenCalled();
+  expect(runEssayPipeline).not.toHaveBeenCalled();
+  expect(Alert.alert).not.toHaveBeenCalled();
+  const pdf = {
+    kind: 'pdf' as const,
+    name: 'second.pdf',
+    uri: 'file:///cache/challenge-imports/source_2/source.pdf',
+    pageUris: ['file:///cache/challenge-imports/pages_2/page_1.jpg'],
+  };
+  (pickPdf as jest.Mock).mockResolvedValueOnce(pdf);
+  press('上传 PDF');
+  await settle();
+  expect(createEssay).toHaveBeenCalledTimes(1);
+  expect(discardImportedPdf).toHaveBeenCalledWith(pdf);
+});
+
+test('上传 PDF 进行中连点不会重复打开文件选择器，失败时明确提示', async () => {
+  const picking = pending<any>();
+  (pickPdf as jest.Mock).mockReturnValueOnce(picking.promise);
+  press('上传 PDF');
+  press('上传 PDF');
+  expect(pickPdf).toHaveBeenCalledTimes(1);
+  await act(async () => {
+    picking.resolve(null);
+  });
+  (pickPdf as jest.Mock).mockRejectedValueOnce(new Error('PDF 已加密'));
+  press('上传 PDF');
+  await settle();
+  expect(Alert.alert).toHaveBeenCalledWith('无法导入 PDF', 'PDF 已加密');
+  expect(createEssay).not.toHaveBeenCalled();
+});
+
+test('PDF 页面持久化或入库失败时同时清理已保存页面副本和临时 PDF 缓存', async () => {
+  const pdf = {
+    kind: 'pdf' as const,
+    name: 'broken.pdf',
+    uri: 'file:///cache/challenge-imports/source_3/source.pdf',
+    pageUris: [
+      'file:///cache/challenge-imports/pages_3/page_1.jpg',
+      'file:///cache/challenge-imports/pages_3/page_2.jpg',
+    ],
+  };
+  (pickPdf as jest.Mock).mockResolvedValueOnce(pdf);
+  (persistImage as jest.Mock)
+    .mockResolvedValueOnce('file:///page_1.saved')
+    .mockRejectedValueOnce(new Error('磁盘空间不足'));
+  press('上传 PDF');
+  await settle();
+  expect(discardPreparedImages).toHaveBeenCalledWith(['file:///page_1.saved']);
+  expect(discardImportedPdf).toHaveBeenCalledWith(pdf);
+  expect(createEssay).not.toHaveBeenCalled();
+  expect(runEssayPipeline).not.toHaveBeenCalled();
+  expect(Alert.alert).toHaveBeenCalledWith('无法导入 PDF', '磁盘空间不足');
+});
+
+test('PDF 入库后列表刷新失败仍启动批改，保留持久图片并清理临时 PDF 缓存', async () => {
+  const pdf = {
+    kind: 'pdf' as const,
+    name: 'ok.pdf',
+    uri: 'file:///cache/challenge-imports/source_4/source.pdf',
+    pageUris: ['file:///cache/challenge-imports/pages_4/page_1.jpg'],
+  };
+  (pickPdf as jest.Mock).mockResolvedValueOnce(pdf);
+  (listEssays as jest.Mock).mockRejectedValueOnce(new Error('列表读取失败'));
+  press('上传 PDF');
+  await settle();
+  expect(runEssayPipeline).toHaveBeenCalledWith(
+    expect.objectContaining({id: 'essay'}),
+  );
+  expect(discardPreparedImages).not.toHaveBeenCalled();
+  expect(discardImportedPdf).toHaveBeenCalledWith(pdf);
+  expect(Alert.alert).toHaveBeenCalledWith('无法刷新作文列表', '列表读取失败');
+});
+
+test('上传 PDF 过程中离开当前批改模式时放弃本次导入并清理缓存', async () => {
+  const picking = pending<any>();
+  (pickPdf as jest.Mock).mockReturnValueOnce(picking.promise);
+  press('上传 PDF');
+  press('‹ 返回首页');
+  press('英文批改');
+  const pdf = {
+    kind: 'pdf' as const,
+    name: 'stale.pdf',
+    uri: 'file:///cache/challenge-imports/source_5/source.pdf',
+    pageUris: ['file:///cache/challenge-imports/pages_5/page_1.jpg'],
+  };
+  await act(async () => {
+    picking.resolve(pdf);
+  });
+  await settle();
+  expect(persistImage).not.toHaveBeenCalled();
+  expect(createEssay).not.toHaveBeenCalled();
+  expect(runEssayPipeline).not.toHaveBeenCalled();
+  expect(discardImportedPdf).toHaveBeenCalledWith(pdf);
+  expect(view.root.findAllByType(Detail)).toHaveLength(0);
 });
