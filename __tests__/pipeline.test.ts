@@ -36,6 +36,7 @@ jest.mock('../src/db/database', () => ({
   updateStep: jest.fn(),
 }));
 jest.mock('../src/services/ocr', () => ({
+  ...jest.requireActual('../src/services/ocr'),
   cloudOcr: jest.fn(),
   reconcileOcr: jest.fn(),
 }));
@@ -525,4 +526,126 @@ test('重复引用缺少位置时要求模型纠正，不能默认为第一处',
   expect(() => validateScore(repeated, '雨中，我在雨中学会了等待。')).toThrow(
     '出现多次',
   );
+});
+
+test.each(['chinese', 'english'] as const)(
+  '%s 多页识别中途失败后，续做跳过已完成页面并保留空白页进度',
+  async mode => {
+    essay.writingType = mode;
+    essay.imageUris = [
+      'data:image/jpeg;base64,p1',
+      'data:image/jpeg;base64,p2',
+      'data:image/jpeg;base64,p3',
+    ];
+    const actualOcr = jest.requireActual('../src/services/ocr');
+    (cloudOcr as jest.Mock).mockImplementation(actualOcr.cloudOcr);
+    const page1Text = mode === 'english' ? 'My Day\n\nI went home.' : '第一页正文。';
+    const page3Text = mode === 'english' ? 'I felt happy.' : '第三页正文。';
+    create
+      .mockResolvedValueOnce({status: 'completed', output_text: page1Text})
+      .mockResolvedValueOnce({status: 'completed', output_text: '【未识别到作文】'})
+      .mockRejectedValueOnce(new Error('网络中断'));
+    await expect(runEssayPipeline({...essay})).rejects.toThrow('网络中断');
+    expect(essay.status).toBe('failed');
+    expect(essay.visionOcr).toContain(page1Text);
+    expect(essay.visionOcr).toContain(actualOcr.EMPTY_PAGE_MARKER);
+    expect(create).toHaveBeenCalledTimes(3);
+
+    // Resume via retryEssay: pages 1 and 2 must NOT be re-sent to vision model.
+    create.mockReset();
+    create
+      .mockResolvedValueOnce({status: 'completed', output_text: page3Text})
+      .mockResolvedValueOnce({
+        status: 'completed',
+        output_text: JSON.stringify(
+          mode === 'english'
+            ? {
+                score: 85,
+                bandId: 'high',
+                admissionAdjustment: 0,
+                admissionReason: '无准入调整',
+                dimensionScores: {
+                  task: 18,
+                  content: 17,
+                  organization: 13,
+                  language: 29,
+                  format: 8,
+                },
+                dimensionFeedback: {
+                  task: validScore.dimensionFeedback!.thesis,
+                  content: validScore.dimensionFeedback!.content,
+                  organization: validScore.dimensionFeedback!.structure,
+                  language: validScore.dimensionFeedback!.language,
+                  format: validScore.dimensionFeedback!.format,
+                },
+                qualificationEvidence: {
+                  task: [{quote: 'I went home.', explanation: '待核'}],
+                  content: [{quote: 'I went home.', explanation: '待核'}],
+                  organization: [{quote: 'I went home.', explanation: '待核'}],
+                  language: [{quote: 'I went home.', explanation: '待核'}],
+                  format: [{quote: 'I went home.', explanation: '待核'}],
+                },
+                summary: '待核题、待核材料、待核原图，训练预评。',
+                strengths: ['清楚'],
+                weaknesses: ['可拓展'],
+                improvements: ['补充细节'],
+                suggestions: ['练习描写'],
+                titleFeedback: validScore.dimensionFeedback!.thesis,
+                paragraphReviews: [
+                  {
+                    paragraphIndex: 1,
+                    strengths: ['清楚'],
+                    weaknesses: ['可拓展'],
+                    improvements: ['补充细节'],
+                  },
+                ],
+                annotations: [
+                  {
+                    quote: 'My Day',
+                    type: 'strength',
+                    comment: '标题清楚',
+                    suggestion: '保持',
+                  },
+                  {
+                    quote: 'I went home.',
+                    type: 'improvement',
+                    comment: '可更具体',
+                    suggestion: '加时间地点',
+                  },
+                ],
+              }
+            : validScore,
+        ),
+      });
+    (reconcileOcr as jest.Mock).mockResolvedValueOnce({
+      text: mode === 'english' ? 'My Day\n\nI went home.' : text,
+      corrections: '已跳过第 2 页空白页并核对完成',
+    });
+    await retryEssay(essay.id);
+    expect(essay.status).toBe('completed');
+    // Only page 3 OCR + scoring = 2 model calls (pages 1 & 2 were reused!).
+    expect(create).toHaveBeenCalledTimes(2);
+    expect(essay.visionOcr).toContain(page1Text);
+    expect(essay.visionOcr).toContain(page3Text);
+  },
+);
+
+test('显式重新识别会清空已保存分页并从第 1 页重新开始', async () => {
+  essay.imageUris = [
+    'data:image/jpeg;base64,p1',
+    'data:image/jpeg;base64,p2',
+  ];
+  essay.visionOcr = '【第 1 页】\n旧第一页';
+  const actualOcr = jest.requireActual('../src/services/ocr');
+  (cloudOcr as jest.Mock).mockImplementation(actualOcr.cloudOcr);
+  create
+    .mockResolvedValueOnce({status: 'completed', output_text: '新第一页'})
+    .mockResolvedValueOnce({status: 'completed', output_text: '新第二页'})
+    .mockResolvedValueOnce({
+      status: 'completed',
+      output_text: JSON.stringify(validScore),
+    });
+  await runEssayPipeline({...essay}, undefined, 'vision_ocr');
+  expect(create).toHaveBeenCalledTimes(3);
+  expect(essay.visionOcr).toBe('【第 1 页】\n新第一页\n\n【第 2 页】\n新第二页');
 });

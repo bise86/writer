@@ -255,7 +255,9 @@ export default function EssayDetail({
                     {essay.error}
                   </Text>
                   <Pressable onPress={onRetry} style={styles.button}>
-                    <Text style={styles.buttonText}>重试失败阶段</Text>
+                    <Text style={styles.buttonText}>
+                      继续处理（从已保存进度续做）
+                    </Text>
                   </Pressable>
                 </Card>
               )}

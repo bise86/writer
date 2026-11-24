@@ -3,7 +3,9 @@ import type {ScoreResult} from '../types';
 function contentLines(text: string) {
   return [...text.matchAll(/[^\r\n]+/g)]
     .filter(
-      match => match[0].trim() && !/^【第\s*\d+\s*页】$/.test(match[0].trim()),
+      match =>
+        match[0].trim() &&
+        !/^(?:【第\s*\d+\s*页】|【本页无作文文字】)$/.test(match[0].trim()),
     )
     .map(match => {
       const content = match[0].trim();

@@ -439,13 +439,8 @@ export function validateChallengePage(
     ),
     'documentType 必须明确本页是否属于试卷',
   );
-  check.text(
-    data.text,
-    'text',
-    data.documentType === 'not_exam' ||
-      data.documentType === 'uncertain' ||
-      (strings(data.unreadableParts) && data.unreadableParts.length > 0),
-  );
+  // A page in an uploaded PDF or photo set may legitimately be blank or have no text.
+  check.text(data.text, 'text', true);
   check.require(
     typeof data.hasStudentAnswers === 'boolean',
     'hasStudentAnswers 必须为布尔值',

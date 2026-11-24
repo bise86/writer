@@ -1,4 +1,9 @@
-import {cloudOcr, reconcileOcr} from '../src/services/ocr';
+import {
+  cloudOcr,
+  EMPTY_PAGE_MARKER,
+  parseVisionOcrPages,
+  reconcileOcr,
+} from '../src/services/ocr';
 import {parseJson, visionResponse} from '../src/services/openai';
 import {DEFAULT_SETTINGS} from '../src/settings';
 
@@ -26,12 +31,43 @@ test('逐页独立识别、按顺序保留结果并实时报告，不混入本�
   expect(onPage.mock.calls[0][0]).not.toContain('第二段');
   expect(result).not.toHaveProperty('confidence');
 });
-test('任何一页无可读文字时都失败，不跳过缺页', async () => {
+test('部分页面未识别到文字时记录为空页，不直接报失败；全部页面都无文字时才失败', async () => {
   (visionResponse as jest.Mock)
     .mockResolvedValueOnce({text: '{"text":"第一页"}'})
+    .mockResolvedValueOnce({text: '{"text":""}'})
+    .mockResolvedValueOnce({text: '【未识别到作文】'});
+  const result = await cloudOcr(
+    ['page1', 'page2', 'page3'],
+    DEFAULT_SETTINGS,
+  );
+  expect(result.text).toBe(
+    `【第 1 页】\n第一页\n\n【第 2 页】\n${EMPTY_PAGE_MARKER}\n\n【第 3 页】\n${EMPTY_PAGE_MARKER}`,
+  );
+  (visionResponse as jest.Mock)
+    .mockResolvedValueOnce({text: '【未识别到作文】'})
     .mockResolvedValueOnce({text: '{"text":""}'});
-  await expect(cloudOcr(['page1', 'page2'], DEFAULT_SETTINGS)).rejects.toThrow(
+  await expect(cloudOcr(['blank1', 'blank2'], DEFAULT_SETTINGS)).rejects.toThrow(
     '未从图片识别到作文',
+  );
+});
+
+test('已保存分页结果可被解析并用于多页识别续做，含空白页也能跳过重识', async () => {
+  const saved = `【第 1 页】\n第一段。\n\n第二段。\n\n【第 2 页】\n${EMPTY_PAGE_MARKER}`;
+  const parsed = parseVisionOcrPages(saved, 3);
+  expect(parsed).toEqual(['第一段。\n\n第二段。', '']);
+  (visionResponse as jest.Mock).mockResolvedValueOnce({text: '第三页正文。'});
+  const onProgress = jest.fn();
+  const result = await cloudOcr(['p1', 'p2', 'p3'], DEFAULT_SETTINGS, {
+    initialPages: parsed,
+    onProgress,
+  });
+  expect(visionResponse).toHaveBeenCalledTimes(1);
+  expect((visionResponse as jest.Mock).mock.calls[0][0]).toBe('p3');
+  expect(onProgress).toHaveBeenCalledWith(
+    expect.stringContaining('已保留 2 页识别结果，继续识别第 3 / 3 页'),
+  );
+  expect(result.text).toBe(
+    `【第 1 页】\n第一段。\n\n第二段。\n\n【第 2 页】\n${EMPTY_PAGE_MARKER}\n\n【第 3 页】\n第三页正文。`,
   );
 });
 test('复核把原照片和初稿一起传给视觉模型，保留学生原有错字', async () => {

@@ -8,7 +8,7 @@ import {
   saveEssayScore,
 } from '../db/database';
 import {Essay, StepId} from '../types';
-import {cloudOcr, reconcileOcr} from './ocr';
+import {cloudOcr, parseVisionOcrPages, reconcileOcr} from './ocr';
 import {RequestProgress} from './context';
 import {scoreEssay} from './scoring';
 import {recognizedTitle} from './essay-text';
@@ -51,6 +51,7 @@ export async function runEssayPipeline(
   essay: Essay,
   onProgress?: ProgressCallback,
   startFrom: StepId = 'vision_ocr',
+  options: {resume?: boolean} = {},
 ) {
   if (inFlight.has(essay.id)) {
     throw new Error('这篇作文正在处理中，请等待当前流程结束');
@@ -64,6 +65,9 @@ export async function runEssayPipeline(
     const settings = await getSettings();
     const writingType = normalizeWritingType(essay.writingType);
     const educationLevel = normalizeEducationLevel(settings.educationLevel);
+    const imageUris = essay.imageUris?.length
+      ? essay.imageUris
+      : [essay.imageUri];
     let start = Math.max(0, STEPS.indexOf(startFrom));
     if (start > 0 && !essay.visionOcr.trim()) {
       start = 0;
@@ -71,7 +75,12 @@ export async function runEssayPipeline(
     if (start > 1 && !essay.canonicalText.trim()) {
       start = 1;
     }
+    const resumePages =
+      start === 0 && options.resume
+        ? parseVisionOcrPages(essay.visionOcr, imageUris.length)
+        : [];
     // A new recognition invalidates all downstream outputs and progress.
+    // When resuming vision_ocr, retain already-recognized sequential pages.
     for (const id of STEPS.slice(start)) {
       await updateStep(essay.id, id, 'pending', '', 0);
     }
@@ -81,18 +90,18 @@ export async function runEssayPipeline(
       error: '',
       scoreJson: '',
       ...(start <= 1 ? {canonicalText: '', corrections: ''} : {}),
-      ...(start === 0 ? {visionOcr: '', localOcr: '', title: ''} : {}),
+      ...(start === 0 && !resumePages.length
+        ? {visionOcr: '', localOcr: '', title: ''}
+        : {}),
       updatedAt: new Date().toISOString(),
     });
-    const imageUris = essay.imageUris?.length
-      ? essay.imageUris
-      : [essay.imageUri];
     let visionText = essay.visionOcr;
     if (start === 0) {
       await updateEssay(essay.id, {status: 'vision_ocr'});
       const vision = await step(essay.id, 'vision_ocr', onProgress, report =>
         cloudOcr(imageUris, settings, {
           writingType,
+          initialPages: resumePages,
           onProgress: report,
           onCall: usage('vision_ocr'),
           onPage: async text => {
@@ -175,5 +184,7 @@ export async function retryEssay(
   const resume = STEPS.find(
     id => steps.find(item => item.step === id)?.status !== 'success',
   );
-  return runEssayPipeline(essay, onProgress, resume || 'scoring');
+  return runEssayPipeline(essay, onProgress, resume || 'scoring', {
+    resume: true,
+  });
 }

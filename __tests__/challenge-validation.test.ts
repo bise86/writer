@@ -770,6 +770,24 @@ test('局部题文无法识别或辅助题框无效时保留来源，不将整�
   expect(parsed.questionRegions).toEqual([]);
 });
 
+test('试卷图片或PDF中的空白页未识别到文字时允许为空，不直接报失败', () => {
+  const {page} = fixture();
+  const blank = validateChallengePage(
+    {
+      ...page,
+      pageIndex: 1,
+      documentType: 'exam_continuation',
+      text: '',
+      unreadableParts: [],
+      figures: [],
+      questionRegions: [],
+    },
+    1,
+  );
+  expect(blank.text).toBe('');
+  expect(blank.unreadableParts).toEqual([]);
+});
+
 test('仅保留原图且没有可读引文的小题可继续参与递进识科，只能记未知票', () => {
   const {analysis, page} = fixture();
   analysis.questions[0] = {

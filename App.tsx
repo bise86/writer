@@ -30,8 +30,7 @@ import {
   EDUCATION_LEVELS,
   validateSettings,
 } from './src/settings';
-import {discardPreparedImages, persistImage} from './src/shared/media/images';
-import {ImportedSource} from './src/shared/media/types';
+import {discardPreparedImages} from './src/shared/media/images';
 import {useImageImport} from './src/shared/media/useImageImport';
 import Reports from './src/components/Reports';
 import {recentMonth} from './src/services/reports';
@@ -713,7 +712,7 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
         Alert.alert('无法获取图片', errorMessage(error));
       }
     } finally {
-      if (!committed) {
+      if (!committed && imageUris.length) {
         await discardPreparedImages(imageUris);
       }
       captureLock.current = false;
@@ -733,27 +732,15 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
     const request = navigationRequest.current;
     const imageUris: string[] = [];
     let committed = false;
-    let source: ImportedSource | null = null;
-    let discardPdf: ((value: ImportedSource) => Promise<void>) | undefined;
     try {
       // Keep writing startup independent of PDF modules until a PDF is requested.
-      const documents =
-        require('./src/shared/pdf/documents') as typeof import('./src/shared/pdf/documents');
-      discardPdf = documents.discardImportedPdf;
-      source = await documents.pickPdf();
-      if (
-        !source ||
-        !mounted.current ||
-        request !== navigationRequest.current
-      ) {
-        return;
-      }
-      for (const pageUri of source.pageUris) {
-        if (!mounted.current || request !== navigationRequest.current) {
-          return;
-        }
-        imageUris.push(await persistImage(pageUri));
-      }
+      const {importPdfImages} =
+        require('./src/shared/pdf/import') as typeof import('./src/shared/pdf/import');
+      const prepared = await importPdfImages({
+        shouldContinue: () =>
+          mounted.current && request === navigationRequest.current,
+      });
+      imageUris.push(...(prepared || []).map(image => image.uri));
       if (
         !imageUris.length ||
         !mounted.current ||
@@ -778,11 +765,8 @@ function ReadyApp({initialData}: {initialData: StartupData}) {
         Alert.alert('无法导入 PDF', errorMessage(error));
       }
     } finally {
-      if (!committed) {
+      if (!committed && imageUris.length) {
         await discardPreparedImages(imageUris);
-      }
-      if (source && discardPdf) {
-        await discardPdf(source).catch(() => undefined);
       }
       captureLock.current = false;
       if (mounted.current) {

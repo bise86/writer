@@ -19,13 +19,18 @@ const savedScore: ScoreResult = {
   annotations: [],
 };
 
-test('从 OCR 首行识别标题并忽略多页标记', () => {
+test('从 OCR 首行识别标题并忽略多页标记和空白页标记', () => {
   expect(recognizedTitle('【第 1 页】\n《雨中的等待》\n我站在窗前。')).toBe(
     '雨中的等待',
   );
   expect(recognizedTitle('【第 1 页】\n题目：第一次学会等待\n正文')).toBe(
     '第一次学会等待',
   );
+  expect(
+    recognizedTitle(
+      '【第 1 页】\n【本页无作文文字】\n\n【第 2 页】\n《雨中的等待》\n\n我站在窗前。',
+    ),
+  ).toBe('雨中的等待');
 });
 
 test('没有明确标题时不把带句号的正文误当作文标题', () => {

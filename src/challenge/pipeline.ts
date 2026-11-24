@@ -832,6 +832,24 @@ async function parseDraftBatches(
     `原卷结构分批解析，已保存${batches.partial.questions.length}题`,
   );
   for (const page of pages) {
+    if (
+      !page.text.trim() &&
+      !page.figures.length &&
+      !page.unreadableParts.length &&
+      !page.questionRegions?.length
+    ) {
+      if (!batches.completedPageIndices.includes(page.pageIndex)) {
+        batches = {
+          ...batches,
+          completedPageIndices: [
+            ...batches.completedPageIndices,
+            page.pageIndex,
+          ],
+        };
+        await checkpoint(`第${page.pageIndex + 1}页未识别到文字，已跳过`);
+      }
+      continue;
+    }
     let attempts = 0;
     while (!batches.completedPageIndices.includes(page.pageIndex)) {
       ensureRunning(options.signal);
@@ -1694,7 +1712,7 @@ export function analyzeChallenge(
             ...PAGE_EXAMPLE,
             pageIndex,
           })}。
-documentType只能exam/exam_continuation/not_exam/uncertain；非试卷图片必须如实标not_exam，试卷材料续页可标exam_continuation，无法判断时标uncertain，不能凭用户名称当试卷。
+documentType只能exam/exam_continuation/not_exam/uncertain；非试卷图片必须如实标not_exam，试卷材料续页可标exam_continuation，无法判断时标uncertain，不能凭用户名称当试卷。若本页为空白页或没有可识别印刷文字，不要判not_exam，也不要编造文字，可标exam_continuation或uncertain并将text设为""。
 完整录入印刷题号、题干、题型说明、选项、分值、共用材料和图表文字。无论学生已写/空白，hasStudentAnswers如实记录，但text不得混入学生勾选、填答、解题步骤和教师批改；不能把学生答案当参考答案。数学公式用清楚可读的Unicode或ASCII，如x^2、(a+b)/c，不能改条件或忽略符号。
 questionRegions逐题记录原印刷题号number和覆盖完整题干、选项、图表及答题区的归一化box，按原顺序，不要把部分不清的题丢掉。跨页题在各页记录同一题号的本页片段，难以拆分的小题可共用完整母题框，不臆造被遮住的内容。
 无法辨认/缺页/学生字迹遮住关键印刷内容时，unreadableParts逐一写清具体题号或材料及异常，不以一题的问题笼统标记整页；不能猜补。图表必须识别所有标题、坐标、单位、标签、数值与关系。
