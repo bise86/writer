@@ -4586,3 +4586,123 @@ test('旧记录的未知前问ID仅按异常元数据保留，不虚构题目或
   expect(result.candidate!.questions[1].upgrade.mode).toBe('upgraded');
   expect(result.candidate!.questions).toHaveLength(2);
 });
+
+test('圆桌评审输入与提示均包含 JSON 说明，避免 json_object 400 协议报错', async () => {
+  request.mockImplementation(async (input: ModelInput) =>
+    task(input) === '挑战标准一致性校核'
+      ? response(roleReview(input))
+      : route(input),
+  );
+  await upgradeChallenge('challenge_test', 1, {
+    settings: {...settings, roundtableSize: 3},
+  });
+  const reviews = request.mock.calls.filter(
+    call => task(call[0]) === '挑战标准一致性校核',
+  );
+  expect(reviews).toHaveLength(3);
+  for (const [input, instructions] of reviews) {
+    expect(JSON.stringify(input)).toMatch(/json/i);
+    expect(String(instructions)).toMatch(/json/i);
+  }
+});
+
+test('多页解析并发执行且机械提取步骤自动限制思考深度，核心命题与评审保持原思考深度', async () => {
+  mockRecord = record(false);
+  mockRecord.pageUris = ['file:///p0.png', 'file:///p1.png', 'file:///p2.png'];
+  mockRecord.sources[0].pageUris = [...mockRecord.pageUris];
+  const sourcePages: ChallengePage[] = [
+    {...page, pageIndex: 0, text: '数学试卷\n一、解答\n1. ' + analysis.questions[0].stem},
+    {...page, pageIndex: 1, documentType: 'exam_continuation', text: '第2页延续说明'},
+    {...page, pageIndex: 2, documentType: 'exam_continuation', text: '第3页延续说明'},
+  ];
+  let inFlightPages = 0;
+  let maxConcurrentPages = 0;
+  const effortsByTask: {task: string; effort: string}[] = [];
+  request.mockImplementation(async (input: ModelInput, _inst: any, cfg: any) => {
+    const payload = requestPayload(input);
+    effortsByTask.push({
+      task: payload.phase || payload.task,
+      effort: cfg.reasoningEffort,
+    });
+    if (payload.task === 'page') {
+      inFlightPages += 1;
+      maxConcurrentPages = Math.max(maxConcurrentPages, inFlightPages);
+      const textPart = (input as any)[0].content.find(
+        (part: any) => part.type === 'input_text',
+      ).text;
+      const index = Number(textPart.match(/pageIndex=(\d+)/)[1]);
+      await Promise.resolve();
+      inFlightPages -= 1;
+      return response(sourcePages[index]);
+    }
+    if (payload.phase === 'draft') {
+      return response({
+        pageComplete: true,
+        questions: payload.pageIndex === 0 ? analysis.questions : [],
+        sections: analysis.sections,
+        majorQuestions: analysis.majorQuestions,
+        materials: [],
+      });
+    }
+    if (payload.phase === 'draft_summary') {
+      return response(draftSummary(analysis));
+    }
+    if (payload.task === '挑战科目识别') {
+      return response(identificationFor(input));
+    }
+    return route(input);
+  });
+  await analyzeChallenge('challenge_test', {
+    settings: {...settings, reasoningEffort: 'high'},
+  });
+  expect(maxConcurrentPages).toBeGreaterThan(1);
+  expect(
+    effortsByTask
+      .filter(entry => ['page', 'draft', 'draft_summary', 'progressive_vote'].includes(entry.task))
+      .every(entry => entry.effort === 'low'),
+  ).toBe(true);
+
+  effortsByTask.length = 0;
+  await upgradeChallenge('challenge_test', 1, {
+    settings: {...settings, reasoningEffort: 'high'},
+  });
+  expect(
+    effortsByTask
+      .filter(entry => entry.task === 'question_patches' || entry.task === '挑战标准一致性校核')
+      .every(entry => entry.effort === 'high'),
+  ).toBe(true);
+});
+
+test('互不依赖的升档批次并发生成并无损合并，避免逐批串行等待', async () => {
+  const original = patchExam(6);
+  resumeSelectedWork(original, 3);
+  let inFlight = 0;
+  let maxConcurrent = 0;
+  request.mockImplementation(async (input: ModelInput) => {
+    const payload = requestPayload(input);
+    if (payload.task === '挑战试卷生成') {
+      inFlight += 1;
+      maxConcurrent = Math.max(maxConcurrent, inFlight);
+      await Promise.resolve();
+      inFlight -= 1;
+      return response(variantPatch(payload.questionIds, 3));
+    }
+    if (payload.task === '挑战标准一致性校核') {
+      return response({
+        ...roleReview(input),
+        checkedQuestionIds: payload.reviewQuestionIds,
+      });
+    }
+    return route(input);
+  });
+  const result = await upgradeChallenge('challenge_test', 3, {
+    settings: {...settings, maxOutputTokens: 32000},
+  });
+  expect(maxConcurrent).toBeGreaterThan(1);
+  expect(result.status).toBe('completed');
+  expect(
+    result.candidate!.questions.filter(
+      question => question.upgrade.mode === 'upgraded',
+    ),
+  ).toHaveLength(6);
+});

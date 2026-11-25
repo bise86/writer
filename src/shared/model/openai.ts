@@ -370,6 +370,38 @@ async function prepareInput(
   return combined;
 }
 
+function inputContainsJson(input: ModelInput): boolean {
+  if (typeof input === 'string') {
+    return /json/i.test(input);
+  }
+  return input.some(item => {
+    if (!('content' in item) || item.content === undefined) {
+      return false;
+    }
+    if (typeof item.content === 'string') {
+      return /json/i.test(item.content);
+    }
+    return (
+      Array.isArray(item.content) &&
+      item.content.some(
+        part =>
+          (part.type === 'input_text' || part.type === 'output_text') &&
+          /json/i.test(part.text),
+      )
+    );
+  });
+}
+
+function ensureJsonInput(input: ModelInput): ModelInput {
+  if (inputContainsJson(input)) {
+    return input;
+  }
+  if (typeof input === 'string') {
+    return `请只输出合法的 JSON 对象。\n${input}`;
+  }
+  return [{role: 'user', content: '请只输出合法的 JSON 对象。'}, ...input];
+}
+
 export async function runResponse(
   input: ModelInput,
   instructions: string,
@@ -385,9 +417,13 @@ export async function runResponse(
     throw new Error('模型名称不能为空');
   }
   try {
+    const effectiveInput =
+      options.textFormat?.type === 'json_object'
+        ? ensureJsonInput(input)
+        : input;
     const prepared = await prepareInput(
       client,
-      input,
+      effectiveInput,
       instructions,
       actual,
       activeModel,
@@ -450,6 +486,9 @@ export async function runResponse(
           format === 'json_schema'
             ? {format: {type: 'json_object'}}
             : undefined;
+        if (request.text?.format?.type === 'json_object') {
+          request.input = ensureJsonInput(request.input as ModelInput);
+        }
         await options.onProgress?.(
           format === 'json_schema'
             ? '模型服务不支持结构化输出，改用 JSON 模式并继续校验'
@@ -514,7 +553,9 @@ export async function visionResponse(
         content: [
           {
             type: 'input_text',
-            text: '请按图片顺序完成识别或复核任务，以图片中的作文为准。',
+            text: options.textFormat
+              ? '请按图片顺序完成识别或复核任务，以图片中的作文为准，按要求输出 JSON。'
+              : '请按图片顺序完成识别或复核任务，以图片中的作文为准。',
           },
           ...images.map(imageUrl => ({
             type: 'input_image' as const,

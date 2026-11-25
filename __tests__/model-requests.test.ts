@@ -681,6 +681,50 @@ test.each([
   await expect(runResponse('原文', '规则', settings)).rejects.toThrow();
 });
 
+test('使用 json_object 格式时自动确保输入消息包含 JSON 提示，避免 400 协议报错', async () => {
+  await runResponse(
+    JSON.stringify({task: '挑战标准一致性校核', role: 'subject'}),
+    '只输出结构化报告',
+    openai,
+    openai.modelName,
+    {textFormat: {type: 'json_object'}},
+  );
+  expect(create).toHaveBeenCalledTimes(1);
+  expect(String(create.mock.calls[0][0].input)).toMatch(/json/i);
+  expect(String(create.mock.calls[0][0].input)).toContain('挑战标准一致性校核');
+
+  // Input messages array without 'json' also gets a JSON instruction message.
+  create.mockClear();
+  await runResponse(
+    [
+      {
+        role: 'user',
+        content: [
+          {type: 'input_text', text: '{"task":"校核"}'},
+          {
+            type: 'input_image',
+            image_url: 'data:image/png;base64,test',
+            detail: 'high',
+          },
+        ],
+      },
+    ],
+    '校核并输出',
+    openai,
+    openai.modelName,
+    {textFormat: {type: 'json_object'}},
+  );
+  expect(JSON.stringify(create.mock.calls[0][0].input)).toMatch(/json/i);
+
+  // Inputs that already mention json are passed through untouched.
+  create.mockClear();
+  const already = '{"responseFormat":"json","task":"校核"}';
+  await runResponse(already, '校核', openai, openai.modelName, {
+    textFormat: {type: 'json_object'},
+  });
+  expect(create.mock.calls[0][0].input).toBe(already);
+});
+
 test('服务端错误中的 API Key 不会进入流程日志', async () => {
   create.mockRejectedValue(failure(400, `invalid ${settings.apiKey}`));
   await expect(runResponse('原文', '规则', settings)).rejects.toThrow(
